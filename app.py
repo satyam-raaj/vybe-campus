@@ -154,6 +154,15 @@ def init_db():
     con.close()
 
 
+
+    try:
+        con.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("vybe_global_offline", "0")
+        )
+    except Exception:
+        pass
+
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -183,6 +192,21 @@ def student_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+
+
+@app.route("/admin/vybe-status", methods=["POST"])
+@admin_required
+def admin_toggle_global_vybe():
+    action = request.form.get("action", "").strip().lower()
+    if action == "offline":
+        _set_global_offline(True)
+        flash("VYBE is now OFFLINE for everyone except the admin panel.", "success")
+    elif action == "online":
+        _set_global_offline(False)
+        flash("VYBE is now ONLINE.", "success")
+    else:
+        flash("Invalid VYBE status action.", "error")
+    return redirect(url_for("admin"))
 
 def admin_required(f):
     @wraps(f)
@@ -262,6 +286,52 @@ def layout(title, body, nav=True):
     <div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main>
     <footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer></body></html>"""
 
+
+
+VYBE_GLOBAL_OFFLINE_KEY = "vybe_global_offline"
+
+def _get_global_offline():
+    try:
+        con = db()
+        row = con.execute(
+            "SELECT value FROM settings WHERE key=?",
+            (VYBE_GLOBAL_OFFLINE_KEY,)
+        ).fetchone()
+        return bool(row and str(row["value"]).lower() in ("1", "true", "yes", "on"))
+    except Exception:
+        return False
+
+app.jinja_env.globals["_get_global_offline"] = _get_global_offline
+
+def _set_global_offline(value):
+    con = db()
+    con.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (VYBE_GLOBAL_OFFLINE_KEY, "1" if value else "0")
+    )
+    con.commit()
+
+@app.before_request
+def _vybe_global_offline_gate():
+    if request.path.startswith("/admin") or request.path.startswith("/static/"):
+        return None
+    if _get_global_offline():
+        return render_template_string("""
+        <!doctype html>
+        <html><head>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>VYBE — Offline</title>
+        <style>
+        body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b0d;color:#f5f5f7;font-family:Arial,sans-serif}
+        .box{max-width:620px;margin:24px;padding:42px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:28px}
+        h1{font-size:42px;margin:0 0 14px}p{color:#aaa;line-height:1.6;font-size:17px}
+        </style></head><body><div class="box">
+        <div style="font-size:48px">🌐</div>
+        <h1>VYBE is currently offline</h1>
+        <p>VYBE is temporarily unavailable. Please check back later.</p>
+        </div></body></html>
+        """), 503
+    return None
 
 @app.route("/")
 def home():
@@ -715,7 +785,30 @@ def admin_login():
             return redirect(url_for("admin_panel"))
         flash("Incorrect admin password.")
     body="""<div class="auth"><div class="card authbox">
-      <div class="adminmark">PRIVATE CONTROL CENTER</div><h1>Admin login.</h1>
+      <div class="adminmark">PRIVATE CONTROL CENTER</div><h1>Admin
+<div id="vybe-global-status" class="card" style="margin:14px 0;">
+  <h3>🌐 VYBE Public Status</h3>
+  <p class="muted">
+    {% if _get_global_offline() %}
+      🔴 <strong>OFFLINE</strong> — students and public visitors cannot use VYBE.
+    {% else %}
+      🟢 <strong>ONLINE</strong> — VYBE is publicly available.
+    {% endif %}
+  </p>
+  {% if _get_global_offline() %}
+  <form method="post" action="/admin/vybe-status">
+    <input type="hidden" name="action" value="online">
+    <button class="btn" type="submit">🟢 Bring VYBE Online</button>
+  </form>
+  {% else %}
+  <form method="post" action="/admin/vybe-status"
+        onsubmit="return confirm('Take VYBE offline for everyone except the admin panel?');">
+    <input type="hidden" name="action" value="offline">
+    <button class="btn" type="submit">🔴 Take VYBE Offline</button>
+  </form>
+  {% endif %}
+</div>
+ login.</h1>
       <p class="muted">This area is only for the VYBE owner/admin.</p>
       <form class="form" method="post"><div class="label">Admin password</div>
       <input type="password" name="password" required autocomplete="current-password">
