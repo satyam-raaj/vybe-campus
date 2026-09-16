@@ -1,13 +1,13 @@
 """
 VYBE V2 — single-file student campus portal
 Run locally:
-    py -m pip install -r requirements.txt
-    py VYBE_PUBLIC.py
+    py -m pip install flask
+    py VYBE_V2.py
 
 For public deployment, set environment variables:
     VYBE_SECRET_KEY
     VYBE_ADMIN_PASSWORD
-    DATABASE_URL
+    VYBE_DB
     PORT
 
 Important:
@@ -19,8 +19,7 @@ Important:
 """
 
 import os
-import psycopg
-from psycopg.rows import dict_row
+import sqlite3
 import secrets
 import hashlib
 import html
@@ -30,17 +29,19 @@ from pathlib import Path
 
 from flask import (
     Flask, request, redirect, url_for, session, flash,
-    render_template_string, abort, Response
+    render_template_string, abort, send_from_directory
 )
 
 APP_DIR = Path(__file__).resolve().parent
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DB_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe_v2.db"))
+UPLOAD_DIR = APP_DIR / "vybe_uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
-ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_PASSWORD", "vybe-admin-change-me")
+ADMIN_PASSWORD = "VYBE@2026Admin!"
 
 # Google Drive folder used by the student-facing Academics area.
 # Override with VYBE_DRIVE_URL in the deployment environment if needed.
@@ -55,81 +56,63 @@ ALLOWED_EXT = {
 }
 
 
-class DBConn:
-    def __init__(self, conn):
-        self.conn = conn
-
-    def execute(self, sql, params=None):
-        # Keep the existing VYBE SQL readable while adapting SQLite-style ?
-        # placeholders to PostgreSQL %s placeholders.
-        sql = sql.replace("?", "%s")
-        return self.conn.execute(sql, params or ())
-
-    def commit(self):
-        return self.conn.commit()
-
-    def close(self):
-        return self.conn.close()
-
-
 def db():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not configured")
-    return DBConn(psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=10))
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def init_db():
     con = db()
-    statements = [
-        """CREATE TABLE IF NOT EXISTS students (
-            id BIGSERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            student_id TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT NOT NULL,
-            last_login TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS resources (
-            id BIGSERIAL PRIMARY KEY,
-            title TEXT NOT NULL,
-            course TEXT NOT NULL,
-            semester TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            file_name TEXT,
-            file_data BYTEA,
-            created_at TEXT NOT NULL
-        )""",
-        """CREATE TABLE IF NOT EXISTS issues (
-            id BIGSERIAL PRIMARY KEY,
-            student_id BIGINT NOT NULL,
-            category TEXT NOT NULL,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Open',
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(student_id) REFERENCES students(id)
-        )""",
-        """CREATE TABLE IF NOT EXISTS solutions (
-            id BIGSERIAL PRIMARY KEY,
-            issue_id BIGINT NOT NULL,
-            student_id BIGINT NOT NULL,
-            text TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            approved INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY(issue_id) REFERENCES issues(id),
-            FOREIGN KEY(student_id) REFERENCES students(id)
-        )""",
-        """CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )""",
-    ]
-    for statement in statements:
-        con.execute(statement)
-    # Existing databases keep their data; add file_data when upgrading.
-    con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS students (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        student_id TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        last_login TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        course TEXT NOT NULL,
+        semester TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        file_name TEXT,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Open',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS solutions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issue_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        approved INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(issue_id) REFERENCES issues(id),
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    """)
     if con.execute("SELECT 1 FROM settings WHERE key='whatsapp_link'").fetchone() is None:
         con.execute("INSERT INTO settings(key,value) VALUES('whatsapp_link','')")
     con.commit()
@@ -321,7 +304,7 @@ def register():
                         (name,sid,hash_password(password),"pending",now()))
             con.commit()
             flash("Access request submitted. Wait for admin approval.")
-        except psycopg.IntegrityError:
+        except sqlite3.IntegrityError:
             flash("That Student ID is already registered.")
         finally:
             con.close()
@@ -408,10 +391,8 @@ def drive():
 @student_required
 def resource(rid):
     con=db(); r=con.execute("SELECT * FROM resources WHERE id=?",(rid,)).fetchone(); con.close()
-    if not r or not r["file_name"] or r.get("file_data") is None: abort(404)
-    suffix=Path(r["file_name"]).suffix.lower()
-    mime={".pdf":"application/pdf",".txt":"text/plain",".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".webp":"image/webp",".doc":"application/msword",".docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document",".ppt":"application/vnd.ms-powerpoint",".pptx":"application/vnd.openxmlformats-officedocument.presentationml.presentation",".zip":"application/zip"}.get(suffix,"application/octet-stream")
-    return Response(bytes(r["file_data"]), mimetype=mime, headers={"Content-Disposition": f'inline; filename="{r["file_name"]}"'})
+    if not r or not r["file_name"]: abort(404)
+    return send_from_directory(UPLOAD_DIR,r["file_name"],as_attachment=False)
 
 
 @app.route("/issues", methods=["GET","POST"])
@@ -529,14 +510,14 @@ def admin_panel():
       "pending":con.execute("SELECT COUNT(*) c FROM students WHERE status='pending'").fetchone()["c"],
       "issues":con.execute("SELECT COUNT(*) c FROM issues").fetchone()["c"],
       "resources":con.execute("SELECT COUNT(*) c FROM resources").fetchone()["c"],
-      "solutions":con.execute("SELECT COUNT(*) c FROM solutions").fetchone()["c"]
+      "solutions":con.execute("SELECT COUNT(*) c FROM solutions WHERE approved=0").fetchone()["c"]
     }
     students=con.execute("SELECT * FROM students ORDER BY id DESC").fetchall()
     issues_rows=con.execute("""SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id
                                ORDER BY i.id DESC""").fetchall()
     solutions=con.execute("""SELECT so.*,i.title,s.name FROM solutions so
                               JOIN issues i ON i.id=so.issue_id JOIN students s ON s.id=so.student_id
-                              ORDER BY so.id DESC LIMIT 80""").fetchall()
+                              WHERE so.approved=0 ORDER BY so.id DESC""").fetchall()
     con.close()
     stu=""
     for s in students:
@@ -565,11 +546,11 @@ def admin_panel():
       <div class="card"><div class="kpi">{stats["pending"]}</div><div class="muted">Pending approvals</div></div>
       <div class="card"><div class="kpi">{stats["issues"]}</div><div class="muted">Campus reports</div></div>
       <div class="card"><div class="kpi">{stats["resources"]}</div><div class="muted">Resources</div></div>
-      <div class="card"><div class="kpi">{stats["solutions"]}</div><div class="muted">Community solutions</div></div>
+      <div class="card"><div class="kpi">{stats["solutions"]}</div><div class="muted">Solutions to moderate</div></div>
     </div>
     <div class="section"><div class="card"><h2>Students</h2><div class="actions"><a class="btn danger" href="/admin/students/delete-all" onclick="return confirm(\'DELETE ALL STUDENT DATA?\')">Delete All Students</a></div><div style="overflow:auto"><table><tr><th>Name</th><th>Private Student ID</th><th>Status</th><th>Action</th></tr>{stu or '<tr><td colspan=4>No students.</td></tr>'}</table></div></div></div>
     <div class="section"><div class="card"><h2>Campus reports</h2><div style="overflow:auto"><table><tr><th>#</th><th>Student</th><th>Private ID</th><th>Report</th><th>Status</th><th>Action</th></tr>{iss or '<tr><td colspan=6>No reports.</td></tr>'}</table></div></div></div>
-    <div class="section"><div class="card"><h2>Community solutions</h2><p class="muted">Solutions are visible to students immediately. There is no admin moderation step.</p><div style="overflow:auto"><table><tr><th>Issue</th><th>Student</th><th>Solution</th></tr>{sol or '<tr><td colspan=3>No solutions yet.</td></tr>'}</table></div></div></div>
+    <div class="section"><div class="card"><h2>Community solutions</h2><div style="overflow:auto"><table><tr><th>Issue</th><th>Student</th><th>Solution</th></tr>{sol or '<tr><td colspan=4>No pending solutions.</td></tr>'}</table></div></div></div>
     <div class="section"><div class="card"><h2>Resources + WhatsApp</h2>
       <p class="muted">Add study resources and keep your WhatsApp Community link available to students.</p>
       <form class="form" method="post" action="/admin/resource" enctype="multipart/form-data">
@@ -630,6 +611,18 @@ def next_issue(iid):
     con.close(); return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/solution/<int:sid>/<action>")
+@admin_required
+def solution_action(sid,action):
+    con=db()
+    if action=="approve":
+        con.execute("UPDATE solutions SET approved=1 WHERE id=?",(sid,))
+    elif action=="reject":
+        con.execute("DELETE FROM solutions WHERE id=?",(sid,))
+    else: abort(400)
+    con.commit(); con.close(); return redirect(url_for("admin_panel"))
+
+
 @app.route("/admin/resource", methods=["POST"])
 @admin_required
 def add_resource():
@@ -640,16 +633,15 @@ def add_resource():
     desc=request.form.get("description","").strip()[:1000]
     f=request.files.get("file")
     filename=None
-    file_data=None
     if f and f.filename:
         suffix=Path(f.filename).suffix.lower()
-        if suffix not in ALLOWED_EXT:
+        if suffix not in ALLOWED_EXT: 
             flash("That file type is not allowed."); return redirect(url_for("admin_panel"))
-        filename=Path(f.filename).name[:200]
-        file_data=f.read()
+        safe=secrets.token_hex(10)+suffix
+        f.save(UPLOAD_DIR/safe); filename=safe
     con=db()
-    con.execute("""INSERT INTO resources(title,course,semester,subject,description,file_name,file_data,created_at)
-                   VALUES(?,?,?,?,?,?,?,?)""",(title,course,sem,subject,desc,filename,file_data,now()))
+    con.execute("""INSERT INTO resources(title,course,semester,subject,description,file_name,created_at)
+                   VALUES(?,?,?,?,?,?,?)""",(title,course,sem,subject,desc,filename,now()))
     con.commit(); con.close()
     flash("Resource added.")
     return redirect(url_for("admin_panel"))
