@@ -1,4 +1,4 @@
-Flask>=3.0,<4
-gunicorn>=22,<24
-webauthn>=3.0,<4
+Flask>=3.1,<4
+Gunicorn>=23,<24
 psycopg[binary]>=3.2,<4
+webauthn==3.0.0
