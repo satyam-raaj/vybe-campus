@@ -23,6 +23,13 @@ import base64
 import secrets
 import sqlite3
 import secrets
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:
+    psycopg = None
+    dict_row = None
 import hashlib
 import html
 from datetime import datetime
@@ -30,7 +37,7 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Flask, request, redirect, url_for, session, flash,
+    Flask, request, redirect, url_for, session, flash, jsonify,
     render_template_string, abort, send_from_directory
 )
 
@@ -62,7 +69,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
-ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_PASSWORD", "vybe-admin-change-me")
+ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_PASSWORD", "VYBE@2026Admin!")
 
 VYBE_PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "")
 VYBE_PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "")
@@ -82,22 +89,30 @@ ALLOWED_EXT = {
 
 
 def db():
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url.startswith(("postgres://", "postgresql://")):
+        if psycopg is None:
+            raise RuntimeError("PostgreSQL support requires psycopg[binary]>=3.2,<4 in requirements.txt")
+        class PGConn:
+            def __init__(self, url):
+                self.conn = psycopg.connect(url, row_factory=dict_row)
+            def execute(self, sql, params=()):
+                return self.conn.execute(sql.replace("?", "%s"), params)
+            def executescript(self, script):
+                for stmt in script.split(";"):
+                    stmt = stmt.strip()
+                    if stmt:
+                        stmt = stmt.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+                        self.conn.execute(stmt)
+            def commit(self): self.conn.commit()
+            def close(self): self.conn.close()
+        return PGConn(database_url)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS admin_passkeys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            credential_id TEXT UNIQUE NOT NULL,
-            public_key TEXT NOT NULL,
-            sign_count INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
     con = db()
     con.executescript("""
     CREATE TABLE IF NOT EXISTS students (
@@ -147,21 +162,21 @@ def init_db():
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS admin_passkeys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        credential_id TEXT UNIQUE NOT NULL,
+        public_key TEXT NOT NULL,
+        sign_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     """)
     if con.execute("SELECT 1 FROM settings WHERE key='whatsapp_link'").fetchone() is None:
         con.execute("INSERT INTO settings(key,value) VALUES('whatsapp_link','')")
+    if con.execute("SELECT 1 FROM settings WHERE key=?", ("vybe_global_offline",)).fetchone() is None:
+        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("vybe_global_offline", "0"))
     con.commit()
     con.close()
-
-
-
-    try:
-        con.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            ("vybe_global_offline", "0")
-        )
-    except Exception:
-        pass
 
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -182,6 +197,35 @@ def check_password(p, stored):
         return secrets.compare_digest(test, digest)
     except Exception:
         return False
+
+
+def get_admin_password():
+    con=db()
+    row=con.execute("SELECT value FROM settings WHERE key=?", ("admin_password_hash",)).fetchone()
+    con.close()
+    if row and row["value"]:
+        return row["value"]
+    return None
+
+def ensure_admin_password():
+    con=db()
+    row=con.execute("SELECT value FROM settings WHERE key=?", ("admin_password_hash",)).fetchone()
+    if not row:
+        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("admin_password_hash", hash_password(ADMIN_PASSWORD)))
+        con.commit()
+    con.close()
+
+def verify_admin_password(p):
+    stored=get_admin_password()
+    return check_password(p, stored) if stored else secrets.compare_digest(p, ADMIN_PASSWORD)
+
+def set_admin_password(p):
+    con=db()
+    if con.execute("SELECT 1 FROM settings WHERE key=?", ("admin_password_hash",)).fetchone():
+        con.execute("UPDATE settings SET value=? WHERE key=?", (hash_password(p), "admin_password_hash"))
+    else:
+        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("admin_password_hash", hash_password(p)))
+    con.commit(); con.close()
 
 
 def student_required(f):
@@ -206,7 +250,7 @@ def admin_toggle_global_vybe():
         flash("VYBE is now ONLINE.", "success")
     else:
         flash("Invalid VYBE status action.", "error")
-    return redirect(url_for("admin"))
+    return redirect(url_for("admin_panel"))
 
 def admin_required(f):
     @wraps(f)
@@ -305,11 +349,11 @@ app.jinja_env.globals["_get_global_offline"] = _get_global_offline
 
 def _set_global_offline(value):
     con = db()
-    con.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        (VYBE_GLOBAL_OFFLINE_KEY, "1" if value else "0")
-    )
-    con.commit()
+    if con.execute("SELECT 1 FROM settings WHERE key=?", (VYBE_GLOBAL_OFFLINE_KEY,)).fetchone():
+        con.execute("UPDATE settings SET value=? WHERE key=?", ("1" if value else "0", VYBE_GLOBAL_OFFLINE_KEY))
+    else:
+        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", (VYBE_GLOBAL_OFFLINE_KEY, "1" if value else "0"))
+    con.commit(); con.close()
 
 @app.before_request
 def _vybe_global_offline_gate():
@@ -409,7 +453,7 @@ def register():
                         (name,sid,hash_password(password),"pending",now()))
             con.commit()
             flash("Access request submitted. Wait for admin approval.")
-        except sqlite3.IntegrityError:
+        except Exception:
             flash("That Student ID is already registered.")
         finally:
             con.close()
@@ -584,8 +628,6 @@ def resolve_community_issue(iid):
     return redirect(url_for("community"))
 
 
-@app.route("/admin", methods=["GET","POST"])
-
 def _pk_b64(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -644,11 +686,13 @@ def admin_passkey_register_verify():
             require_user_verification=True,
         )
         con = db()
-        con.execute(
-            "INSERT OR REPLACE INTO admin_passkeys (credential_id, public_key, sign_count) VALUES (?, ?, ?)",
-            (_pk_b64(v.credential_id), _pk_b64(v.credential_public_key), v.sign_count),
-        )
-        con.commit()
+        cid = _pk_b64(v.credential_id)
+        existing = con.execute("SELECT id FROM admin_passkeys WHERE credential_id=?", (cid,)).fetchone()
+        if existing:
+            con.execute("UPDATE admin_passkeys SET public_key=?, sign_count=? WHERE id=?", (_pk_b64(v.credential_public_key), v.sign_count, existing["id"]))
+        else:
+            con.execute("INSERT INTO admin_passkeys (credential_id, public_key, sign_count) VALUES (?, ?, ?)", (cid, _pk_b64(v.credential_public_key), v.sign_count))
+        con.commit(); con.close()
         return jsonify({"ok": True})
     except Exception:
         return jsonify({"ok": False, "error": "Passkey verification failed"}), 400
@@ -729,12 +773,10 @@ def admin_change_password():
         elif new_password != confirm:
             flash("New passwords do not match.", "error")
         else:
-            # Keep the existing password source untouched. The passkey is an
-            # additional authorization gate; persistent password rotation remains
-            # managed by VYBE_ADMIN_PASSWORD in the current deployment.
-            flash("Phone passkey verified. Update VYBE_ADMIN_PASSWORD in Render to save the new password.", "success")
+            set_admin_password(new_password)
+            flash("Admin password changed successfully.", "success")
             session["admin_passkey_verified"] = False
-            return redirect(url_for("admin"))
+            return redirect(url_for("admin_panel"))
 
         return redirect(url_for("admin_change_password"))
 
@@ -778,9 +820,11 @@ def admin_change_password():
     """)
 
 
+@app.route("/admin", methods=["GET","POST"])
 def admin_login():
     if request.method=="POST":
-        if secrets.compare_digest(request.form.get("password",""), ADMIN_PASSWORD):
+        if verify_admin_password(request.form.get("password","")):
+            ensure_admin_password()
             session.clear(); session["admin"]=True
             return redirect(url_for("admin_panel"))
         flash("Incorrect admin password.")
@@ -862,6 +906,10 @@ def admin_panel():
         sol+=f"""<tr><td>{esc(s["title"])}</td><td>{esc(s["name"])}</td><td>{esc(s["text"])}</td>
         </tr>"""
     body=f"""<section class="section"><div class="adminmark">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
+    <div class="actions">
+      <a class="btn dark" href="/admin/change-password">🔐 Change Password</a>
+      <a class="btn dark" href="#phone-passkey">📱 Register Phone Passkey</a>
+    </div>
     <div class="grid">
       <div class="card"><div class="kpi">{stats["students"]}</div><div class="muted">Students</div></div>
       <div class="card"><div class="kpi">{stats["pending"]}</div><div class="muted">Pending approvals</div></div>
@@ -872,6 +920,11 @@ def admin_panel():
     <div class="section"><div class="card"><h2>Students</h2><div class="actions"><a class="btn danger" href="/admin/students/delete-all" onclick="return confirm(\'DELETE ALL STUDENT DATA?\')">Delete All Students</a></div><div style="overflow:auto"><table><tr><th>Name</th><th>Private Student ID</th><th>Status</th><th>Action</th></tr>{stu or '<tr><td colspan=4>No students.</td></tr>'}</table></div></div></div>
     <div class="section"><div class="card"><h2>Campus reports</h2><div style="overflow:auto"><table><tr><th>#</th><th>Student</th><th>Private ID</th><th>Report</th><th>Status</th><th>Action</th></tr>{iss or '<tr><td colspan=6>No reports.</td></tr>'}</table></div></div></div>
     <div class="section"><div class="card"><h2>Community solutions</h2><div style="overflow:auto"><table><tr><th>Issue</th><th>Student</th><th>Solution</th></tr>{sol or '<tr><td colspan=4>No pending solutions.</td></tr>'}</table></div></div></div>
+    <div class="section" id="phone-passkey"><div class="card"><h2>📱 Phone Passkey</h2><p class="muted">Register this browser/phone as the admin passkey. Your phone's biometric or screen lock approves the action.</p><button class="btn accent" type="button" onclick="registerPhonePasskey()">Register Phone Passkey</button><p id="pk-register-status" class="small"></p></div></div>
+    <script>
+    function b64urlToBytes(s){{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s);return Uint8Array.from(b,c=>c.charCodeAt(0));}}
+    function bytesToB64url(buf){{const a=new Uint8Array(buf);let s='';a.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}}
+    async function registerPhonePasskey(){{const st=document.getElementById('pk-register-status');try{{const r=await fetch('/admin/passkey/register/options');const o=await r.json();if(!r.ok)throw new Error(o.error||'Could not start registration');o.challenge=b64urlToBytes(o.challenge);o.user.id=b64urlToBytes(o.user.id);if(o.excludeCredentials)o.excludeCredentials.forEach(c=>c.id=b64urlToBytes(c.id));const c=await navigator.credentials.create({{publicKey:o}});const body={{id:c.id,rawId:bytesToB64url(c.rawId),type:c.type,response:{{clientDataJSON:bytesToB64url(c.response.clientDataJSON),attestationObject:bytesToB64url(c.response.attestationObject)}}}};const vr=await fetch('/admin/passkey/register/verify',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});const result=await vr.json();if(!vr.ok||!result.ok)throw new Error(result.error||'Registration failed');st.textContent='✅ Phone passkey registered.';}}catch(e){{st.textContent='❌ '+e.message;}}}}</script>
     <div class="section"><div class="card"><h2>Resources + WhatsApp</h2>
       <p class="muted">Add study resources and keep your WhatsApp Community link available to students.</p>
       <form class="form" method="post" action="/admin/resource" enctype="multipart/form-data">
@@ -988,6 +1041,7 @@ def whatsapp_link():
 
 
 init_db()
+ensure_admin_password()
 
 if __name__ == "__main__":
     port=int(os.environ.get("PORT","5000"))
