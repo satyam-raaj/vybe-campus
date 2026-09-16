@@ -19,6 +19,8 @@ Important:
 """
 
 import os
+import base64
+import secrets
 import sqlite3
 import secrets
 import hashlib
@@ -37,11 +39,34 @@ DB_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe_v2.db"))
 UPLOAD_DIR = APP_DIR / "vybe_uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+
+try:
+    from webauthn import (
+        generate_registration_options,
+        verify_registration_response,
+        generate_authentication_options,
+        verify_authentication_response,
+    )
+    from webauthn.helpers import options_to_json
+    from webauthn.helpers.structs import (
+        PublicKeyCredentialDescriptor,
+        UserVerificationRequirement,
+        AuthenticatorSelectionCriteria,
+        ResidentKeyRequirement,
+    )
+    WEBAUTHN_AVAILABLE = True
+except ImportError:
+    WEBAUTHN_AVAILABLE = False
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
-ADMIN_PASSWORD = "VYBE@2026Admin!"
+ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_PASSWORD", "vybe-admin-change-me")
+
+VYBE_PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "")
+VYBE_PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "")
+
 
 # Google Drive folder used by the student-facing Academics area.
 # Override with VYBE_DRIVE_URL in the deployment environment if needed.
@@ -63,6 +88,16 @@ def db():
 
 
 def init_db():
+
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS admin_passkeys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            credential_id TEXT UNIQUE NOT NULL,
+            public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     con = db()
     con.executescript("""
     CREATE TABLE IF NOT EXISTS students (
@@ -480,6 +515,199 @@ def resolve_community_issue(iid):
 
 
 @app.route("/admin", methods=["GET","POST"])
+
+def _pk_b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+def _pk_unb64(value):
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+def _pk_config():
+    return (
+        VYBE_PASSKEY_RP_ID or request.host.split(":")[0],
+        VYBE_PASSKEY_ORIGIN or request.host_url.rstrip("/")
+    )
+
+def _pk_ready():
+    if not WEBAUTHN_AVAILABLE:
+        flash("Passkey support is not installed. Add webauthn>=3.0,<4 to requirements.txt.", "error")
+        return False
+    return True
+
+@app.route("/admin/passkey/register/options")
+@admin_required
+def admin_passkey_register_options():
+    if not _pk_ready():
+        return jsonify({"error": "Passkey support is not installed"}), 503
+    rp_id, _ = _pk_config()
+    user_handle = secrets.token_bytes(32)
+    options = generate_registration_options(
+        rp_id=rp_id,
+        rp_name="VYBE Admin",
+        user_id=user_handle,
+        user_name="vybe-admin",
+        user_display_name="VYBE Administrator",
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+    session["pk_register_challenge"] = _pk_b64(options.challenge)
+    return options_to_json(options), 200, {"Content-Type": "application/json"}
+
+@app.route("/admin/passkey/register/verify", methods=["POST"])
+@admin_required
+def admin_passkey_register_verify():
+    if not _pk_ready():
+        return jsonify({"error": "Passkey support is not installed"}), 503
+    rp_id, origin = _pk_config()
+    body = request.get_json(silent=True) or {}
+    challenge = session.pop("pk_register_challenge", None)
+    if not challenge:
+        return jsonify({"ok": False, "error": "Registration session expired"}), 400
+    try:
+        v = verify_registration_response(
+            credential=body,
+            expected_challenge=_pk_unb64(challenge),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            require_user_verification=True,
+        )
+        con = db()
+        con.execute(
+            "INSERT OR REPLACE INTO admin_passkeys (credential_id, public_key, sign_count) VALUES (?, ?, ?)",
+            (_pk_b64(v.credential_id), _pk_b64(v.credential_public_key), v.sign_count),
+        )
+        con.commit()
+        return jsonify({"ok": True})
+    except Exception:
+        return jsonify({"ok": False, "error": "Passkey verification failed"}), 400
+
+@app.route("/admin/passkey/auth/options")
+@admin_required
+def admin_passkey_auth_options():
+    if not _pk_ready():
+        return jsonify({"error": "Passkey support is not installed"}), 503
+    rp_id, _ = _pk_config()
+    con = db()
+    rows = con.execute("SELECT credential_id FROM admin_passkeys").fetchall()
+    if not rows:
+        return jsonify({"error": "No phone passkey is registered yet."}), 400
+    options = generate_authentication_options(
+        rp_id=rp_id,
+        allow_credentials=[
+            PublicKeyCredentialDescriptor(id=_pk_unb64(r["credential_id"])) for r in rows
+        ],
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    session["pk_auth_challenge"] = _pk_b64(options.challenge)
+    return options_to_json(options), 200, {"Content-Type": "application/json"}
+
+@app.route("/admin/passkey/auth/verify", methods=["POST"])
+@admin_required
+def admin_passkey_auth_verify():
+    if not _pk_ready():
+        return jsonify({"error": "Passkey support is not installed"}), 503
+    rp_id, origin = _pk_config()
+    body = request.get_json(silent=True) or {}
+    challenge = session.pop("pk_auth_challenge", None)
+    credential_id = body.get("id")
+    if not challenge or not credential_id:
+        return jsonify({"ok": False, "error": "Invalid or expired passkey request"}), 400
+
+    con = db()
+    row = con.execute(
+        "SELECT * FROM admin_passkeys WHERE credential_id=?",
+        (credential_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "Unknown passkey"}), 400
+
+    try:
+        v = verify_authentication_response(
+            credential=body,
+            expected_challenge=_pk_unb64(challenge),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=_pk_unb64(row["public_key"]),
+            credential_current_sign_count=row["sign_count"],
+            require_user_verification=True,
+        )
+        con.execute("UPDATE admin_passkeys SET sign_count=? WHERE id=?", (v.new_sign_count, row["id"]))
+        con.commit()
+        session["admin_passkey_verified"] = True
+        return jsonify({"ok": True})
+    except Exception:
+        return jsonify({"ok": False, "error": "Passkey verification failed"}), 400
+
+@app.route("/admin/change-password", methods=["GET", "POST"])
+@admin_required
+def admin_change_password():
+    if request.method == "POST":
+        if not session.get("admin_passkey_verified"):
+            flash("Verify your phone passkey first.", "error")
+            return redirect(url_for("admin_change_password"))
+
+        current = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+
+        if not secrets.compare_digest(current, ADMIN_PASSWORD):
+            flash("Current password is incorrect.", "error")
+        elif len(new_password) < 8:
+            flash("New password must be at least 8 characters.", "error")
+        elif new_password != confirm:
+            flash("New passwords do not match.", "error")
+        else:
+            # Keep the existing password source untouched. The passkey is an
+            # additional authorization gate; persistent password rotation remains
+            # managed by VYBE_ADMIN_PASSWORD in the current deployment.
+            flash("Phone passkey verified. Update VYBE_ADMIN_PASSWORD in Render to save the new password.", "success")
+            session["admin_passkey_verified"] = False
+            return redirect(url_for("admin"))
+
+        return redirect(url_for("admin_change_password"))
+
+    return render_template_string("""
+    <div class="card" style="max-width:620px;margin:40px auto;">
+      <h2>🔐 Change Admin Password</h2>
+      <p class="muted">Your phone passkey must approve this action.</p>
+      <p id="pk-status">Waiting for phone verification…</p>
+      <button class="btn" type="button" onclick="verifyPhonePasskey()">📱 Verify phone passkey</button>
+      <form method="post" id="password-form" style="display:none;margin-top:20px;">
+        <input type="password" name="current_password" placeholder="Current password" required>
+        <input type="password" name="new_password" placeholder="New password (8+ characters)" minlength="8" required>
+        <input type="password" name="confirm_password" placeholder="Confirm new password" minlength="8" required>
+        <button class="btn" type="submit">Change Password</button>
+      </form>
+    </div>
+    <script>
+    function b64urlToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s);return Uint8Array.from(b,c=>c.charCodeAt(0));}
+    function bytesToB64url(buf){const a=new Uint8Array(buf);let s='';a.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+    async function verifyPhonePasskey(){
+      const status=document.getElementById('pk-status');
+      try{
+        const r=await fetch('/admin/passkey/auth/options'); const o=await r.json();
+        if(!r.ok) throw new Error(o.error||'Could not start passkey verification');
+        o.challenge=b64urlToBytes(o.challenge);
+        if(o.allowCredentials)o.allowCredentials.forEach(c=>c.id=b64urlToBytes(c.id));
+        const c=await navigator.credentials.get({publicKey:o});
+        const body={id:c.id,rawId:bytesToB64url(c.rawId),type:c.type,response:{
+          clientDataJSON:bytesToB64url(c.response.clientDataJSON),
+          authenticatorData:bytesToB64url(c.response.authenticatorData),
+          signature:bytesToB64url(c.response.signature),
+          userHandle:c.response.userHandle?bytesToB64url(c.response.userHandle):null}};
+        const vr=await fetch('/admin/passkey/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const result=await vr.json();
+        if(!vr.ok||!result.ok) throw new Error(result.error||'Verification failed');
+        status.textContent='✅ Phone passkey verified.';
+        document.getElementById('password-form').style.display='block';
+      }catch(e){status.textContent='❌ '+e.message;}
+    }
+    </script>
+    """)
+
+
 def admin_login():
     if request.method=="POST":
         if secrets.compare_digest(request.form.get("password",""), ADMIN_PASSWORD):
