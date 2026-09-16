@@ -1,28 +1,17 @@
-"""
-VYBE V2 — single-file student campus portal
-Run locally:
-    py -m pip install flask
-    py VYBE_V2.py
-
-For public deployment, set environment variables:
-    VYBE_SECRET_KEY
-    VYBE_ADMIN_PASSWORD
-    VYBE_DB
-    PORT
-
-Important:
-- This is a deployable foundation, not a substitute for a college's official
-  authentication system.
-- New student accounts are PENDING until the admin approves them.
-- WhatsApp is integration-ready, but this app does not scrape WhatsApp
-  Communities or private chat history.
-"""
-
 import os
+import re
+import json
 import base64
 import secrets
+import hashlib
+import html
 import sqlite3
-import secrets
+from datetime import datetime, timezone
+from functools import wraps
+from pathlib import Path
+from urllib.parse import urlparse
+
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, jsonify, render_template_string
 
 try:
     import psycopg
@@ -30,22 +19,6 @@ try:
 except ImportError:
     psycopg = None
     dict_row = None
-import hashlib
-import html
-from datetime import datetime
-from functools import wraps
-from pathlib import Path
-
-from flask import (
-    Flask, request, redirect, url_for, session, flash, jsonify,
-    render_template_string, abort, send_from_directory
-)
-
-APP_DIR = Path(__file__).resolve().parent
-DB_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe_v2.db"))
-UPLOAD_DIR = APP_DIR / "vybe_uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-
 
 try:
     from webauthn import (
@@ -53,812 +26,584 @@ try:
         verify_registration_response,
         generate_authentication_options,
         verify_authentication_response,
+        options_to_json,
+        base64url_to_bytes,
     )
-    from webauthn.helpers import options_to_json
     from webauthn.helpers.structs import (
         PublicKeyCredentialDescriptor,
         UserVerificationRequirement,
         AuthenticatorSelectionCriteria,
         ResidentKeyRequirement,
+        AuthenticatorAttachment,
     )
     WEBAUTHN_AVAILABLE = True
 except ImportError:
     WEBAUTHN_AVAILABLE = False
 
+APP_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = APP_DIR / "vybe_uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
+SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret-in-production")
+DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
+PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "localhost")
+PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "http://localhost:5000")
+DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
+ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
+CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
+STATUSES = ["Open", "In progress", "Resolved"]
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret")
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
-
-ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_PASSWORD", "VYBE@2026Admin!")
-
-VYBE_PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "")
-VYBE_PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "")
-
-
-# Google Drive folder used by the student-facing Academics area.
-# Override with VYBE_DRIVE_URL in the deployment environment if needed.
-VYBE_DRIVE_URL = os.environ.get(
-    "VYBE_DRIVE_URL",
-    "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
+app.config.update(
+    SECRET_KEY=SECRET_KEY,
+    MAX_CONTENT_LENGTH=25 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("VYBE_COOKIE_SECURE", "0") == "1",
 )
 
-ALLOWED_EXT = {
-    ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt",
-    ".png", ".jpg", ".jpeg", ".webp", ".zip"
-}
+
+class DB:
+    """Tiny database abstraction for SQLite and PostgreSQL.
+
+    Application SQL uses '?' placeholders. PostgreSQL gets them converted to
+    '%s' so routes do not contain SQLite-only SQL syntax.
+    """
+    def __init__(self):
+        self.is_pg = bool(DATABASE_URL)
+        if self.is_pg:
+            if psycopg is None:
+                raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
+            self.conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        else:
+            self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA foreign_keys = ON")
+
+    def _sql(self, sql):
+        return sql.replace("?", "%s") if self.is_pg else sql
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(self._sql(sql), params)
+
+    def executescript(self, statements):
+        for statement in statements:
+            if statement.strip():
+                self.execute(statement)
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
 
 
 def db():
-    database_url = os.environ.get("DATABASE_URL", "").strip()
-    if database_url.startswith(("postgres://", "postgresql://")):
-        if psycopg is None:
-            raise RuntimeError("PostgreSQL support requires psycopg[binary]>=3.2,<4 in requirements.txt")
-        class PGConn:
-            def __init__(self, url):
-                self.conn = psycopg.connect(url, row_factory=dict_row)
-            def execute(self, sql, params=()):
-                return self.conn.execute(sql.replace("?", "%s"), params)
-            def executescript(self, script):
-                for stmt in script.split(";"):
-                    stmt = stmt.strip()
-                    if stmt:
-                        stmt = stmt.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-                        self.conn.execute(stmt)
-            def commit(self): self.conn.commit()
-            def close(self): self.conn.close()
-        return PGConn(database_url)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return DB()
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def esc(value):
+    return html.escape(str(value or ""), quote=True)
+
+
+def hash_password(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 220_000)
+    return f"{salt.hex()}${digest.hex()}"
+
+
+def check_password(password, stored):
+    try:
+        salt_hex, digest_hex = stored.split("$", 1)
+        test = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 220_000).hex()
+        return secrets.compare_digest(test, digest_hex)
+    except Exception:
+        return False
+
+
+def valid_url(value, allowed_schemes=("https", "http")):
+    try:
+        p = urlparse(value)
+        return p.scheme in allowed_schemes and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def setting(con, key, default=""):
+    row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(con, key, value):
+    if con.is_pg:
+        con.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+            (key, value),
+        )
+    else:
+        con.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
 
 
 def init_db():
     con = db()
-    con.executescript("""
-    CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        student_id TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        created_at TEXT NOT NULL,
-        last_login TEXT
-    );
+    if con.is_pg:
+        statements = [
+            """CREATE TABLE IF NOT EXISTS students (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                student_id TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS resources (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                resource_type TEXT NOT NULL DEFAULT 'Study material',
+                course TEXT NOT NULL,
+                semester TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                file_name TEXT,
+                created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS issues (
+                id BIGSERIAL PRIMARY KEY,
+                student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Open',
+                created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS solutions (
+                id BIGSERIAL PRIMARY KEY,
+                issue_id BIGINT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS passkeys (
+                id BIGSERIAL PRIMARY KEY,
+                credential_id TEXT NOT NULL UNIQUE,
+                public_key TEXT NOT NULL,
+                sign_count BIGINT NOT NULL DEFAULT 0,
+                device_type TEXT,
+                backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+                transports TEXT,
+                created_at TEXT NOT NULL
+            )""",
+        ]
+    else:
+        statements = [
+            """CREATE TABLE IF NOT EXISTS students (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                student_id TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS resources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                resource_type TEXT NOT NULL DEFAULT 'Study material',
+                course TEXT NOT NULL,
+                semester TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                file_name TEXT,
+                created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Open',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS solutions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS passkeys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                credential_id TEXT NOT NULL UNIQUE,
+                public_key TEXT NOT NULL,
+                sign_count INTEGER NOT NULL DEFAULT 0,
+                device_type TEXT,
+                backed_up INTEGER NOT NULL DEFAULT 0,
+                transports TEXT,
+                created_at TEXT NOT NULL
+            )""",
+        ]
+    con.executescript(statements)
 
-    CREATE TABLE IF NOT EXISTS resources (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        course TEXT NOT NULL,
-        semester TEXT NOT NULL,
-        subject TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        file_name TEXT,
-        created_at TEXT NOT NULL
-    );
+    # Lightweight migration for the earlier VYBE_V2 SQLite schema.
+    if not con.is_pg:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(resources)").fetchall()}
+        if "resource_type" not in cols:
+            con.execute("ALTER TABLE resources ADD COLUMN resource_type TEXT NOT NULL DEFAULT 'Study material'")
+    else:
+        # PostgreSQL migrations are idempotent and safe on existing deployments.
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
 
-    CREATE TABLE IF NOT EXISTS issues (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Open',
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(student_id) REFERENCES students(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS solutions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        issue_id INTEGER NOT NULL,
-        student_id INTEGER NOT NULL,
-        text TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        approved INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY(issue_id) REFERENCES issues(id),
-        FOREIGN KEY(student_id) REFERENCES students(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS admin_passkeys (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        credential_id TEXT UNIQUE NOT NULL,
-        public_key TEXT NOT NULL,
-        sign_count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    if con.execute("SELECT 1 FROM settings WHERE key='whatsapp_link'").fetchone() is None:
-        con.execute("INSERT INTO settings(key,value) VALUES('whatsapp_link','')")
-    if con.execute("SELECT 1 FROM settings WHERE key=?", ("vybe_global_offline",)).fetchone() is None:
-        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("vybe_global_offline", "0"))
+    defaults = {
+        "whatsapp_link": "",
+        "google_drive_url": DRIVE_URL,
+        "vybe_online": "1",
+        "admin_password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+    }
+    for key, value in defaults.items():
+        if setting(con, key, None) is None:
+            set_setting(con, key, value)
     con.commit()
     con.close()
 
-def now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-
-def hash_password(p):
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", p.encode(), salt, 180_000)
-    return salt.hex() + "$" + digest.hex()
-
-
-def check_password(p, stored):
-    try:
-        salt, digest = stored.split("$", 1)
-        test = hashlib.pbkdf2_hmac(
-            "sha256", p.encode(), bytes.fromhex(salt), 180_000
-        ).hex()
-        return secrets.compare_digest(test, digest)
-    except Exception:
-        return False
-
-
-def get_admin_password():
-    con=db()
-    row=con.execute("SELECT value FROM settings WHERE key=?", ("admin_password_hash",)).fetchone()
-    con.close()
-    if row and row["value"]:
-        return row["value"]
-    return None
-
-def ensure_admin_password():
-    con=db()
-    row=con.execute("SELECT value FROM settings WHERE key=?", ("admin_password_hash",)).fetchone()
-    if not row:
-        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("admin_password_hash", hash_password(ADMIN_PASSWORD)))
-        con.commit()
-    con.close()
-
-def verify_admin_password(p):
-    stored=get_admin_password()
-    return check_password(p, stored) if stored else secrets.compare_digest(p, ADMIN_PASSWORD)
-
-def set_admin_password(p):
-    con=db()
-    if con.execute("SELECT 1 FROM settings WHERE key=?", ("admin_password_hash",)).fetchone():
-        con.execute("UPDATE settings SET value=? WHERE key=?", (hash_password(p), "admin_password_hash"))
-    else:
-        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("admin_password_hash", hash_password(p)))
-    con.commit(); con.close()
-
-
-def student_required(f):
-    @wraps(f)
+# ---------------------------------------------------------------------------
+# Authentication / authorization decorators are deliberately defined BEFORE
+# any route that uses them. This fixes the deployed NameError.
+# ---------------------------------------------------------------------------
+def student_required(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
-        if not session.get("student_id"):
+        sid = session.get("student_db_id")
+        if not sid:
             return redirect(url_for("login"))
-        return f(*args, **kwargs)
+        con = db()
+        row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone()
+        con.close()
+        if not row or row["status"] != "approved":
+            session.clear()
+            flash("Your student access is not currently active.")
+            return redirect(url_for("login"))
+        return fn(*args, **kwargs)
     return wrapper
 
 
-
-@app.route("/admin/vybe-status", methods=["POST"])
-@admin_required
-def admin_toggle_global_vybe():
-    action = request.form.get("action", "").strip().lower()
-    if action == "offline":
-        _set_global_offline(True)
-        flash("VYBE is now OFFLINE for everyone except the admin panel.", "success")
-    elif action == "online":
-        _set_global_offline(False)
-        flash("VYBE is now ONLINE.", "success")
-    else:
-        flash("Invalid VYBE status action.", "error")
-    return redirect(url_for("admin_panel"))
-
-def admin_required(f):
-    @wraps(f)
+def admin_required(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
-        if not session.get("admin"):
+        if not session.get("admin_authenticated"):
             return redirect(url_for("admin_login"))
-        return f(*args, **kwargs)
+        return fn(*args, **kwargs)
     return wrapper
 
 
-def esc(v):
-    return html.escape(str(v or ""))
+def passkey_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return redirect(url_for("admin_login"))
+        if not session.get("passkey_verified"):
+            flash("Verify your registered phone passkey first.")
+            return redirect(url_for("admin_password"))
+        return fn(*args, **kwargs)
+    return wrapper
 
 
-BASE_CSS = r"""
-:root{
- --bg:#090a0d;--panel:#111318;--panel2:#171a20;--line:#282c34;
- --text:#f5f7fb;--muted:#9ca3af;--accent:#9b8cff;--accent2:#5f8cff;
- --good:#55d68a;--warn:#ffd166;--bad:#ff6b6b;
-}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;background:
- radial-gradient(circle at 20% 0%,rgba(155,140,255,.12),transparent 32%),
- radial-gradient(circle at 90% 10%,rgba(95,140,255,.10),transparent 28%),var(--bg);
- color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",
- "Segoe UI",sans-serif;min-height:100vh}
-a{color:inherit;text-decoration:none}.wrap{max-width:1180px;margin:auto;padding:22px}
-.nav{position:sticky;top:0;z-index:20;background:rgba(9,10,13,.78);
- backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.06)}
-.navin{max-width:1180px;margin:auto;padding:14px 22px;display:flex;align-items:center;
- justify-content:space-between;gap:14px}.brand{font-weight:900;letter-spacing:-.05em;font-size:25px}
-.brand span{opacity:.55}.navlinks{display:flex;gap:8px;flex-wrap:wrap}
-.navlinks a{padding:9px 12px;border-radius:12px;color:#c8ccd5}.navlinks a:hover{background:#1a1d23;color:#fff}
-.hero{padding:80px 0 55px;text-align:center}.hero h1{font-size:clamp(52px,9vw,104px);
- margin:0;letter-spacing:-.075em;line-height:.9}.hero p{max-width:680px;margin:22px auto;color:var(--muted);
- font-size:18px;line-height:1.6}.badge{display:inline-block;border:1px solid var(--line);
- background:rgba(255,255,255,.04);padding:8px 13px;border-radius:999px;color:#cbd0db}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.card{background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.025));
- border:1px solid rgba(255,255,255,.09);border-radius:24px;padding:22px;
- box-shadow:0 18px 60px rgba(0,0,0,.22);transition:.25s transform,.25s border-color}
-.card:hover{transform:translateY(-3px);border-color:rgba(155,140,255,.3)}
-.card h2,.card h3{margin:0 0 8px}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}
-.btn{display:inline-flex;align-items:center;justify-content:center;border:0;cursor:pointer;
- padding:11px 15px;border-radius:13px;background:#f5f7fb;color:#090a0d;font-weight:800}
-.btn.dark{background:#1a1d23;color:#fff;border:1px solid var(--line)}.btn.accent{background:linear-gradient(135deg,var(--accent),var(--accent2));color:white}
-.btn.danger{background:#35181b;color:#ffb5b5;border:1px solid #572428}.btn.good{background:#123122;color:#9cf0bd}
-.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.section{padding:35px 0}
-input,textarea,select{width:100%;padding:12px 13px;background:#0d0f13;color:#fff;border:1px solid #2a2e36;
- border-radius:13px;outline:none}input:focus,textarea:focus,select:focus{border-color:var(--accent)}
-textarea{min-height:130px;resize:vertical}.form{display:grid;gap:13px}.label{font-size:13px;color:#aeb4c0;margin-bottom:5px}
-.flash{padding:12px 14px;border:1px solid #30343d;background:#171a20;border-radius:13px;margin:10px 0}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #272b32;vertical-align:top}
-.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#1d2027;color:#cbd0db;font-size:12px}
-.pill.good{background:#123122;color:#9cf0bd}.pill.warn{background:#332b12;color:#ffe39a}.pill.bad{background:#35181b;color:#ffb5b5}
-.search{margin-bottom:18px}.empty{text-align:center;padding:45px;color:var(--muted)}
-.footer{padding:45px 0;color:#777;text-align:center}.hide-id{color:#8f96a3}
-.auth{min-height:82vh;display:grid;place-items:center}.authbox{width:min(440px,100%);padding:30px}
-.adminmark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#a9a0ff}
-.kpi{font-size:38px;font-weight:900;letter-spacing:-.05em}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid,.grid2,.two{grid-template-columns:1fr}.navlinks{display:none}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:65px}table{display:block;overflow:auto}}
-"""
-
-def layout(title, body, nav=True):
-    links = ""
-    if nav:
-        if session.get("student_id"):
-            links += '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/logout">Logout</a>'
-        elif session.get("admin"):
-            links += '<a href="/admin/panel">Admin</a><a href="/admin/logout">Logout</a>'
-        else:
-            links += '<a href="/login">Student Login</a><a href="/admin">Admin</a>'
-    flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{esc(title)} · VYBE</title><style>{BASE_CSS}</style></head><body>
-    <div class="nav"><div class="navin"><a class="brand" href="/">VYBE<span>.</span></a>
-    <div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main>
-    <footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer></body></html>"""
+def admin_password_hash(con):
+    stored = setting(con, "admin_password_hash", "")
+    if not stored:
+        stored = hash_password(DEFAULT_ADMIN_PASSWORD)
+        set_setting(con, "admin_password_hash", stored)
+        con.commit()
+    return stored
 
 
+def webauthn_configured():
+    return WEBAUTHN_AVAILABLE and bool(PASSKEY_RP_ID and PASSKEY_ORIGIN)
 
-VYBE_GLOBAL_OFFLINE_KEY = "vybe_global_offline"
 
-def _get_global_offline():
+# ---------------------------------------------------------------------------
+# Offline gate: admin login/admin routes remain available while public/student
+# routes receive the dedicated offline page.
+# ---------------------------------------------------------------------------
+@app.before_request
+def global_online_gate():
+    path = request.path
+    if path.startswith("/admin") or path.startswith("/passkey") or path == "/offline":
+        return None
     try:
         con = db()
-        row = con.execute(
-            "SELECT value FROM settings WHERE key=?",
-            (VYBE_GLOBAL_OFFLINE_KEY,)
-        ).fetchone()
-        return bool(row and str(row["value"]).lower() in ("1", "true", "yes", "on"))
+        online = setting(con, "vybe_online", "1") == "1"
+        con.close()
     except Exception:
-        return False
-
-app.jinja_env.globals["_get_global_offline"] = _get_global_offline
-
-def _set_global_offline(value):
-    con = db()
-    if con.execute("SELECT 1 FROM settings WHERE key=?", (VYBE_GLOBAL_OFFLINE_KEY,)).fetchone():
-        con.execute("UPDATE settings SET value=? WHERE key=?", ("1" if value else "0", VYBE_GLOBAL_OFFLINE_KEY))
-    else:
-        con.execute("INSERT INTO settings(key,value) VALUES(?,?)", (VYBE_GLOBAL_OFFLINE_KEY, "1" if value else "0"))
-    con.commit(); con.close()
-
-@app.before_request
-def _vybe_global_offline_gate():
-    if request.path.startswith("/admin") or request.path.startswith("/static/"):
-        return None
-    if _get_global_offline():
-        return render_template_string("""
-        <!doctype html>
-        <html><head>
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>VYBE — Offline</title>
-        <style>
-        body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b0d;color:#f5f5f7;font-family:Arial,sans-serif}
-        .box{max-width:620px;margin:24px;padding:42px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:28px}
-        h1{font-size:42px;margin:0 0 14px}p{color:#aaa;line-height:1.6;font-size:17px}
-        </style></head><body><div class="box">
-        <div style="font-size:48px">🌐</div>
-        <h1>VYBE is currently offline</h1>
-        <p>VYBE is temporarily unavailable. Please check back later.</p>
-        </div></body></html>
-        """), 503
+        online = True
+    if not online:
+        return redirect(url_for("offline"))
     return None
+
+
+@app.after_request
+def security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "same-origin"
+    if request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+CSS = r"""
+:root{--bg:#070809;--panel:rgba(255,255,255,.065);--panel2:#111318;--line:rgba(255,255,255,.10);--text:#f6f7fb;--muted:#9ba1ad;--accent:#fff;--good:#62df9b;--warn:#ffd166;--bad:#ff6b78}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 15% 0%,rgba(255,255,255,.08),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,255,255,.05),transparent 30%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;min-height:100vh}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(7,8,9,.74);backdrop-filter:blur(22px);border-bottom:1px solid var(--line)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:950;letter-spacing:-.06em;font-size:25px}.brandmark{display:inline-grid;place-items:center;width:32px;height:32px;margin-right:8px;border-radius:10px;background:#fff;color:#070809;font-size:15px}.navlinks{display:flex;gap:5px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:12px;color:#c5c9d1;font-size:14px}.navlinks a:hover{background:#191b20;color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(72px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.09em;background:linear-gradient(180deg,#fff,#777);-webkit-background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#cbd0d9;font-size:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:0 20px 70px rgba(0,0,0,.22);transition:transform .25s,border-color .25s;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.2)}.card h2,.card h3{margin:0 0 9px}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 15px;border-radius:14px;background:#fff;color:#070809;font-weight:850;transition:.2s}.btn:hover{transform:translateY(-1px)}.btn.dark{background:#17191e;color:#fff;border-color:var(--line)}.btn.good{background:#10291c;color:#9bf2bf;border-color:#214b34}.btn.danger{background:#32171b;color:#ffb8bf;border-color:#5a252d}.btn.accent{background:linear-gradient(135deg,#fff,#bcbec4);color:#08090a}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5bac4;margin-bottom:5px}input,textarea,select{width:100%;padding:12px 13px;background:#0d0f13;color:#fff;border:1px solid #292d35;border-radius:14px;outline:none}input:focus,textarea:focus,select:focus{border-color:#777}textarea{min-height:125px;resize:vertical}.flash{padding:12px 14px;border:1px solid #30343c;background:#15171c;border-radius:14px;margin:10px 0}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #292d34;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:950;letter-spacing:-.06em}.footer{padding:50px 0;color:#676b74;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2f37;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:#111318;border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:#14171c;border:1px solid #242830}.mine{border-color:#343842}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navlinks{display:none}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}}
+"""
+
+
+def layout(title, body, admin=False):
+    if admin:
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+    elif session.get("student_db_id"):
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/logout">Logout</a>'
+    else:
+        links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
+    flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer></body></html>'''
+
+
+@app.route("/offline")
+def offline():
+    return layout("Offline", '''<section class="offline-page"><div><div class="badge">VYBE STATUS</div><h1>🔴 OFFLINE</h1><p class="muted">VYBE is temporarily unavailable. Please check back later.</p><p><a class="btn dark" href="/admin">Admin access</a></p></div></section>''')
+
 
 @app.route("/")
 def home():
-    if session.get("student_id"):
+    if session.get("student_db_id"):
         return redirect(url_for("dashboard"))
-    if session.get("admin"):
+    if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body = """
-    <section class="hero">
-      <div class="badge">A student-built campus space</div>
-      <h1>VYBE</h1>
-      <p>Academics, campus problems and student community — brought together in one private space for your campus.</p>
-      <div class="actions" style="justify-content:center">
-        <a class="btn accent" href="/login">Enter VYBE</a>
-        <a class="btn dark" href="/admin">Admin</a>
-      </div>
-    </section>
-    <section class="grid">
-      <div class="card"><h2>📚 Academics</h2><p class="muted">Notes, PYQs, syllabus and resources organised by semester and subject.</p></div>
-      <div class="card"><h2>🏫 Campus</h2><p class="muted">Report Wi‑Fi, classroom, system and facility problems and track their status.</p></div>
-      <div class="card"><h2>💬 Community</h2><p class="muted">Students can share practical solutions and help each other.</p></div>
-    </section>
-    """
+    body = '''<section class="hero"><div><div class="badge">Student-powered campus operating system</div><h1>VYBE</h1><p>Your Campus. Your Community. Your Space.</p><div class="actions" style="justify-content:center"><a class="btn accent" href="/login">Enter VYBE →</a><a class="btn dark" href="/register">Request access</a></div></div></section><section class="grid"><div class="card"><div class="icon">📚</div><h2>Academics</h2><p class="muted">Notes, PYQs, syllabus, assignments and study material in one place.</p></div><div class="card"><div class="icon">🏫</div><h2>Campus</h2><p class="muted">Report real campus problems and follow their status.</p></div><div class="card"><div class="icon">💬</div><h2>Community</h2><p class="muted">Students help students with immediate, visible solutions.</p></div></section>'''
     return layout("Welcome", body)
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        name = request.form.get("name","").strip()
-        sid = request.form.get("student_id","").strip()
-        con = db()
-        s = con.execute(
-            "SELECT * FROM students WHERE name=? AND student_id=?",
-            (name, sid)
-        ).fetchone()
-        if s:
-            if s["status"] != "approved":
-                con.close()
-                flash("Your account is awaiting admin approval.")
-                return redirect(url_for("login"))
-            con.execute("UPDATE students SET last_login=? WHERE id=?", (now(),s["id"]))
-            con.commit(); con.close()
-            session.clear(); session["student_id"] = s["id"]
-            return redirect(url_for("dashboard"))
-        con.close()
-        flash("Invalid Student ID or password.")
-    body = """
-    <div class="auth"><div class="card authbox">
-      <div class="adminmark">VYBE STUDENT ACCESS</div><h1>Welcome back.</h1>
-      <p class="muted">Sign in with your registered name and student ID.</p>
-      <form class="form" method="post">
-        <div><div class="label">Name</div><input name="name" required autocomplete="name"></div>
-        <div><div class="label">Student ID</div><input name="student_id" required autocomplete="username"></div>
-        <button class="btn accent" type="submit">Sign in</button>
-      </form>
-      <p class="small">New here? <a href="/register" style="color:#b8adff">Request access →</a></p>
-    </div></div>"""
-    return layout("Student Login", body)
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        name = request.form.get("name","").strip()[:80]
-        sid = request.form.get("student_id","").strip()[:80]
-        password = request.form.get("password","")
+        name = request.form.get("name", "").strip()[:80]
+        sid = request.form.get("student_id", "").strip()[:80]
+        password = request.form.get("password", "")
         if len(name) < 2 or len(sid) < 2 or len(password) < 6:
-            flash("Enter a valid name, student ID and a password of at least 6 characters.")
+            flash("Enter a valid name, Student ID and a password of at least 6 characters.")
             return redirect(url_for("register"))
         con = db()
         try:
-            con.execute("""INSERT INTO students(name,student_id,password_hash,status,created_at)
-                           VALUES(?,?,?,?,?)""",
-                        (name,sid,hash_password(password),"pending",now()))
+            con.execute("INSERT INTO students(name,student_id,password_hash,status,created_at) VALUES(?,?,?,?,?)", (name, sid, hash_password(password), "pending", now()))
             con.commit()
-            flash("Access request submitted. Wait for admin approval.")
+            flash("Registration submitted. Your account is pending admin approval.")
         except Exception:
-            flash("That Student ID is already registered.")
+            con.rollback()
+            flash("That Student ID is already registered, or could not be saved.")
         finally:
             con.close()
         return redirect(url_for("login"))
-    body = """
-    <div class="auth"><div class="card authbox">
-      <div class="adminmark">REQUEST ACCESS</div><h1>Join VYBE.</h1>
-      <p class="muted">Your request will be reviewed by the VYBE admin before you can enter.</p>
-      <form class="form" method="post">
-        <div><div class="label">Display name</div><input name="name" placeholder="e.g. Satyam" required></div>
-        <div><div class="label">Student ID</div><input name="student_id" required></div>
-        <div><div class="label">Password</div><input type="password" name="password" minlength="6" required></div>
-        <button class="btn accent">Request access</button>
-      </form>
-    </div></div>"""
-    return layout("Request Access", body)
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">REQUEST ACCESS</div><h1>Join VYBE.</h1><p class="muted">New accounts start as pending. An admin must approve access before you can enter the student portal.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80"></div><div><div class="label">Password</div><input type="password" name="password" minlength="6" required autocomplete="new-password"></div><button class="btn accent">Request access</button></form></div></div>'''
+    return layout("Register", body)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        sid = request.form.get("student_id", "").strip()
+        if not name or not sid:
+            flash("Name and Student ID are required.")
+            return redirect(url_for("login"))
+        con = db()
+        row = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
+        if not row:
+            con.close(); flash("Student access could not be verified."); return redirect(url_for("login"))
+        if row["name"].casefold() != name.casefold():
+            con.close(); flash("The name and Student ID do not match."); return redirect(url_for("login"))
+        if row["status"] == "pending":
+            con.close(); flash("Your registration is still pending admin approval."); return redirect(url_for("login"))
+        if row["status"] == "blocked":
+            con.close(); flash("Your student access is currently blocked."); return redirect(url_for("login"))
+        con.execute("UPDATE students SET last_login=? WHERE id=?", (now(), row["id"])); con.commit(); con.close()
+        session.clear(); session["student_db_id"] = row["id"]
+        return redirect(url_for("dashboard"))
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">STUDENT ACCESS</div><h1>Welcome back.</h1><p class="muted">Student login uses your saved name + Student ID. No password is required here.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required autocomplete="name"></div><div><div class="label">Student ID</div><input name="student_id" required autocomplete="username"></div><button class="btn accent">Enter VYBE</button></form><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p></div></div>'''
+    return layout("Student Login", body)
 
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect(url_for("home"))
+    session.clear(); return redirect(url_for("home"))
 
 
 @app.route("/dashboard")
 @student_required
 def dashboard():
-    con=db()
-    s=con.execute("SELECT name FROM students WHERE id=?",(session["student_id"],)).fetchone()
-    counts={
-      "resources":con.execute("SELECT COUNT(*) c FROM resources").fetchone()["c"],
-      "issues":con.execute("SELECT COUNT(*) c FROM issues WHERE student_id=?",(session["student_id"],)).fetchone()["c"],
-      "community":con.execute("SELECT COUNT(*) c FROM solutions WHERE approved=1").fetchone()["c"]
+    con = db()
+    s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    counts = {
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "issues": con.execute("SELECT COUNT(*) AS c FROM issues WHERE student_id=?", (session["student_db_id"],)).fetchone()["c"],
+        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
     }
+    drive = setting(con, "google_drive_url", DRIVE_URL)
+    wa = setting(con, "whatsapp_link", "")
     con.close()
-    body=f"""
-    <section class="section"><div class="badge">Student space</div><h1>Hey, {esc(s["name"])}.</h1>
-    <p class="muted">Welcome to your campus VYBE.</p></section>
-    <section class="grid">
-      <a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Resources</h3><p class="muted">Notes, PYQs & study material</p></a>
-      <a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track problems you reported</p></a>
-      <a class="card" href="/community"><div class="kpi">{counts["community"]}</div><h3>Community solutions</h3><p class="muted">See approved student solutions</p></a>
-      <a class="card" href="/drive"><div class="kpi">☁️</div><h3>Google Drive</h3><p class="muted">Open the shared academic folder</p></a>
-    </section>"""
-    return layout("Dashboard",body)
+    body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Everything your campus needs, without exposing private Student IDs.</p></section><section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section><section class="section grid2"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">Open the live shared academic folder.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open Google Drive →</a></div><div class="card"><h2>💬 WhatsApp Community</h2><p class="muted">Academic material shared through the configured community.</p>{f'<a class="btn dark" target="_blank" rel="noopener noreferrer" href="{esc(wa)}">Open WhatsApp →</a>' if valid_url(wa) else '<span class="pill">Not configured yet</span>'}</div></section>'''
+    return layout("Dashboard", body)
 
 
 @app.route("/academics")
 @student_required
 def academics():
-    q=request.args.get("q","").strip()
-    con=db()
+    q = request.args.get("q", "").strip()[:100]
+    course = request.args.get("course", "").strip()[:100]
+    semester = request.args.get("semester", "").strip()[:100]
+    subject = request.args.get("subject", "").strip()[:100]
+    con = db()
+    sql = "SELECT * FROM resources WHERE 1=1"
+    params = []
+    for field, value in (("title", q), ("subject", q), ("course", q)):
+        pass
     if q:
-        rows=con.execute("""SELECT * FROM resources WHERE title LIKE ? OR subject LIKE ? OR course LIKE ?
-                            ORDER BY id DESC""",(f"%{q}%",f"%{q}%",f"%{q}%")).fetchall()
-    else:
-        rows=con.execute("SELECT * FROM resources ORDER BY id DESC").fetchall()
+        sql += " AND (title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)"
+        params += [f"%{q}%"] * 4
+    if course:
+        sql += " AND course=?"; params.append(course)
+    if semester:
+        sql += " AND semester=?"; params.append(semester)
+    if subject:
+        sql += " AND subject=?"; params.append(subject)
+    sql += " ORDER BY id DESC"
+    rows = con.execute(sql, params).fetchall()
+    courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources ORDER BY course").fetchall()]
+    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources ORDER BY semester").fetchall()]
+    subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources ORDER BY subject").fetchall()]
+    drive = setting(con, "google_drive_url", DRIVE_URL)
     con.close()
-    cards=""
+    cards = ""
     for r in rows:
-        file_link=f'<a class="btn dark" href="/resource/{r["id"]}">Open file</a>' if r["file_name"] else ""
-        cards+=f"""<div class="card"><span class="pill">{esc(r["semester"])}</span>
-        <h3>{esc(r["title"])}</h3><p class="small">{esc(r["course"])} · {esc(r["subject"])}</p>
-        <p class="muted">{esc(r["description"])}</p>{file_link}</div>"""
-    if not cards: cards='<div class="empty">No resources found.</div>'
-    body=f"""<section class="section"><h1>Academics</h1><p class="muted">Your campus library.</p>
-    <div class="card" style="margin-bottom:18px">
-      <h2>☁️ Google Drive</h2>
-      <p class="muted">Open the shared VYBE academic folder for additional study material.</p>
-      <div class="actions"><a class="btn accent" href="/drive">Open Google Drive →</a></div>
-    </div>
-    <form class="search"><input name="q" value="{esc(q)}" placeholder="Search notes, subjects, PYQs..."></form>
-    <div class="grid">{cards}</div></section>"""
-    return layout("Academics",body)
-
-
-@app.route("/drive")
-@student_required
-def drive():
-    return redirect(VYBE_DRIVE_URL)
+        file_link = f'<a class="btn dark" href="/resource/{r["id"]}">Open file</a>' if r["file_name"] else '<span class="pill">Drive / link resource</span>'
+        cards += f'''<div class="card"><div class="resource-meta"><span class="pill">{esc(r["resource_type"])}</span><span class="pill">{esc(r["semester"])}</span></div><h3>{esc(r["title"])}</h3><p class="small">{esc(r["course"])} · {esc(r["subject"])}</p><p class="muted">{esc(r["description"])}</p>{file_link}</div>'''
+    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Search by resource, course, semester or subject.</p><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
+    return layout("Academics", body)
 
 
 @app.route("/resource/<int:rid>")
 @student_required
 def resource(rid):
-    con=db(); r=con.execute("SELECT * FROM resources WHERE id=?",(rid,)).fetchone(); con.close()
+    con = db(); r = con.execute("SELECT file_name FROM resources WHERE id=?", (rid,)).fetchone(); con.close()
     if not r or not r["file_name"]: abort(404)
-    return send_from_directory(UPLOAD_DIR,r["file_name"],as_attachment=False)
+    return send_from_directory(UPLOAD_DIR, r["file_name"], as_attachment=False)
 
 
-@app.route("/issues", methods=["GET","POST"])
+@app.route("/issues", methods=["GET", "POST"])
 @student_required
 def issues():
-    con=db()
-    if request.method=="POST":
-        cat=request.form.get("category","Other")[:50]
-        title=request.form.get("title","").strip()[:120]
-        desc=request.form.get("description","").strip()[:2000]
-        if title and desc:
-            con.execute("""INSERT INTO issues(student_id,category,title,description,status,created_at)
-                           VALUES(?,?,?,?,?,?)""",(session["student_id"],cat,title,desc,"Open",now()))
-            con.commit(); flash("Campus report submitted.")
-        else: flash("Please complete the report.")
-        con.close(); return redirect(url_for("issues"))
-    rows=con.execute("""SELECT * FROM issues WHERE student_id=? ORDER BY id DESC""",(session["student_id"],)).fetchall()
-    con.close()
-    cards=""
-    for x in rows:
-        cls="good" if x["status"]=="Resolved" else ("warn" if x["status"]=="In progress" else "")
-        cards+=f"""<div class="card"><span class="pill {cls}">{esc(x["status"])}</span>
-        <h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p>
-        <p class="muted">{esc(x["description"])}</p></div>"""
-    body=f"""<section class="section"><h1>Campus</h1><p class="muted">Report a problem and track it.</p>
-    <div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post">
-      <div><div class="label">Category</div><select name="category"><option>Wi-Fi</option><option>Systems</option><option>Classroom</option><option>Electricity</option><option>Facilities</option><option>Other</option></select></div>
-      <div><div class="label">Title</div><input name="title" required></div>
-      <div><div class="label">Details</div><textarea name="description" required></textarea></div>
-      <button class="btn accent">Submit report</button></form></div>
-      <div><h2>My reports</h2>{cards or '<div class="empty">No reports yet.</div>'}</div></div></section>"""
-    return layout("Campus",body)
+    con = db()
+    if request.method == "POST":
+        category = request.form.get("category", "Other")
+        title = request.form.get("title", "").strip()[:120]
+        desc = request.form.get("description", "").strip()[:2000]
+        if category not in CATEGORIES or not title or not desc:
+            con.close(); flash("Please complete the problem report."); return redirect(url_for("issues"))
+        con.execute("INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)", (session["student_db_id"], category, title, desc, "Open", now()))
+        con.commit(); con.close(); flash("Campus problem reported."); return redirect(url_for("issues"))
+    rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall(); con.close()
+    cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
+    body = f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{''.join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No reports yet.</div>'}</div></div></section>'''
+    return layout("Campus", body)
 
 
-@app.route("/community", methods=["GET","POST"])
+@app.route("/community", methods=["GET", "POST"])
 @student_required
 def community():
-    con=db()
-    if request.method=="POST":
-        iid=request.form.get("issue_id")
-        text=request.form.get("text","").strip()[:1500]
-        if iid and text:
-            con.execute("""INSERT INTO solutions(issue_id,student_id,text,created_at,approved)
-                           VALUES(?,?,?,?,1)""",(iid,session["student_id"],text,now()))
-            con.commit(); flash("Solution shared with all students.")
-        con.close(); return redirect(url_for("community"))
-    issues_rows=con.execute("SELECT * FROM issues ORDER BY id DESC LIMIT 50").fetchall()
-    sol=con.execute("""SELECT s.*, i.title FROM solutions s JOIN issues i ON i.id=s.issue_id
-                       WHERE s.approved=1 ORDER BY s.id DESC LIMIT 80""").fetchall()
-    solution_counts={}
-    for srow in sol:
-        solution_counts[srow["issue_id"]]=solution_counts.get(srow["issue_id"],0)+1
-    con.close()
-    issue_html=""
+    con = db()
+    if request.method == "POST":
+        try:
+            iid = int(request.form.get("issue_id", "0")); text = request.form.get("text", "").strip()[:1500]
+        except ValueError:
+            iid, text = 0, ""
+        issue = con.execute("SELECT id FROM issues WHERE id=?", (iid,)).fetchone()
+        if not issue or not text:
+            con.close(); flash("Could not post that solution."); return redirect(url_for("community"))
+        # No moderation flag exists: a solution becomes visible immediately.
+        con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
+        con.commit(); con.close(); flash("Solution posted to the community."); return redirect(url_for("community"))
+    issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
+    solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
+    by_issue = {}
+    for s in solutions: by_issue.setdefault(s["issue_id"], []).append(s)
+    blocks = ""
     for i in issues_rows:
-        issue_html+=f"""<div class="card"><span class="pill">{esc(i["category"])}</span><h3>{esc(i["title"])}</h3>
-        <p class="muted">{esc(i["description"])}</p>
-        <form class="form" method="post"><input type="hidden" name="issue_id" value="{i["id"]}">
-        <textarea name="text" placeholder="Suggest a solution..." required></textarea>
-        <button class="btn dark">Send solution</button></form>
-        {(f'<form method="post" action="/community/issue/{i["id"]}/resolve" style="margin-top:10px"><button class="btn good" onclick="return confirm(\'Accept solution and delete this problem chat?\')">✓ Accept solution & delete chat</button></form>' if i["student_id"]==session["student_id"] and solution_counts.get(i["id"],0)>0 else '')}
-        </div>"""
-    sol_html=""
-    for s in sol:
-        sol_html+=f"""<div class="card"><span class="pill good">Community solution</span>
-        <h3>{esc(s["title"])}</h3><p>{esc(s["text"])}</p><p class="small">{esc(s["created_at"])}</p></div>"""
-    body=f"""<section class="section"><h1>Community</h1><p class="muted">Help solve campus problems. Solutions are shared directly with all students.</p>
-    <h2>Campus problems</h2><div class="grid">{issue_html or '<div class="empty">No problems yet.</div>'}</div>
-    <div class="section"><h2>Approved solutions</h2><div class="grid">{sol_html or '<div class="empty">No approved solutions yet.</div>'}</div></div></section>"""
-    return layout("Community",body)
+        sols = by_issue.get(i["id"], [])
+        sol_html = "".join(f'<div class="bubble"><strong>{esc(s["author_name"])}</strong><div>{esc(s["text"])}</div><div class="small">{esc(s["created_at"])}</div></div>' for s in sols)
+        other_solution = any(s["student_id"] != session["student_db_id"] for s in sols)
+        accept = ""
+        if i["student_id"] == session["student_db_id"] and other_solution:
+            accept = f'<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm(\'Accept a solution? This deletes the problem and its entire chat.\')"><button class="btn good">✓ Accept solution &amp; delete chat</button></form>'
+        blocks += f'''<div class="card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or '<div class="empty">No solutions yet. Be the first to help.</div>'}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark">Post solution</button></form>{accept}</div>'''
+    con.close()
+    body = f'''<section class="section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Solutions are visible immediately. There is no admin moderation. Only the original reporter can accept a solution, and the accept button appears after another student has contributed.</p></section><section class="section" style="display:grid;gap:16px">{blocks or '<div class="empty">No campus problems have been reported yet.</div>'}</section>'''
+    return layout("Community", body)
 
 
-@app.route("/community/issue/<int:iid>/resolve", methods=["POST"])
+@app.route("/community/problem/<int:iid>/accept", methods=["POST"])
 @student_required
-def resolve_community_issue(iid):
-    con=db()
-    row=con.execute("SELECT id FROM issues WHERE id=? AND student_id=?",(iid,session["student_id"])).fetchone()
-    if not row:
+def accept_solution(iid):
+    con = db()
+    issue = con.execute("SELECT student_id FROM issues WHERE id=?", (iid,)).fetchone()
+    if not issue or issue["student_id"] != session["student_db_id"]:
         con.close(); abort(403)
-    con.execute("DELETE FROM solutions WHERE issue_id=?",(iid,))
-    con.execute("DELETE FROM issues WHERE id=?",(iid,))
-    con.commit(); con.close()
-    flash("Problem solved. The problem chat was deleted.")
+    other = con.execute("SELECT 1 FROM solutions WHERE issue_id=? AND student_id<>? LIMIT 1", (iid, session["student_db_id"])).fetchone()
+    if not other:
+        con.close(); abort(403)
+    # CASCADE handles dependent solutions before the issue is removed.
+    con.execute("DELETE FROM issues WHERE id=?", (iid,)); con.commit(); con.close()
+    flash("Problem solved. The problem and its entire community chat were deleted.")
     return redirect(url_for("community"))
 
 
-def _pk_b64(data):
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-def _pk_unb64(value):
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-def _pk_config():
-    return (
-        VYBE_PASSKEY_RP_ID or request.host.split(":")[0],
-        VYBE_PASSKEY_ORIGIN or request.host_url.rstrip("/")
-    )
-
-def _pk_ready():
-    if not WEBAUTHN_AVAILABLE:
-        flash("Passkey support is not installed. Add webauthn>=3.0,<4 to requirements.txt.", "error")
-        return False
-    return True
-
-@app.route("/admin/passkey/register/options")
-@admin_required
-def admin_passkey_register_options():
-    if not _pk_ready():
-        return jsonify({"error": "Passkey support is not installed"}), 503
-    rp_id, _ = _pk_config()
-    user_handle = secrets.token_bytes(32)
-    options = generate_registration_options(
-        rp_id=rp_id,
-        rp_name="VYBE Admin",
-        user_id=user_handle,
-        user_name="vybe-admin",
-        user_display_name="VYBE Administrator",
-        authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.REQUIRED,
-            user_verification=UserVerificationRequirement.REQUIRED,
-        ),
-    )
-    session["pk_register_challenge"] = _pk_b64(options.challenge)
-    return options_to_json(options), 200, {"Content-Type": "application/json"}
-
-@app.route("/admin/passkey/register/verify", methods=["POST"])
-@admin_required
-def admin_passkey_register_verify():
-    if not _pk_ready():
-        return jsonify({"error": "Passkey support is not installed"}), 503
-    rp_id, origin = _pk_config()
-    body = request.get_json(silent=True) or {}
-    challenge = session.pop("pk_register_challenge", None)
-    if not challenge:
-        return jsonify({"ok": False, "error": "Registration session expired"}), 400
-    try:
-        v = verify_registration_response(
-            credential=body,
-            expected_challenge=_pk_unb64(challenge),
-            expected_rp_id=rp_id,
-            expected_origin=origin,
-            require_user_verification=True,
-        )
-        con = db()
-        cid = _pk_b64(v.credential_id)
-        existing = con.execute("SELECT id FROM admin_passkeys WHERE credential_id=?", (cid,)).fetchone()
-        if existing:
-            con.execute("UPDATE admin_passkeys SET public_key=?, sign_count=? WHERE id=?", (_pk_b64(v.credential_public_key), v.sign_count, existing["id"]))
-        else:
-            con.execute("INSERT INTO admin_passkeys (credential_id, public_key, sign_count) VALUES (?, ?, ?)", (cid, _pk_b64(v.credential_public_key), v.sign_count))
-        con.commit(); con.close()
-        return jsonify({"ok": True})
-    except Exception:
-        return jsonify({"ok": False, "error": "Passkey verification failed"}), 400
-
-@app.route("/admin/passkey/auth/options")
-@admin_required
-def admin_passkey_auth_options():
-    if not _pk_ready():
-        return jsonify({"error": "Passkey support is not installed"}), 503
-    rp_id, _ = _pk_config()
-    con = db()
-    rows = con.execute("SELECT credential_id FROM admin_passkeys").fetchall()
-    if not rows:
-        return jsonify({"error": "No phone passkey is registered yet."}), 400
-    options = generate_authentication_options(
-        rp_id=rp_id,
-        allow_credentials=[
-            PublicKeyCredentialDescriptor(id=_pk_unb64(r["credential_id"])) for r in rows
-        ],
-        user_verification=UserVerificationRequirement.REQUIRED,
-    )
-    session["pk_auth_challenge"] = _pk_b64(options.challenge)
-    return options_to_json(options), 200, {"Content-Type": "application/json"}
-
-@app.route("/admin/passkey/auth/verify", methods=["POST"])
-@admin_required
-def admin_passkey_auth_verify():
-    if not _pk_ready():
-        return jsonify({"error": "Passkey support is not installed"}), 503
-    rp_id, origin = _pk_config()
-    body = request.get_json(silent=True) or {}
-    challenge = session.pop("pk_auth_challenge", None)
-    credential_id = body.get("id")
-    if not challenge or not credential_id:
-        return jsonify({"ok": False, "error": "Invalid or expired passkey request"}), 400
-
-    con = db()
-    row = con.execute(
-        "SELECT * FROM admin_passkeys WHERE credential_id=?",
-        (credential_id,),
-    ).fetchone()
-    if not row:
-        return jsonify({"ok": False, "error": "Unknown passkey"}), 400
-
-    try:
-        v = verify_authentication_response(
-            credential=body,
-            expected_challenge=_pk_unb64(challenge),
-            expected_rp_id=rp_id,
-            expected_origin=origin,
-            credential_public_key=_pk_unb64(row["public_key"]),
-            credential_current_sign_count=row["sign_count"],
-            require_user_verification=True,
-        )
-        con.execute("UPDATE admin_passkeys SET sign_count=? WHERE id=?", (v.new_sign_count, row["id"]))
-        con.commit()
-        session["admin_passkey_verified"] = True
-        return jsonify({"ok": True})
-    except Exception:
-        return jsonify({"ok": False, "error": "Passkey verification failed"}), 400
-
-@app.route("/admin/change-password", methods=["GET", "POST"])
-@admin_required
-def admin_change_password():
-    if request.method == "POST":
-        if not session.get("admin_passkey_verified"):
-            flash("Verify your phone passkey first.", "error")
-            return redirect(url_for("admin_change_password"))
-
-        current = request.form.get("current_password", "")
-        new_password = request.form.get("new_password", "")
-        confirm = request.form.get("confirm_password", "")
-
-        if not secrets.compare_digest(current, ADMIN_PASSWORD):
-            flash("Current password is incorrect.", "error")
-        elif len(new_password) < 8:
-            flash("New password must be at least 8 characters.", "error")
-        elif new_password != confirm:
-            flash("New passwords do not match.", "error")
-        else:
-            set_admin_password(new_password)
-            flash("Admin password changed successfully.", "success")
-            session["admin_passkey_verified"] = False
-            return redirect(url_for("admin_panel"))
-
-        return redirect(url_for("admin_change_password"))
-
-    return render_template_string("""
-    <div class="card" style="max-width:620px;margin:40px auto;">
-      <h2>🔐 Change Admin Password</h2>
-      <p class="muted">Your phone passkey must approve this action.</p>
-      <p id="pk-status">Waiting for phone verification…</p>
-      <button class="btn" type="button" onclick="verifyPhonePasskey()">📱 Verify phone passkey</button>
-      <form method="post" id="password-form" style="display:none;margin-top:20px;">
-        <input type="password" name="current_password" placeholder="Current password" required>
-        <input type="password" name="new_password" placeholder="New password (8+ characters)" minlength="8" required>
-        <input type="password" name="confirm_password" placeholder="Confirm new password" minlength="8" required>
-        <button class="btn" type="submit">Change Password</button>
-      </form>
-    </div>
-    <script>
-    function b64urlToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s);return Uint8Array.from(b,c=>c.charCodeAt(0));}
-    function bytesToB64url(buf){const a=new Uint8Array(buf);let s='';a.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
-    async function verifyPhonePasskey(){
-      const status=document.getElementById('pk-status');
-      try{
-        const r=await fetch('/admin/passkey/auth/options'); const o=await r.json();
-        if(!r.ok) throw new Error(o.error||'Could not start passkey verification');
-        o.challenge=b64urlToBytes(o.challenge);
-        if(o.allowCredentials)o.allowCredentials.forEach(c=>c.id=b64urlToBytes(c.id));
-        const c=await navigator.credentials.get({publicKey:o});
-        const body={id:c.id,rawId:bytesToB64url(c.rawId),type:c.type,response:{
-          clientDataJSON:bytesToB64url(c.response.clientDataJSON),
-          authenticatorData:bytesToB64url(c.response.authenticatorData),
-          signature:bytesToB64url(c.response.signature),
-          userHandle:c.response.userHandle?bytesToB64url(c.response.userHandle):null}};
-        const vr=await fetch('/admin/passkey/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-        const result=await vr.json();
-        if(!vr.ok||!result.ok) throw new Error(result.error||'Verification failed');
-        status.textContent='✅ Phone passkey verified.';
-        document.getElementById('password-form').style.display='block';
-      }catch(e){status.textContent='❌ '+e.message;}
-    }
-    </script>
-    """)
-
-
-@app.route("/admin", methods=["GET","POST"])
+# ---------------------------------------------------------------------------
+# Admin authentication and control center
+# ---------------------------------------------------------------------------
+@app.route("/admin", methods=["GET", "POST"])
 def admin_login():
-    if request.method=="POST":
-        if verify_admin_password(request.form.get("password","")):
-            ensure_admin_password()
-            session.clear(); session["admin"]=True
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        con = db(); stored = admin_password_hash(con); con.close()
+        if check_password(password, stored):
+            session.clear(); session["admin_authenticated"] = True; session["passkey_verified"] = False
             return redirect(url_for("admin_panel"))
         flash("Incorrect admin password.")
-    body="""<div class="auth"><div class="card authbox">
-      <div class="adminmark">PRIVATE CONTROL CENTER</div><h1>Admin
-<div id="vybe-global-status" class="card" style="margin:14px 0;">
-  <h3>🌐 VYBE Public Status</h3>
-  <p class="muted">
-    {% if _get_global_offline() %}
-      🔴 <strong>OFFLINE</strong> — students and public visitors cannot use VYBE.
-    {% else %}
-      🟢 <strong>ONLINE</strong> — VYBE is publicly available.
-    {% endif %}
-  </p>
-  {% if _get_global_offline() %}
-  <form method="post" action="/admin/vybe-status">
-    <input type="hidden" name="action" value="online">
-    <button class="btn" type="submit">🟢 Bring VYBE Online</button>
-  </form>
-  {% else %}
-  <form method="post" action="/admin/vybe-status"
-        onsubmit="return confirm('Take VYBE offline for everyone except the admin panel?');">
-    <input type="hidden" name="action" value="offline">
-    <button class="btn" type="submit">🔴 Take VYBE Offline</button>
-  </form>
-  {% endif %}
-</div>
- login.</h1>
-      <p class="muted">This area is only for the VYBE owner/admin.</p>
-      <form class="form" method="post"><div class="label">Admin password</div>
-      <input type="password" name="password" required autocomplete="current-password">
-      <button class="btn accent">Enter control center</button></form>
-    </div></div>"""
-    return layout("Admin Login",body)
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">PRIVATE CONTROL CENTER</div><h1>Admin access.</h1><p class="muted">This area is separate from the student portal.</p><form class="form" method="post"><input type="password" name="password" required autocomplete="current-password" placeholder="Admin password"><button class="btn accent">Enter control center</button></form></div></div>'''
+    return layout("Admin Login", body)
 
 
 @app.route("/admin/logout")
@@ -869,180 +614,249 @@ def admin_logout():
 @app.route("/admin/panel")
 @admin_required
 def admin_panel():
-    con=db()
-    stats={
-      "students":con.execute("SELECT COUNT(*) c FROM students").fetchone()["c"],
-      "pending":con.execute("SELECT COUNT(*) c FROM students WHERE status='pending'").fetchone()["c"],
-      "issues":con.execute("SELECT COUNT(*) c FROM issues").fetchone()["c"],
-      "resources":con.execute("SELECT COUNT(*) c FROM resources").fetchone()["c"],
-      "solutions":con.execute("SELECT COUNT(*) c FROM solutions WHERE approved=0").fetchone()["c"]
+    con = db()
+    stats = {
+        "students": con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],
+        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
+        "issues": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
     }
-    students=con.execute("SELECT * FROM students ORDER BY id DESC").fetchall()
-    issues_rows=con.execute("""SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id
-                               ORDER BY i.id DESC""").fetchall()
-    solutions=con.execute("""SELECT so.*,i.title,s.name FROM solutions so
-                              JOIN issues i ON i.id=so.issue_id JOIN students s ON s.id=so.student_id
-                              WHERE so.approved=0 ORDER BY so.id DESC""").fetchall()
+    online = setting(con, "vybe_online", "1") == "1"
     con.close()
-    stu=""
+    body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1><div class="grid"><div class="card"><div class="kpi">{stats["students"]}</div><div class="muted">Students</div></div><div class="card"><div class="kpi">{stats["pending"]}</div><div class="muted">Pending</div></div><div class="card"><div class="kpi">{stats["issues"]}</div><div class="muted">Problems</div></div><div class="card"><div class="kpi">{stats["resources"]}</div><div class="muted">Resources</div></div><div class="card"><div class="kpi">{stats["solutions"]}</div><div class="muted">Community solutions</div></div></div><section class="section grid2"><div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p><p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p><form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div><div class="card"><h2>🔐 Security</h2><p class="muted">Password changes require a registered phone passkey.</p><a class="btn dark" href="/admin/password">Open security center →</a></div></section></section>'''
+    return layout("Admin", body, admin=True)
+
+
+@app.route("/admin/status", methods=["POST"])
+@admin_required
+def admin_status():
+    con = db(); current = setting(con, "vybe_online", "1") == "1"; set_setting(con, "vybe_online", "0" if current else "1"); con.commit(); con.close()
+    flash("VYBE is now offline." if current else "VYBE is now online.")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/students")
+@admin_required
+def admin_students():
+    con = db(); students = con.execute("SELECT id,name,student_id,status,created_at,last_login FROM students ORDER BY id DESC").fetchall(); con.close()
+    rows = ""
     for s in students:
-        act=""
-        if s["status"]=="pending":
-            act=f'<a class="btn good" href="/admin/student/{s["id"]}/approve">Approve</a>'
-        elif s["status"]=="approved":
-            act=f'<a class="btn danger" href="/admin/student/{s["id"]}/block">Block</a>'
-        else:
-            act=f'<a class="btn good" href="/admin/student/{s["id"]}/approve">Unblock</a>'
-        act += f' <a class="btn danger" href="/admin/student/{s["id"]}/delete" onclick="return confirm(\'Delete this student?\')">Delete</a>'
-        stu+=f"""<tr><td>{esc(s["name"])}</td><td>{esc(s["student_id"])}</td>
-        <td><span class="pill">{esc(s["status"])}</span></td><td>{act}</td></tr>"""
-    iss=""
-    for i in issues_rows:
-        iss+=f"""<tr><td>#{i["id"]}</td><td>{esc(i["name"])}</td><td>{esc(i["student_id"])}</td>
-        <td>{esc(i["title"])}<br><span class="small">{esc(i["description"])}</span></td><td>{esc(i["status"])}</td>
-        <td><a class="btn dark" href="/admin/issue/{i["id"]}/next">Next status</a></td></tr>"""
-    sol=""
-    for s in solutions:
-        sol+=f"""<tr><td>{esc(s["title"])}</td><td>{esc(s["name"])}</td><td>{esc(s["text"])}</td>
-        </tr>"""
-    body=f"""<section class="section"><div class="adminmark">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
-    <div class="actions">
-      <a class="btn dark" href="/admin/change-password">🔐 Change Password</a>
-      <a class="btn dark" href="#phone-passkey">📱 Register Phone Passkey</a>
-    </div>
-    <div class="grid">
-      <div class="card"><div class="kpi">{stats["students"]}</div><div class="muted">Students</div></div>
-      <div class="card"><div class="kpi">{stats["pending"]}</div><div class="muted">Pending approvals</div></div>
-      <div class="card"><div class="kpi">{stats["issues"]}</div><div class="muted">Campus reports</div></div>
-      <div class="card"><div class="kpi">{stats["resources"]}</div><div class="muted">Resources</div></div>
-      <div class="card"><div class="kpi">{stats["solutions"]}</div><div class="muted">Solutions to moderate</div></div>
-    </div>
-    <div class="section"><div class="card"><h2>Students</h2><div class="actions"><a class="btn danger" href="/admin/students/delete-all" onclick="return confirm(\'DELETE ALL STUDENT DATA?\')">Delete All Students</a></div><div style="overflow:auto"><table><tr><th>Name</th><th>Private Student ID</th><th>Status</th><th>Action</th></tr>{stu or '<tr><td colspan=4>No students.</td></tr>'}</table></div></div></div>
-    <div class="section"><div class="card"><h2>Campus reports</h2><div style="overflow:auto"><table><tr><th>#</th><th>Student</th><th>Private ID</th><th>Report</th><th>Status</th><th>Action</th></tr>{iss or '<tr><td colspan=6>No reports.</td></tr>'}</table></div></div></div>
-    <div class="section"><div class="card"><h2>Community solutions</h2><div style="overflow:auto"><table><tr><th>Issue</th><th>Student</th><th>Solution</th></tr>{sol or '<tr><td colspan=4>No pending solutions.</td></tr>'}</table></div></div></div>
-    <div class="section" id="phone-passkey"><div class="card"><h2>📱 Phone Passkey</h2><p class="muted">Register this browser/phone as the admin passkey. Your phone's biometric or screen lock approves the action.</p><button class="btn accent" type="button" onclick="registerPhonePasskey()">Register Phone Passkey</button><p id="pk-register-status" class="small"></p></div></div>
-    <script>
-    function b64urlToBytes(s){{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s);return Uint8Array.from(b,c=>c.charCodeAt(0));}}
-    function bytesToB64url(buf){{const a=new Uint8Array(buf);let s='';a.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}}
-    async function registerPhonePasskey(){{const st=document.getElementById('pk-register-status');try{{const r=await fetch('/admin/passkey/register/options');const o=await r.json();if(!r.ok)throw new Error(o.error||'Could not start registration');o.challenge=b64urlToBytes(o.challenge);o.user.id=b64urlToBytes(o.user.id);if(o.excludeCredentials)o.excludeCredentials.forEach(c=>c.id=b64urlToBytes(c.id));const c=await navigator.credentials.create({{publicKey:o}});const body={{id:c.id,rawId:bytesToB64url(c.rawId),type:c.type,response:{{clientDataJSON:bytesToB64url(c.response.clientDataJSON),attestationObject:bytesToB64url(c.response.attestationObject)}}}};const vr=await fetch('/admin/passkey/register/verify',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});const result=await vr.json();if(!vr.ok||!result.ok)throw new Error(result.error||'Registration failed');st.textContent='✅ Phone passkey registered.';}}catch(e){{st.textContent='❌ '+e.message;}}}}</script>
-    <div class="section"><div class="card"><h2>Resources + WhatsApp</h2>
-      <p class="muted">Add study resources and keep your WhatsApp Community link available to students.</p>
-      <form class="form" method="post" action="/admin/resource" enctype="multipart/form-data">
-        <input name="title" placeholder="Resource title" required><div class="two">
-        <input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div>
-        <input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea>
-        <input type="file" name="file"><button class="btn accent">Add resource</button>
-      </form>
-      <form class="form" method="post" action="/admin/whatsapp" style="margin-top:20px">
-        <input name="link" placeholder="Official WhatsApp Community invite/link">
-        <button class="btn dark">Save WhatsApp link</button>
-      </form>
-    </div></div>
-    </section>"""
-    return layout("Admin",body)
+        if s["status"] == "pending": action = f'<a class="btn good" href="/admin/student/{s["id"]}/approve">Approve</a>'
+        elif s["status"] == "approved": action = f'<a class="btn danger" href="/admin/student/{s["id"]}/block">Block</a>'
+        else: action = f'<a class="btn good" href="/admin/student/{s["id"]}/unblock">Unblock</a>'
+        rows += f'<tr><td>{esc(s["name"])}</td><td>{esc(s["student_id"])}</td><td><span class="pill">{esc(s["status"])}</span></td><td>{esc(s["created_at"])}</td><td><div class="actions">{action}<a class="btn danger" href="/admin/student/{s["id"]}/delete" onclick="return confirm(\'Delete this student and all dependent records?\')">Delete</a></div></td></tr>'
+    body = f'''<section class="section"><h1>Students.</h1><p class="muted">Student IDs are visible here only to admins.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
+    return layout("Students", body, admin=True)
 
 
 @app.route("/admin/student/<int:sid>/<action>")
 @admin_required
-def student_action(sid,action):
-    if action not in ("approve","block"): abort(400)
-    con=db()
-    status="approved" if action=="approve" else "blocked"
-    con.execute("UPDATE students SET status=? WHERE id=?",(status,sid)); con.commit(); con.close()
-    flash(f"Student {action}d.")
-    return redirect(url_for("admin_panel"))
+def student_action(sid, action):
+    if action not in ("approve", "block", "unblock", "delete"): abort(400)
+    con = db()
+    if action == "delete":
+        # Explicit dependent deletes make this safe on legacy schemas without CASCADE.
+        con.execute("DELETE FROM solutions WHERE student_id=?", (sid,))
+        con.execute("DELETE FROM solutions WHERE issue_id IN (SELECT id FROM issues WHERE student_id=?)", (sid,))
+        con.execute("DELETE FROM issues WHERE student_id=?", (sid,))
+        con.execute("DELETE FROM students WHERE id=?", (sid,))
+    else:
+        status = "approved" if action in ("approve", "unblock") else "blocked"
+        con.execute("UPDATE students SET status=? WHERE id=?", (status, sid))
+    con.commit(); con.close(); flash(f"Student {action}d." if action != "unblock" else "Student unblocked."); return redirect(url_for("admin_students"))
 
 
-@app.route("/admin/student/<int:sid>/delete")
-@admin_required
-def delete_student(sid):
-    con=db()
-    ids=[r["id"] for r in con.execute("SELECT id FROM issues WHERE student_id=?",(sid,)).fetchall()]
-    for iid in ids: con.execute("DELETE FROM solutions WHERE issue_id=?",(iid,))
-    con.execute("DELETE FROM solutions WHERE student_id=?",(sid,))
-    con.execute("DELETE FROM issues WHERE student_id=?",(sid,))
-    con.execute("DELETE FROM students WHERE id=?",(sid,))
-    con.commit(); con.close(); flash("Student data deleted.")
-    return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/students/delete-all")
+@app.route("/admin/students/delete-all", methods=["POST"])
 @admin_required
 def delete_all_students():
-    con=db(); con.execute("DELETE FROM solutions"); con.execute("DELETE FROM issues"); con.execute("DELETE FROM students"); con.commit(); con.close()
-    flash("All student data deleted.")
-    return redirect(url_for("admin_panel"))
+    con = db()
+    # Explicit dependency order; works even where old tables lack ON DELETE CASCADE.
+    con.execute("DELETE FROM solutions")
+    con.execute("DELETE FROM issues")
+    con.execute("DELETE FROM students")
+    con.commit(); con.close(); flash("All students and dependent campus/community records were deleted."); return redirect(url_for("admin_students"))
 
 
-@app.route("/admin/issue/<int:iid>/next")
+@app.route("/admin/resources")
 @admin_required
-def next_issue(iid):
-    con=db(); row=con.execute("SELECT status FROM issues WHERE id=?",(iid,)).fetchone()
-    if row:
-        order=["Open","In progress","Resolved"]
-        status=order[(order.index(row["status"])+1)%len(order)] if row["status"] in order else "Open"
-        con.execute("UPDATE issues SET status=? WHERE id=?",(status,iid)); con.commit()
-    con.close(); return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/solution/<int:sid>/<action>")
-@admin_required
-def solution_action(sid,action):
-    con=db()
-    if action=="approve":
-        con.execute("UPDATE solutions SET approved=1 WHERE id=?",(sid,))
-    elif action=="reject":
-        con.execute("DELETE FROM solutions WHERE id=?",(sid,))
-    else: abort(400)
-    con.commit(); con.close(); return redirect(url_for("admin_panel"))
+def admin_resources():
+    con = db(); resources = con.execute("SELECT * FROM resources ORDER BY id DESC").fetchall(); con.close()
+    rows = "".join(f'<tr><td>{esc(r["title"])}</td><td>{esc(r["resource_type"])}</td><td>{esc(r["course"])} · {esc(r["semester"])} · {esc(r["subject"])}</td><td>{esc(r["created_at"])}</td><td><a class="btn danger" href="/admin/resource/{r["id"]}/delete" onclick="return confirm(\'Delete this resource?\')">Delete</a></td></tr>' for r in resources)
+    body = f'''<section class="section"><h1>Resources.</h1><div class="two"><div class="card"><h2>Add resource</h2><form class="form" method="post" action="/admin/resource" enctype="multipart/form-data"><input name="title" placeholder="Title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea><input type="file" name="file"><button class="btn accent">Add resource</button></form></div><div class="card"><h2>Academic folder</h2><p class="muted">Students see the live Drive folder inside Academics.</p><a class="btn dark" href="/admin/settings">Configure Drive / WhatsApp →</a></div></div><div class="section card tablewrap"><table><tr><th>Title</th><th>Type</th><th>Course / term / subject</th><th>Created</th><th>Action</th></tr>{rows or '<tr><td colspan="5">No resources.</td></tr>'}</table></div></section>'''
+    return layout("Resources", body, admin=True)
 
 
 @app.route("/admin/resource", methods=["POST"])
 @admin_required
 def add_resource():
-    title=request.form.get("title","").strip()[:150]
-    course=request.form.get("course","").strip()[:100]
-    sem=request.form.get("semester","").strip()[:100]
-    subject=request.form.get("subject","").strip()[:100]
-    desc=request.form.get("description","").strip()[:1000]
-    f=request.files.get("file")
-    filename=None
+    title=request.form.get("title","").strip()[:150]; typ=request.form.get("resource_type","Study material")[:80]; course=request.form.get("course","").strip()[:100]; sem=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:100]; desc=request.form.get("description","").strip()[:1000]
+    f=request.files.get("file"); filename=None
     if f and f.filename:
         suffix=Path(f.filename).suffix.lower()
-        if suffix not in ALLOWED_EXT: 
-            flash("That file type is not allowed."); return redirect(url_for("admin_panel"))
-        safe=secrets.token_hex(10)+suffix
-        f.save(UPLOAD_DIR/safe); filename=safe
-    con=db()
-    con.execute("""INSERT INTO resources(title,course,semester,subject,description,file_name,created_at)
-                   VALUES(?,?,?,?,?,?,?)""",(title,course,sem,subject,desc,filename,now()))
-    con.commit(); con.close()
-    flash("Resource added.")
-    return redirect(url_for("admin_panel"))
+        if suffix not in ALLOWED_EXT: flash("That file type is not allowed."); return redirect(url_for("admin_resources"))
+        filename=secrets.token_hex(16)+suffix; f.save(UPLOAD_DIR/filename)
+    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,created_at) VALUES(?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,now())); con.commit(); con.close(); flash("Resource added."); return redirect(url_for("admin_resources"))
 
 
-@app.route("/admin/whatsapp", methods=["POST"])
+@app.route("/admin/resource/<int:rid>/delete")
 @admin_required
-def whatsapp():
-    link=request.form.get("link","").strip()[:500]
-    con=db(); con.execute("UPDATE settings SET value=? WHERE key='whatsapp_link'",(link,)); con.commit(); con.close()
-    flash("WhatsApp Community link saved.")
-    return redirect(url_for("admin_panel"))
+def delete_resource(rid):
+    con=db(); r=con.execute("SELECT file_name FROM resources WHERE id=?",(rid,)).fetchone(); con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
+    if r and r["file_name"]:
+        try: (UPLOAD_DIR/r["file_name"]).unlink(missing_ok=True)
+        except OSError: pass
+    flash("Resource deleted."); return redirect(url_for("admin_resources"))
 
 
-@app.route("/whatsapp")
-@student_required
-def whatsapp_link():
-    con=db(); row=con.execute("SELECT value FROM settings WHERE key='whatsapp_link'").fetchone(); con.close()
-    if row and row["value"]:
-        return redirect(row["value"])
-    flash("The WhatsApp Community link has not been configured yet.")
-    return redirect(url_for("dashboard"))
+@app.route("/admin/problems")
+@admin_required
+def admin_problems():
+    con=db(); rows=con.execute("SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC").fetchall(); con.close()
+    html_rows="".join(f'<tr><td>#{r["id"]}</td><td>{esc(r["name"])}</td><td>{esc(r["student_id"])}</td><td>{esc(r["title"])}<br><span class="small">{esc(r["description"])}</span></td><td>{esc(r["status"])}</td><td><a class="btn dark" href="/admin/problem/{r["id"]}/status">Next status</a></td></tr>' for r in rows)
+    body=f'''<section class="section"><h1>Campus problems.</h1><p class="muted">Admins manage status only. Community solutions are never moderated here.</p><div class="card tablewrap"><table><tr><th>#</th><th>Reporter</th><th>Private Student ID</th><th>Problem</th><th>Status</th><th>Action</th></tr>{html_rows or '<tr><td colspan="6">No problems.</td></tr>'}</table></div></section>'''
+    return layout("Problems",body,admin=True)
 
 
+@app.route("/admin/problem/<int:iid>/status")
+@admin_required
+def problem_status(iid):
+    con=db(); row=con.execute("SELECT status FROM issues WHERE id=?",(iid,)).fetchone()
+    if row:
+        idx=STATUSES.index(row["status"]) if row["status"] in STATUSES else 0; con.execute("UPDATE issues SET status=? WHERE id=?",(STATUSES[(idx+1)%len(STATUSES)],iid)); con.commit()
+    con.close(); return redirect(url_for("admin_problems"))
+
+
+@app.route("/admin/settings", methods=["GET","POST"])
+@admin_required
+def admin_settings():
+    con=db()
+    if request.method=="POST":
+        wa=request.form.get("whatsapp_link","").strip()[:500]; drive=request.form.get("google_drive_url","").strip()[:500]
+        if wa and not valid_url(wa): flash("WhatsApp link must be a valid URL.")
+        elif drive and not valid_url(drive): flash("Google Drive URL must be a valid URL.")
+        else:
+            set_setting(con,"whatsapp_link",wa); set_setting(con,"google_drive_url",drive or DRIVE_URL); con.commit(); flash("Configuration saved.")
+        con.close(); return redirect(url_for("admin_settings"))
+    wa=setting(con,"whatsapp_link",""); drive=setting(con,"google_drive_url",DRIVE_URL); online=setting(con,"vybe_online","1")=="1"; pk=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]; con.close()
+    body=f'''<section class="section"><h1>Settings.</h1><div class="grid2"><div class="card"><h2>☁️ Google Drive</h2><form class="form" method="post"><input name="google_drive_url" value="{esc(drive)}" required><div class="small">Students can only see this link after login.</div><h2 style="margin-top:18px">💬 WhatsApp Community</h2><input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/..." ><button class="btn accent">Save configuration</button></form></div><div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p><form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form><h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a></div></div></section>'''
+    return layout("Settings",body,admin=True)
+
+
+# ---------------------------------------------------------------------------
+# WebAuthn passkey flows. The private key/biometric data stays on the device;
+# VYBE stores only credential/public-key information required by WebAuthn.
+# ---------------------------------------------------------------------------
+@app.route("/passkey/register/options", methods=["POST"])
+@admin_required
+def passkey_register_options():
+    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured on this server."), 503
+    con=db(); existing=con.execute("SELECT credential_id FROM passkeys").fetchall(); con.close()
+    exclude=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in existing]
+    options=generate_registration_options(
+        rp_id=PASSKEY_RP_ID,
+        rp_name="VYBE",
+        user_id=secrets.token_bytes(32),
+        user_name="vybe-admin",
+        authenticator_selection=AuthenticatorSelectionCriteria(authenticator_attachment=AuthenticatorAttachment.PLATFORM, resident_key=ResidentKeyRequirement.PREFERRED),
+        exclude_credentials=exclude,
+    )
+    session["passkey_registration_challenge"] = base64.b64encode(options.challenge).decode("ascii")
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/passkey/register/verify", methods=["POST"])
+@admin_required
+def passkey_register_verify():
+    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured."),503
+    challenge_b64=session.pop("passkey_registration_challenge",None)
+    if not challenge_b64: return jsonify(error="Registration challenge expired."),400
+    try:
+        credential=request.get_json(force=True)
+        verification=verify_registration_response(credential=credential, expected_challenge=base64.b64decode(challenge_b64), expected_rp_id=PASSKEY_RP_ID, expected_origin=PASSKEY_ORIGIN, require_user_verification=True)
+        cid=base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode("ascii")
+        pk=base64.urlsafe_b64encode(verification.credential_public_key).rstrip(b"=").decode("ascii")
+        transports=json.dumps(credential.get("response",{}).get("transports",[]))
+        con=db(); con.execute("INSERT INTO passkeys(credential_id,public_key,sign_count,device_type,backed_up,transports,created_at) VALUES(?,?,?,?,?,?,?)",(cid,pk,int(verification.sign_count),str(verification.credential_device_type),bool(verification.credential_backed_up),transports,now())); con.commit(); con.close()
+        return jsonify(ok=True)
+    except Exception as exc:
+        return jsonify(error="Passkey verification failed.", detail=str(exc) if app.debug else None),400
+
+
+@app.route("/passkey/auth/options", methods=["POST"])
+@admin_required
+def passkey_auth_options():
+    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured."),503
+    con=db(); rows=con.execute("SELECT credential_id FROM passkeys").fetchall(); con.close()
+    if not rows: return jsonify(error="Register a phone passkey first."),400
+    allow=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in rows]
+    options=generate_authentication_options(rp_id=PASSKEY_RP_ID, allow_credentials=allow, user_verification=UserVerificationRequirement.REQUIRED)
+    session["passkey_auth_challenge"] = base64.b64encode(options.challenge).decode("ascii")
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/passkey/auth/verify", methods=["POST"])
+@admin_required
+def passkey_auth_verify():
+    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured."),503
+    challenge_b64=session.pop("passkey_auth_challenge",None)
+    if not challenge_b64: return jsonify(error="Authentication challenge expired."),400
+    try:
+        credential=request.get_json(force=True)
+        cid=credential.get("id","")
+        con=db(); row=con.execute("SELECT * FROM passkeys WHERE credential_id=?",(cid,)).fetchone(); con.close()
+        if not row: return jsonify(error="Unknown passkey."),403
+        verification=verify_authentication_response(credential=credential, expected_challenge=base64.b64decode(challenge_b64), expected_rp_id=PASSKEY_RP_ID, expected_origin=PASSKEY_ORIGIN, credential_public_key=base64.urlsafe_b64decode(row["public_key"]+"="*((4-len(row["public_key"])%4)%4)), credential_current_sign_count=int(row["sign_count"]), require_user_verification=True)
+        con=db(); con.execute("UPDATE passkeys SET sign_count=?,device_type=?,backed_up=? WHERE id=?",(int(verification.new_sign_count),str(verification.credential_device_type),bool(verification.credential_backed_up),row["id"])); con.commit(); con.close()
+        session["passkey_verified"] = True
+        return jsonify(ok=True)
+    except Exception as exc:
+        session["passkey_verified"] = False
+        return jsonify(error="Passkey verification failed.", detail=str(exc) if app.debug else None),403
+
+
+@app.route("/admin/password", methods=["GET", "POST"])
+@admin_required
+def admin_password():
+    if request.method == "POST":
+        # POST is deliberately not allowed to change the password without a fresh passkey ceremony.
+        if not session.get("passkey_verified"):
+            flash("Verify the phone passkey before changing the password.")
+            return redirect(url_for("admin_password"))
+        current=request.form.get("current_password",""); new=request.form.get("new_password",""); confirm=request.form.get("confirm_password","")
+        con=db(); stored=admin_password_hash(con)
+        if not check_password(current,stored): con.close(); flash("Current password is incorrect."); return redirect(url_for("admin_password"))
+        if len(new)<12 or new!=confirm: con.close(); flash("New passwords must match and be at least 12 characters."); return redirect(url_for("admin_password"))
+        set_setting(con,"admin_password_hash",hash_password(new)); con.commit(); con.close(); session["passkey_verified"]=False; flash("Admin password changed. Verify the phone passkey again for another change."); return redirect(url_for("admin_panel"))
+    con=db(); count=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]; con.close()
+    web_status="ready" if webauthn_configured() else "not configured"
+    body=f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1><div class="two"><div class="card"><h2>📱 Register Phone Passkey</h2><p class="muted">Use your phone's fingerprint, Face ID or device PIN/passcode. VYBE does not receive your biometric data.</p><p class="small">WebAuthn: {web_status} · Credentials: {count}</p><button class="btn accent" id="registerPasskey">Register Phone Passkey</button><div id="pkMsg" class="small" style="margin-top:10px"></div></div><div class="card"><h2>🔐 Change Password</h2><p class="muted">A successful phone passkey verification is required before the password can be changed.</p><button class="btn dark" id="verifyPasskey">Verify Phone Passkey</button><form class="form" method="post" style="margin-top:16px"><input type="password" name="current_password" placeholder="Current password" required><input type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required><input type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required><button class="btn accent">Change Password</button></form><div id="authMsg" class="small" style="margin-top:10px"></div></div></div></section><script>{WEBAUTHN_JS}</script>'''
+    return layout("Security",body,admin=True)
+
+
+WEBAUTHN_JS = r'''
+function b64ToBuf(v){v=v.replace(/-/g,"+").replace(/_/g,"/");while(v.length%4)v+="=";return Uint8Array.from(atob(v),c=>c.charCodeAt(0)).buffer}
+function bufToB64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}
+function decodeCreation(o){o.challenge=b64ToBuf(o.challenge);o.user.id=b64ToBuf(o.user.id);(o.excludeCredentials||[]).forEach(x=>x.id=b64ToBuf(x.id));return o}
+function decodeRequest(o){o.challenge=b64ToBuf(o.challenge);(o.allowCredentials||[]).forEach(x=>x.id=b64ToBuf(x.id));return o}
+function serializeCredential(c){return {id:c.id,rawId:bufToB64(c.rawId),type:c.type,response:{clientDataJSON:bufToB64(c.response.clientDataJSON),attestationObject:c.response.attestationObject?bufToB64(c.response.attestationObject):undefined,authenticatorData:c.response.authenticatorData?bufToB64(c.response.authenticatorData):undefined,signature:c.response.signature?bufToB64(c.response.signature):undefined,userHandle:c.response.userHandle?bufToB64(c.response.userHandle):undefined},clientExtensionResults:c.getClientExtensionResults?c.getClientExtensionResults():{}}}
+async function postJSON(url,payload){let r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});let j=await r.json();if(!r.ok)throw new Error(j.error||"Request failed");return j}
+const reg=document.getElementById("registerPasskey");if(reg)reg.onclick=async()=>{try{let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});await postJSON("/passkey/register/verify",serializeCredential(c));document.getElementById("pkMsg").textContent="Phone passkey registered successfully.";location.reload()}catch(e){document.getElementById("pkMsg").textContent=e.message}}
+const ver=document.getElementById("verifyPasskey");if(ver)ver.onclick=async()=>{try{let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});await postJSON("/passkey/auth/verify",serializeCredential(c));document.getElementById("authMsg").textContent="Phone passkey verified. You can now change the password."}catch(e){document.getElementById("authMsg").textContent=e.message}}
+'''
+
+
+@app.route("/admin/passkey/reset-session", methods=["POST"])
+@admin_required
+def reset_passkey_session():
+    session["passkey_verified"] = False
+    return redirect(url_for("admin_password"))
+
+
+# Initialize only after all helpers/decorators are defined, but before the app
+# is served. This also guarantees the database is ready during import under Gunicorn.
 init_db()
-ensure_admin_password()
 
 if __name__ == "__main__":
-    port=int(os.environ.get("PORT","5000"))
-    app.run(host="0.0.0.0",port=port,debug=False)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
