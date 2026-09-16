@@ -1,4 +1,4 @@
 Flask>=3.1,<4
-Gunicorn>=23,<24
+gunicorn>=23,<24
 psycopg[binary]>=3.2,<4
-webauthn==3.0.0
+webauthn>=2.7,<3
