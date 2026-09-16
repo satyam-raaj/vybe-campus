@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: vybe
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn VYBE_PUBLIC:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: VYBE_SECRET_KEY
+        generateValue: true
+      - key: VYBE_ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: VYBE_DRIVE_URL
+        value: https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing
