@@ -686,61 +686,55 @@ def forgot_password():
             flash("Enter your full name and Student ID.")
             return redirect(url_for("forgot_password"))
         con = db()
-        student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
-        if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
-            con.close(); flash("If the account is eligible, the password-change request has been sent to the admin."); return redirect(url_for("forgot_password"))
-        existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
-        if existing:
-            session["password_reset_request_id"] = existing["id"]
-            con.close(); flash("Your password-change request is already waiting for admin approval or has already been approved."); return redirect(url_for("forgot_password"))
-        requested_at = now()
         try:
-            con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", requested_at))
-            request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (student["id"],)).fetchone()
-            if not request_row:
-                raise RuntimeError("Password reset request could not be created")
-            request_id = request_row["id"]
-            con.commit()
-        except Exception:
+            student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
+            if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
+                flash("If the account is eligible, the password-change request has been sent to the admin.")
+                return redirect(url_for("forgot_password"))
+            existing = con.execute("SELECT id,status FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
+            if existing:
+                session["password_reset_request_id"] = existing["id"]
+                flash("Admin has already approved your request. You can change your password below." if existing["status"] == "approved" else "Your password-change request is waiting for admin approval.")
+                return redirect(url_for("forgot_password"))
             try:
+                con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", now()))
+                request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (student["id"],)).fetchone()
+                if not request_row:
+                    raise RuntimeError("Password reset request could not be created")
+                request_id = request_row["id"]
+                con.commit()
+            except Exception:
                 con.rollback()
-            finally:
-                con.close()
-            flash("We couldn't start the password-change request right now. Please try again in a moment.")
+                flash("We couldn't start the password-change request right now. Please try again in a moment.")
+                return redirect(url_for("forgot_password"))
+            session["password_reset_request_id"] = request_id
+            try:
+                create_admin_notification("password_reset", "Password change request", f"Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
+            except Exception:
+                app.logger.exception("Non-fatal password-reset notification failure")
+            flash("Request sent successfully. Keep this page open while the admin reviews it.")
             return redirect(url_for("forgot_password"))
-        con.close()
-        session["password_reset_request_id"] = request_id
-        # Notification failure is deliberately non-fatal. The request is already
-        # committed, and the student can keep this page open for approval.
-        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
-        flash("Request sent. Keep this page open — the reset code will appear here automatically after admin approval.")
-        return redirect(url_for("forgot_password"))
+        finally:
+            con.close()
 
     request_id = session.get("password_reset_request_id")
     waiting_ui = ""
     if request_id:
         waiting_ui = """
         <div class="notice" id="resetStatusBox" style="margin-top:16px">
-          <strong id="resetStatusTitle">Waiting for admin approval…</strong>
-          <p class="small" id="resetStatusText" style="margin:7px 0 0">Keep this page open. VYBE will automatically place your one-time reset code here when the admin approves your request.</p>
-          <div id="resetCodePanel" style="display:none;margin-top:14px">
-            <div class="label">Your reset code</div>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input id="autoResetCode" type="text" inputmode="numeric" readonly style="font-size:20px;letter-spacing:4px;font-weight:800;text-align:center">
-              <button type="button" class="btn dark" id="copyResetCode">Copy</button>
-            </div>
-            <p class="small" style="margin-top:8px">Code loaded automatically. Continue below to set your new password.</p>
-          </div>
+          <strong id="resetStatusTitle">Waiting for admin approval...</strong>
+          <p class="small" id="resetStatusText" style="margin:7px 0 0">Your request has been sent. Keep this page open; VYBE will automatically update it when the admin approves you.</p>
         </div>
         <div id="inlineResetForm" style="display:none;margin-top:16px">
           <div class="card" style="padding:18px">
-            <h2>Set your new password.</h2>
+            <div class="badge">APPROVED</div>
+            <h2>Admin approved your request</h2>
+            <p class="muted">You can now change your password. Create a new password below. Your existing password is never shown to the admin.</p>
             <form class="form" method="post" action="/reset-password">
-              <input type="hidden" name="student_id" id="autoResetStudentId">
-              <input type="hidden" name="approval_code" id="autoResetCodeHidden">
+              <input type="hidden" name="request_id" value="{rid}">
               <div><div class="label">New password</div><div style="position:relative"><input id="autoNewPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your new password"><button type="button" class="btn dark toggle-password" data-target="autoNewPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
               <div><div class="label">Confirm new password</div><div style="position:relative"><input id="autoConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm your new password"><button type="button" class="btn dark toggle-password" data-target="autoConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
-              <button class="btn accent" type="submit">Change password →</button>
+              <button class="btn accent" type="submit">Change password</button>
             </form>
           </div>
         </div>
@@ -749,44 +743,35 @@ def forgot_password():
           const requestId = {rid};
           const statusTitle = document.getElementById("resetStatusTitle");
           const statusText = document.getElementById("resetStatusText");
-          const panel = document.getElementById("resetCodePanel");
-          const codeInput = document.getElementById("autoResetCode");
-          const codeHidden = document.getElementById("autoResetCodeHidden");
-          const studentHidden = document.getElementById("autoResetStudentId");
           const form = document.getElementById("inlineResetForm");
-          const copy = document.getElementById("copyResetCode");
           let timer = null;
           async function checkResetStatus(){
             try{
               const r = await fetch(`/forgot-password/status?request_id=${requestId}`, {credentials:"same-origin", cache:"no-store"});
+              if(!r.ok) return;
               const j = await r.json();
-              if(j.status === "approved" && j.code){
-                codeInput.value = j.code;
-                codeHidden.value = j.code;
-                studentHidden.value = j.student_id || "";
-                panel.style.display = "block";
+              if(j.status === "approved"){
+                statusTitle.textContent = "Admin approved your request";
+                statusText.textContent = "You can now change your password using the form below.";
                 form.style.display = "block";
-                statusTitle.textContent = "Admin approved your request ✓";
-                statusText.textContent = "Your one-time reset code is ready below. It expires after 15 minutes and can only be used once.";
                 if(timer) clearInterval(timer);
               } else if(j.status === "rejected"){
                 statusTitle.textContent = "Password-change request rejected";
                 statusText.textContent = "Please submit a new request if you still need to change your password.";
                 if(timer) clearInterval(timer);
-              } else if(j.status === "used" || j.status === "expired"){
+              } else if(j.status === "used" || j.status === "expired" || j.status === "invalid"){
                 statusTitle.textContent = "This reset request is no longer active";
                 statusText.textContent = "Please submit a new password-change request.";
                 if(timer) clearInterval(timer);
               }
-            }catch(e){}
+            }catch(e){ }
           }
-          if(copy) copy.onclick=async()=>{try{await navigator.clipboard.writeText(codeInput.value);copy.textContent="Copied ✓";setTimeout(()=>copy.textContent="Copy",1200)}catch(e){codeInput.select();document.execCommand("copy");copy.textContent="Copied ✓";setTimeout(()=>copy.textContent="Copy",1200)}};
           checkResetStatus();
           timer=setInterval(checkResetStatus, 2500);
         })();
         </script>
         """.format(rid=int(request_id))
-    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. You can keep this page open; after approval, VYBE will automatically put your one-time reset code on this page.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/reset-password">I already have a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
+    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Enter your name and Student ID to request a password change. After admin approval, this page will unlock the new-password form automatically.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
     return layout("Forgot Password", body)
 
 
@@ -799,48 +784,56 @@ def forgot_password_status():
     if session_request_id is None or int(session_request_id) != int(request_id):
         return jsonify({"status": "invalid"}), 403
     con = db()
-    row = con.execute("SELECT r.id,r.student_id,r.status,r.approval_code_token,r.expires_at,s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
-    if not row:
-        con.close(); return jsonify({"status": "invalid"}), 404
-    if row["status"] == "approved":
-        if not row["expires_at"] or row["expires_at"] <= now():
-            con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=?", (row["id"],))
-            con.commit(); con.close()
-            return jsonify({"status": "expired"})
-        try:
-            payload = reset_code_serializer.loads(row["approval_code_token"] or "", max_age=15*60)
-            code = str(payload.get("code", ""))
-            if payload.get("request_id") != row["id"] or not re.fullmatch(r"\d{6}", code):
-                raise BadSignature("invalid reset payload")
-        except (BadSignature, SignatureExpired):
-            con.close(); return jsonify({"status": "approved", "code": "", "student_id": row["student_sid"]})
+    try:
+        row = con.execute("SELECT id,status,expires_at FROM password_reset_requests WHERE id=?", (int(request_id),)).fetchone()
+        if not row:
+            return jsonify({"status": "invalid"}), 404
+        if row["status"] == "approved":
+            return jsonify({"status": "approved"})
+        if row["status"] in ("rejected", "used", "expired"):
+            return jsonify({"status": row["status"]})
+        return jsonify({"status": "pending"})
+    finally:
         con.close()
-        return jsonify({"status": "approved", "code": code, "student_id": row["student_sid"]})
-    if row["status"] == "rejected":
-        con.close(); return jsonify({"status": "rejected"})
-    if row["status"] == "used":
-        con.close(); return jsonify({"status": "used"})
-    con.close(); return jsonify({"status": "pending"})
 
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
-    if request.method == "POST":
-        sid = request.form.get("student_id", "").strip()[:80]
-        code = request.form.get("approval_code", "").strip()[:20]
-        new_password = request.form.get("password", "")
-        confirm = request.form.get("confirm_password", "")
-        if len(new_password) < 6 or new_password != confirm or not sid or not code:
-            flash("Enter a valid reset code and matching password of at least 6 characters."); return redirect(url_for("reset_password"))
-        con = db()
-        row = con.execute("SELECT r.id,r.student_id,r.approval_code_hash,r.expires_at,s.status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE s.student_id=? AND r.status='approved' ORDER BY r.id DESC LIMIT 1", (sid,)).fetchone()
-        valid = bool(row and row["expires_at"] and row["expires_at"] > now() and check_password(code, row["approval_code_hash"]))
-        if not valid:
-            con.close(); flash("The reset code is invalid or expired."); return redirect(url_for("reset_password"))
-        con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
-        con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
-        con.commit(); con.close(); flash("Password changed successfully. You can now log in with your new password."); return redirect(url_for("login"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time reset code shown automatically on your password-recovery page after admin approval, or enter the code you already received. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Reset code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
+    request_id = session.get("password_reset_request_id")
+    if not request_id:
+        flash("Please request a password change first.")
+        return redirect(url_for("forgot_password"))
+    con = db()
+    try:
+        row = con.execute("SELECT r.id,r.student_id,r.status,r.expires_at,s.status AS student_status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
+        if not row or row["status"] != "approved" or row["student_status"] == "blocked":
+            flash("Your password-change request has not been approved yet or is no longer active.")
+            return redirect(url_for("forgot_password"))
+        if row["expires_at"] and row["expires_at"] <= now():
+            con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=?", (row["id"],))
+            con.commit()
+            session.pop("password_reset_request_id", None)
+            flash("Your password-change approval has expired. Please submit a new request.")
+            return redirect(url_for("forgot_password"))
+        if request.method == "POST":
+            posted_request_id = request.form.get("request_id", "").strip()
+            new_password = request.form.get("password", "")
+            confirm = request.form.get("confirm_password", "")
+            if posted_request_id != str(request_id):
+                flash("This password-change session is invalid. Please start again.")
+                return redirect(url_for("forgot_password"))
+            if len(new_password) < 6 or new_password != confirm:
+                flash("New passwords must match and be at least 6 characters.")
+                return redirect(url_for("forgot_password"))
+            con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
+            con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
+            con.commit()
+            session.pop("password_reset_request_id", None)
+            flash("Password changed successfully. You can now log in with your new password.")
+            return redirect(url_for("login"))
+    finally:
+        con.close()
+    body = """<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Change password</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Back to password recovery</a></p></div></div>""".format(rid=int(request_id))
     return layout("Reset Password", body)
 
 
@@ -1582,36 +1575,40 @@ def admin_password_requests():
     html_rows=[]
     for r in rows:
         if r["status"] == "pending":
-            action = f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form></div>'''
+            action = f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         elif r["status"] == "approved":
-            action = '<span class="pill status-good">Approved · code shown on student page</span>'
+            action = f'''<div class="actions"><span class="pill status-good">Approved · password form unlocked</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         else:
-            action = f'<span class="pill">{esc(r["status"])}</span>'
+            action = f'''<div class="actions"><span class="pill">{esc(r["status"])}</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         html_rows.append(f'''<tr><td>{esc(r["requested_at"])}</td><td><strong>{esc(r["student_name"])}</strong><br><span class="small">{esc(r["student_sid"])}</span></td><td><span class="pill">{esc(r["status"])}</span></td><td>{esc(r["approved_at"] or '—')}<br><span class="small">{esc(r["expires_at"] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, a one-time 6-digit reset code appears automatically on the student's open VYBE password-recovery page. Admins never see the student's existing password.</p><div class="notice">The reset code expires after 15 minutes and is invalid after one use. The reset code is displayed only on the student recovery page after approval.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, the student's open VYBE password-recovery page automatically unlocks a new-password form. No reset code is shown, and admins never see the student's existing password.</p><div class="notice">After approval, the student has 15 minutes to set a new password. The approval can only be used once.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
 
 
 @app.route("/admin/password-request/<int:rid>/<action>", methods=["POST"])
 @admin_required
 def admin_password_request_action(rid, action):
-    if action not in ("approve", "reject"):
+    if action not in ("approve", "reject", "delete"):
         abort(400)
     con=db()
     row=con.execute("SELECT r.*,s.name,s.student_id FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (rid,)).fetchone()
-    if not row or row["status"] != "pending":
+    if not row:
+        con.close(); flash("Password request not found."); return redirect(url_for("admin_password_requests"))
+    if action == "delete":
+        con.execute("DELETE FROM password_reset_requests WHERE id=?", (rid,))
+        con.commit(); con.close()
+        flash("Password-change request deleted.")
+        return redirect(url_for("admin_password_requests"))
+    if row["status"] != "pending":
         con.close(); flash("This password request is no longer pending."); return redirect(url_for("admin_password_requests"))
     if action == "reject":
         con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,)); con.commit(); con.close()
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
 
-    code=f"{secrets.randbelow(1000000):06d}"
     approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    token = reset_code_serializer.dumps({"request_id": rid, "code": code})
-    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=?, approval_code_token=?, expires_at=? WHERE id=?", (approved, hash_password(code), token, expires, rid))
+    con.execute("UPDATE password_reset_requests SET status='approved', approval_code_hash=NULL, approval_code_token=NULL, expires_at=? WHERE id=?", (approved, expires, rid))
     con.commit(); con.close()
-
-    flash("Approved. The reset code is now available automatically on the student's open VYBE page. It expires in 15 minutes.")
+    flash("Approved. The student can now set a new password directly on their recovery page for the next 15 minutes.")
     return redirect(url_for("admin_password_requests"))
 
 
