@@ -1368,9 +1368,7 @@ def admin_community_chat():
     return layout("Community Chat Control", body, admin=True)
 
 
-@app.route("/admin/notifications")
-@admin_required
-@app.route("/admin/password-requests")
+@app.route("/admin/password-requests", endpoint="admin_password_requests")
 @admin_required
 def admin_password_requests():
     con = db()
@@ -1409,6 +1407,8 @@ def admin_password_request_action(rid, action):
     return redirect(url_for("admin_password_requests"))
 
 
+@app.route("/admin/notifications", endpoint="admin_notifications")
+@admin_required
 def admin_notifications():
     con = db()
     rows = con.execute(
