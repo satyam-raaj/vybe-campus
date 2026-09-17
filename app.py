@@ -3,6 +3,7 @@
 
 import os
 import re
+import base64
 import json
 import secrets
 import hashlib
@@ -12,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, jsonify, render_template_string
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -300,14 +302,6 @@ def init_db():
                 id BIGSERIAL PRIMARY KEY,
                 logged_at_ist TEXT NOT NULL,
                 success BOOLEAN NOT NULL DEFAULT FALSE,
-                event TEXT NOT NULL DEFAULT 'login',
-                ip_address TEXT,
-                user_agent TEXT
-            )""",
-            """CREATE TABLE IF NOT EXISTS admin_login_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                logged_at_ist TEXT NOT NULL,
-                success INTEGER NOT NULL DEFAULT 0,
                 event TEXT NOT NULL DEFAULT 'login',
                 ip_address TEXT,
                 user_agent TEXT
@@ -657,9 +651,8 @@ def forgot_password():
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
-        email = request.form.get("email", "").strip().lower()[:254]
-        if not sid or not name or not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
-            flash("Enter your name, Student ID and a valid email address.")
+        if not sid or not name:
+            flash("Enter your full name and Student ID.")
             return redirect(url_for("forgot_password"))
         con = db()
         student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
@@ -675,7 +668,7 @@ def forgot_password():
         request_id = request_row["id"]
         con.commit(); con.close()
         session["password_reset_request_id"] = request_id
-        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nEmail: {email}", student["id"])
+        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
         flash("Request sent. Keep this page open — the reset code will appear here automatically after admin approval.")
         return redirect(url_for("forgot_password"))
 
@@ -749,7 +742,7 @@ def forgot_password():
         })();
         </script>
         """.format(rid=int(request_id))
-    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. You can keep this page open; after approval, VYBE will automatically put your one-time reset code on this page.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email address</div><input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="your@email.com"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/reset-password">I already have a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
+    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. You can keep this page open; after approval, VYBE will automatically put your one-time reset code on this page.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/reset-password">I already have a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
     return layout("Forgot Password", body)
 
 
