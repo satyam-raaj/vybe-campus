@@ -477,6 +477,20 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
+    # Optional one-time emergency security reset. Set VYBE_SECURITY_RESET_TOKEN
+    # in Render to a private value when the previous admin password/passkeys are
+    # no longer available. A different token performs another reset; the same
+    # token is ignored after the first successful reset. Student data is untouched.
+    reset_token = os.environ.get("VYBE_SECURITY_RESET_TOKEN", "").strip()
+    if reset_token:
+        previous_token = setting(con, "security_reset_token_used", "")
+        if reset_token != previous_token:
+            con.execute("DELETE FROM passkeys")
+            set_setting(con, "admin_password_hash", hash_password(DEFAULT_ADMIN_PASSWORD))
+            set_setting(con, "security_reset_token_used", reset_token)
+            set_setting(con, "vybe_online", "1")
+            con.commit()
+
     con.commit()
     con.close()
 
@@ -1485,7 +1499,7 @@ def admin_password():
     con.close()
     web_status = "ready" if webauthn_configured() else "not configured"
     if count == 0:
-        registration_note = "No passkey exists yet. Register your first passkey after entering the admin password."
+        registration_note = "No passkey exists. Register your new phone passkey now."
     elif session.get("passkey_verified"):
         registration_note = "Current passkey verified. You may register another passkey."
     else:
@@ -1493,7 +1507,7 @@ def admin_password():
     body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1>
     <div class="two">
       <div class="card"><h2>📱 Passkeys</h2>
-        <p class="muted">Current credentials: {count}. Adding a second or later passkey requires verification of an existing passkey first.</p>
+        <p class="muted">Current credentials: {count}. If this shows 0, you can register a fresh phone passkey without an old passkey.</p>
         <p class="small">WebAuthn: {web_status}</p>
         <button class="btn accent" id="registerPasskey">Register New Passkey</button>
         <div id="pkMsg" class="small" style="margin-top:10px">{esc(registration_note)}</div>
