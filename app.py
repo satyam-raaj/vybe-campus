@@ -198,16 +198,36 @@ def send_whatsapp_notification(message, recipient_override=None):
 
 
 def create_admin_notification(kind, title, message, student_id=None):
-    sent = send_whatsapp_notification(message)
-    con = db()
+    """Create an admin alert without ever breaking the student's request flow.
+
+    WhatsApp delivery and the notification audit are best-effort: a third-party
+    notification problem or an older database schema must never turn a normal
+    password-reset request into a 500 response.
+    """
+    sent = False
     try:
-        con.execute(
-            "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
-            (kind, title, message, student_id, now(), bool(sent)),
-        )
-        con.commit()
-    finally:
-        con.close()
+        sent = send_whatsapp_notification(message)
+    except Exception:
+        sent = False
+
+    try:
+        con = db()
+        try:
+            con.execute(
+                "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
+                (kind, title, message, student_id, now(), bool(sent)),
+            )
+            con.commit()
+        finally:
+            con.close()
+    except Exception:
+        # The admin notification is supplementary. Never fail the user's
+        # password-reset request because this optional audit/alert failed.
+        try:
+            con.rollback()
+            con.close()
+        except Exception:
+            pass
     return sent
 
 
@@ -674,11 +694,24 @@ def forgot_password():
             session["password_reset_request_id"] = existing["id"]
             con.close(); flash("Your password-change request is already waiting for admin approval or has already been approved."); return redirect(url_for("forgot_password"))
         requested_at = now()
-        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", requested_at))
-        request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND requested_at=? ORDER BY id DESC LIMIT 1", (student["id"], requested_at)).fetchone()
-        request_id = request_row["id"]
-        con.commit(); con.close()
+        try:
+            con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", requested_at))
+            request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (student["id"],)).fetchone()
+            if not request_row:
+                raise RuntimeError("Password reset request could not be created")
+            request_id = request_row["id"]
+            con.commit()
+        except Exception:
+            try:
+                con.rollback()
+            finally:
+                con.close()
+            flash("We couldn't start the password-change request right now. Please try again in a moment.")
+            return redirect(url_for("forgot_password"))
+        con.close()
         session["password_reset_request_id"] = request_id
+        # Notification failure is deliberately non-fatal. The request is already
+        # committed, and the student can keep this page open for approval.
         create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
         flash("Request sent. Keep this page open — the reset code will appear here automatically after admin approval.")
         return redirect(url_for("forgot_password"))
