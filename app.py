@@ -1,20 +1,20 @@
+# VYBE V14 — clean page-based password reset + IST admin login audit
+# Page-based password reset. Reset codes appear only on the student recovery page after admin approval.
+
 import os
 import re
 import json
-import base64
 import secrets
 import hashlib
 import html
 import sqlite3
-import smtplib
-from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, jsonify, render_template_string
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 try:
     import psycopg
@@ -22,6 +22,8 @@ try:
 except ImportError:
     psycopg = None
     dict_row = None
+
+
 
 try:
     from webauthn import (
@@ -56,6 +58,9 @@ DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXW
 ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
+
+RESET_CODE_SALT = "vybe-password-reset-code-v1"
+reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 
 app = Flask(__name__)
 app.config.update(
@@ -111,6 +116,22 @@ def db():
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def now_ist():
+    """Current Indian Standard Time for admin audit records."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+
+
+def record_admin_login(con, success, event="login"):
+    """Record admin authentication activity without storing passwords."""
+    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:100]
+    user_agent = request.headers.get("User-Agent", "")[:500]
+    con.execute(
+        "INSERT INTO admin_login_logs(logged_at_ist,success,event,ip_address,user_agent) VALUES(?,?,?,?,?)",
+        (now_ist(), 1 if success else 0, event[:40], ip, user_agent),
+    )
 
 
 def esc(value):
@@ -170,43 +191,6 @@ def send_whatsapp_notification(message, recipient_override=None):
         )
         with urlopen(req, timeout=8) as response:
             return 200 <= response.status < 300
-    except Exception:
-        return False
-
-
-def send_password_reset_email(recipient, student_name, student_id, code):
-    host = os.environ.get("VYBE_SMTP_HOST", "smtp.gmail.com").strip()
-    try:
-        port = int(os.environ.get("VYBE_SMTP_PORT", "587"))
-    except ValueError:
-        port = 587
-    username = os.environ.get("VYBE_SMTP_USER", "").strip()
-    password = os.environ.get("VYBE_SMTP_PASSWORD", "").strip()
-    sender = os.environ.get("VYBE_SMTP_FROM", username).strip() or username
-    if not username or not password or not sender or not recipient:
-        return False
-    msg = EmailMessage()
-    msg["Subject"] = "VYBE password reset code"
-    msg["From"] = sender
-    msg["To"] = recipient
-    msg.set_content(
-        f"Hello {student_name},\n\n"
-        f"Your VYBE password reset code is: {code}\n\n"
-        "This code is valid for 15 minutes and can be used only once.\n"
-        "If you did not request a password reset, you can ignore this email.\n\n"
-        "VYBE\nYour Campus. Your Community. Your Space."
-    )
-    try:
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=12) as smtp:
-                smtp.login(username, password)
-                smtp.send_message(msg)
-        else:
-            with smtplib.SMTP(host, port, timeout=12) as smtp:
-                smtp.ehlo(); smtp.starttls(); smtp.ehlo()
-                smtp.login(username, password)
-                smtp.send_message(msg)
-        return True
     except Exception:
         return False
 
@@ -312,14 +296,30 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE
             )""",
+            """CREATE TABLE IF NOT EXISTS admin_login_logs (
+                id BIGSERIAL PRIMARY KEY,
+                logged_at_ist TEXT NOT NULL,
+                success BOOLEAN NOT NULL DEFAULT FALSE,
+                event TEXT NOT NULL DEFAULT 'login',
+                ip_address TEXT,
+                user_agent TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS admin_login_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                logged_at_ist TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 0,
+                event TEXT NOT NULL DEFAULT 'login',
+                ip_address TEXT,
+                user_agent TEXT
+            )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id BIGSERIAL PRIMARY KEY,
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
-                email_address TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
+                approval_code_token TEXT,
                 expires_at TEXT,
                 used_at TEXT
             )""",
@@ -394,9 +394,9 @@ def init_db():
                 student_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
-                email_address TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
+                approval_code_token TEXT,
                 expires_at TEXT,
                 used_at TEXT,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
@@ -421,10 +421,10 @@ def init_db():
         con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
     if not con.is_pg:
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
-        if "email_address" not in reset_cols:
-            con.execute("ALTER TABLE password_reset_requests ADD COLUMN email_address TEXT")
+        if "approval_code_token" not in reset_cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN approval_code_token TEXT")
     else:
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS email_address TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
 
     defaults = {
         "whatsapp_link": "",
@@ -575,7 +575,7 @@ def layout(title, body, admin=False):
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>document.querySelectorAll(".toggle-password").forEach(btn=>btn.addEventListener("click",()=>{{const el=document.getElementById(btn.dataset.target);if(!el)return;el.type=el.type==="password"?"text":"password";btn.textContent=el.type==="password"?"👁":"🙈";}}));</script></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";btn.setAttribute("aria-label",show?"Hide password":"View password");btn.setAttribute("title",show?"Hide password":"View password");}});}})();</script></body></html>'''
 
 
 @app.route("/offline")
@@ -624,7 +624,7 @@ def register():
         finally:
             con.close()
         return redirect(url_for("login"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div style="position:relative"><input id="registerPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="btn dark toggle-password" data-target="registerPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div style="position:relative"><input id="registerPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="btn dark toggle-password" data-target="registerPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -649,7 +649,7 @@ def login():
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
         session.clear(); session["student_db_id"] = row["id"]
         return redirect(url_for("dashboard"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div style="position:relative"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="btn dark toggle-password" data-target="loginPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div style="position:relative"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="btn dark toggle-password" data-target="loginPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p></div></div>'''
     return layout("Student Login", body)
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -667,14 +667,124 @@ def forgot_password():
             con.close(); flash("If the account is eligible, the password-change request has been sent to the admin."); return redirect(url_for("forgot_password"))
         existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
         if existing:
-            con.close(); flash("A password-change request is already waiting for admin approval or is already approved."); return redirect(url_for("forgot_password"))
-        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,email_address) VALUES(?,?,?,?)", (student["id"], "pending", now(), email))
+            session["password_reset_request_id"] = existing["id"]
+            con.close(); flash("Your password-change request is already waiting for admin approval or has already been approved."); return redirect(url_for("forgot_password"))
+        requested_at = now()
+        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", requested_at))
+        request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND requested_at=? ORDER BY id DESC LIMIT 1", (student["id"], requested_at)).fetchone()
+        request_id = request_row["id"]
         con.commit(); con.close()
+        session["password_reset_request_id"] = request_id
         create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nEmail: {email}", student["id"])
-        flash("Request sent to admin. You can change your password only after admin approval.")
+        flash("Request sent. Keep this page open — the reset code will appear here automatically after admin approval.")
         return redirect(url_for("forgot_password"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time reset code will be sent to the email address you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email address</div><input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="your@email.com"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
+
+    request_id = session.get("password_reset_request_id")
+    waiting_ui = ""
+    if request_id:
+        waiting_ui = """
+        <div class="notice" id="resetStatusBox" style="margin-top:16px">
+          <strong id="resetStatusTitle">Waiting for admin approval…</strong>
+          <p class="small" id="resetStatusText" style="margin:7px 0 0">Keep this page open. VYBE will automatically place your one-time reset code here when the admin approves your request.</p>
+          <div id="resetCodePanel" style="display:none;margin-top:14px">
+            <div class="label">Your reset code</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="autoResetCode" type="text" inputmode="numeric" readonly style="font-size:20px;letter-spacing:4px;font-weight:800;text-align:center">
+              <button type="button" class="btn dark" id="copyResetCode">Copy</button>
+            </div>
+            <p class="small" style="margin-top:8px">Code loaded automatically. Continue below to set your new password.</p>
+          </div>
+        </div>
+        <div id="inlineResetForm" style="display:none;margin-top:16px">
+          <div class="card" style="padding:18px">
+            <h2>Set your new password.</h2>
+            <form class="form" method="post" action="/reset-password">
+              <input type="hidden" name="student_id" id="autoResetStudentId">
+              <input type="hidden" name="approval_code" id="autoResetCodeHidden">
+              <div><div class="label">New password</div><div style="position:relative"><input id="autoNewPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your new password"><button type="button" class="btn dark toggle-password" data-target="autoNewPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
+              <div><div class="label">Confirm new password</div><div style="position:relative"><input id="autoConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm your new password"><button type="button" class="btn dark toggle-password" data-target="autoConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
+              <button class="btn accent" type="submit">Change password →</button>
+            </form>
+          </div>
+        </div>
+        <script>
+        (()=>{
+          const requestId = {rid};
+          const statusTitle = document.getElementById("resetStatusTitle");
+          const statusText = document.getElementById("resetStatusText");
+          const panel = document.getElementById("resetCodePanel");
+          const codeInput = document.getElementById("autoResetCode");
+          const codeHidden = document.getElementById("autoResetCodeHidden");
+          const studentHidden = document.getElementById("autoResetStudentId");
+          const form = document.getElementById("inlineResetForm");
+          const copy = document.getElementById("copyResetCode");
+          let timer = null;
+          async function checkResetStatus(){
+            try{
+              const r = await fetch(`/forgot-password/status?request_id=${requestId}`, {credentials:"same-origin", cache:"no-store"});
+              const j = await r.json();
+              if(j.status === "approved" && j.code){
+                codeInput.value = j.code;
+                codeHidden.value = j.code;
+                studentHidden.value = j.student_id || "";
+                panel.style.display = "block";
+                form.style.display = "block";
+                statusTitle.textContent = "Admin approved your request ✓";
+                statusText.textContent = "Your one-time reset code is ready below. It expires after 15 minutes and can only be used once.";
+                if(timer) clearInterval(timer);
+              } else if(j.status === "rejected"){
+                statusTitle.textContent = "Password-change request rejected";
+                statusText.textContent = "Please submit a new request if you still need to change your password.";
+                if(timer) clearInterval(timer);
+              } else if(j.status === "used" || j.status === "expired"){
+                statusTitle.textContent = "This reset request is no longer active";
+                statusText.textContent = "Please submit a new password-change request.";
+                if(timer) clearInterval(timer);
+              }
+            }catch(e){}
+          }
+          if(copy) copy.onclick=async()=>{try{await navigator.clipboard.writeText(codeInput.value);copy.textContent="Copied ✓";setTimeout(()=>copy.textContent="Copy",1200)}catch(e){codeInput.select();document.execCommand("copy");copy.textContent="Copied ✓";setTimeout(()=>copy.textContent="Copy",1200)}};
+          checkResetStatus();
+          timer=setInterval(checkResetStatus, 2500);
+        })();
+        </script>
+        """.format(rid=int(request_id))
+    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. You can keep this page open; after approval, VYBE will automatically put your one-time reset code on this page.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email address</div><input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="your@email.com"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/reset-password">I already have a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
     return layout("Forgot Password", body)
+
+
+@app.route("/forgot-password/status")
+def forgot_password_status():
+    request_id = request.args.get("request_id", "").strip()
+    if not request_id.isdigit():
+        return jsonify({"status": "invalid"}), 400
+    session_request_id = session.get("password_reset_request_id")
+    if session_request_id is None or int(session_request_id) != int(request_id):
+        return jsonify({"status": "invalid"}), 403
+    con = db()
+    row = con.execute("SELECT r.id,r.student_id,r.status,r.approval_code_token,r.expires_at,s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
+    if not row:
+        con.close(); return jsonify({"status": "invalid"}), 404
+    if row["status"] == "approved":
+        if not row["expires_at"] or row["expires_at"] <= now():
+            con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=?", (row["id"],))
+            con.commit(); con.close()
+            return jsonify({"status": "expired"})
+        try:
+            payload = reset_code_serializer.loads(row["approval_code_token"] or "", max_age=15*60)
+            code = str(payload.get("code", ""))
+            if payload.get("request_id") != row["id"] or not re.fullmatch(r"\d{6}", code):
+                raise BadSignature("invalid reset payload")
+        except (BadSignature, SignatureExpired):
+            con.close(); return jsonify({"status": "approved", "code": "", "student_id": row["student_sid"]})
+        con.close()
+        return jsonify({"status": "approved", "code": code, "student_id": row["student_sid"]})
+    if row["status"] == "rejected":
+        con.close(); return jsonify({"status": "rejected"})
+    if row["status"] == "used":
+        con.close(); return jsonify({"status": "used"})
+    con.close(); return jsonify({"status": "pending"})
+
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
@@ -693,7 +803,7 @@ def reset_password():
         con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
         con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
         con.commit(); con.close(); flash("Password changed successfully. You can now log in with your new password."); return redirect(url_for("login"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time reset code sent to your email after admin approval. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email reset code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time reset code shown automatically on your password-recovery page after admin approval, or enter the code you already received. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Reset code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
     return layout("Reset Password", body)
 
 
@@ -713,7 +823,7 @@ def account_password():
         con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), session["student_db_id"]))
         con.commit(); con.close(); flash("Password changed successfully."); return redirect(url_for("dashboard"))
     con.close()
-    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div style="position:relative"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="btn dark toggle-password" data-target="currentPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">New password</div><div style="position:relative"><input id="changePassword" type="password" name="new_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="changePassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="changeConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
+    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div style="position:relative"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="btn dark toggle-password" data-target="currentPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><div><div class="label">New password</div><div style="position:relative"><input id="changePassword" type="password" name="new_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="changePassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="changeConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
     return layout("Change Password", body)
 
 
@@ -930,8 +1040,11 @@ def admin_login():
         con = db()
         stored = admin_password_hash(con)
         passkey_count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+        ok = check_password(password, stored)
+        record_admin_login(con, ok, "login")
+        con.commit()
         con.close()
-        if check_password(password, stored):
+        if ok:
             session.clear()
             session["admin_authenticated"] = True
             session["passkey_verified"] = False
@@ -942,6 +1055,20 @@ def admin_login():
         flash("Incorrect admin password.")
     body = '''<div class="auth"><div class="card authbox"><div class="badge">PRIVATE CONTROL CENTER</div><h1>Admin access.</h1><p class="muted">Enter the admin password first. A registered passkey is required before the dashboard opens.</p><form class="form" method="post"><input type="password" name="password" required autocomplete="current-password" placeholder="Admin password"><button class="btn accent">Continue →</button></form></div></div>'''
     return layout("Admin Login", body)
+
+
+@app.route("/admin/login-history")
+@admin_required
+def admin_login_history():
+    con = db()
+    rows = con.execute("SELECT logged_at_ist,success,event,ip_address,user_agent FROM admin_login_logs ORDER BY id DESC LIMIT 100").fetchall()
+    con.close()
+    items = ""
+    for r in rows:
+        state = '<span class="pill status-good">Success</span>' if r["success"] else '<span class="pill status-bad">Failed</span>'
+        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td></tr>'''
+    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table></div></section>'''
+    return layout("Admin Login History", body, admin=True)
 
 
 @app.route("/admin/logout")
@@ -1293,8 +1420,8 @@ def admin_password():
       <div class="card"><h2>🔐 Change Admin Password</h2>
         <p class="muted">You do not need the current password. A fresh current-passkey verification authorizes the change.</p>
         <form class="form" method="post" style="margin-top:16px">
-          <div style="position:relative"><input id="newPassword" type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="newPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div>
-          <div style="position:relative"><input id="confirmPassword" type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="confirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div>
+          <div style="position:relative"><input id="newPassword" type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="newPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div>
+          <div style="position:relative"><input id="confirmPassword" type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="confirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div>
           <button class="btn accent" {"disabled" if not session.get("passkey_verified") else ""}>Change Password</button>
         </form>
         <div class="small">{"Current passkey verified ✓" if session.get("passkey_verified") else "Verify current passkey above before changing the password."}</div>
@@ -1420,25 +1547,13 @@ def admin_password_requests():
         if r["status"] == "pending":
             action = f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form></div>'''
         elif r["status"] == "approved":
-            action = '<span class="pill status-good">Approved · reset code emailed</span>'
+            action = '<span class="pill status-good">Approved · code shown on student page</span>'
         else:
             action = f'<span class="pill">{esc(r["status"])}</span>'
-        email = r["email_address"] or ""
-        email_cell = esc(email or "—")
-        if email:
-            email_cell += f'''<form method="post" action="/admin/password-request/{r['id']}/delete-email" onsubmit="return confirm('Delete this saved email address? The request will remain for proof.')"><button class="btn dark" type="submit" style="margin-top:6px">Delete email</button></form>'''
-        else:
-            email_cell += '<span class="small">Deleted</span>'
-        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td>{email_cell}</td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving sends a one-time 6-digit reset code to the student's saved email. Admins never see the student's existing password.</p><div class="notice">The reset code expires after 15 minutes and is invalid after one use. The saved email can be deleted without deleting the request record.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Email proof</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="6">No password requests.</td></tr>'}</table></div></section>'''
+        html_rows.append(f'''<tr><td>{esc(r["requested_at"])}</td><td><strong>{esc(r["student_name"])}</strong><br><span class="small">{esc(r["student_sid"])}</span></td><td><span class="pill">{esc(r["status"])}</span></td><td>{esc(r["approved_at"] or '—')}<br><span class="small">{esc(r["expires_at"] or '')}</span></td><td>{action}</td></tr>''')
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, a one-time 6-digit reset code appears automatically on the student's open VYBE password-recovery page. Admins never see the student's existing password.</p><div class="notice">The reset code expires after 15 minutes and is invalid after one use. The reset code is displayed only on the student recovery page after approval.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
 
-@app.route("/admin/password-request/<int:rid>/delete-email", methods=["POST"])
-@admin_required
-def admin_password_request_delete_email(rid):
-    con=db(); con.execute("UPDATE password_reset_requests SET email_address=NULL WHERE id=?", (rid,)); con.commit(); con.close()
-    flash("Saved email address deleted. The request remains for proof.")
-    return redirect(url_for("admin_password_requests"))
 
 @app.route("/admin/password-request/<int:rid>/<action>", methods=["POST"])
 @admin_required
@@ -1452,16 +1567,14 @@ def admin_password_request_action(rid, action):
     if action == "reject":
         con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,)); con.commit(); con.close()
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
-    email=row["email_address"] or ""
-    if not email:
-        con.close(); flash("This request has no saved email address. Ask the student to submit a new request."); return redirect(url_for("admin_password_requests"))
+
     code=f"{secrets.randbelow(1000000):06d}"
     approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    if not send_password_reset_email(email, row["name"], row["student_id"], code):
-        con.close(); flash("Email could not be sent. Configure VYBE_SMTP_HOST, VYBE_SMTP_PORT, VYBE_SMTP_USER, VYBE_SMTP_PASSWORD and VYBE_SMTP_FROM on Render."); return redirect(url_for("admin_password_requests"))
-    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=?, expires_at=? WHERE id=?", (approved, hash_password(code), expires, rid))
+    token = reset_code_serializer.dumps({"request_id": rid, "code": code})
+    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=?, approval_code_token=?, expires_at=? WHERE id=?", (approved, hash_password(code), token, expires, rid))
     con.commit(); con.close()
-    flash(f"Approved. The reset code was emailed to {email} and expires in 15 minutes.")
+
+    flash("Approved. The reset code is now available automatically on the student's open VYBE page. It expires in 15 minutes.")
     return redirect(url_for("admin_password_requests"))
 
 
@@ -1521,7 +1634,6 @@ async function postJSON(url,payload){let r=await fetch(url,{method:"POST",header
 function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was cancelled or timed out. Try again and choose your phone/device.";if(e&&e.name==="InvalidStateError")return "This passkey is already registered on this device.";if(e&&e.name==="SecurityError"){let u=location.href;return "WebAuthn SecurityError. Current page: "+u+" | RP ID: " + (window.VYBE_RP_ID||"not exposed") + " | Check that the site is HTTPS and the RP ID matches this domain.";}return (e&&e.name?e.name+": ":"")+(e&&e.message)||"Passkey setup failed."}
 const reg=document.getElementById("registerPasskey");
 if(reg)reg.onclick=async()=>{const msg=document.getElementById("pkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");reg.disabled=true;reg.textContent="Waiting for device…";msg.textContent="Choose your phone or another passkey device when your browser asks.";let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);o.rp={id:location.hostname,name:(o.rp&&o.rp.name)||"VYBE"};window.VYBE_RP_ID=o.rp.id;let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/passkey/register/verify",serializeCredential(c));msg.textContent="Phone passkey registered successfully.";setTimeout(()=>location.reload(),500)}catch(e){msg.textContent=pkError(e);reg.disabled=false;reg.textContent="Register Phone Passkey"}}
-document.querySelectorAll(".toggle-password").forEach(btn=>btn.onclick=()=>{const el=document.getElementById(btn.dataset.target);if(!el)return;el.type=el.type==="password"?"text":"password";btn.textContent=el.type==="password"?"👁":"🙈"});
 const ver=document.getElementById("verifyPasskey");
 if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified.";ver.textContent="Passkey verified ✓";if(location.pathname==="/admin/verify")setTimeout(()=>location.href="/admin/panel",400)}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Phone Passkey"}}
 '''
