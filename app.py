@@ -6,6 +6,8 @@ import secrets
 import hashlib
 import html
 import sqlite3
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
@@ -172,6 +174,43 @@ def send_whatsapp_notification(message, recipient_override=None):
         return False
 
 
+def send_password_reset_email(recipient, student_name, student_id, code):
+    host = os.environ.get("VYBE_SMTP_HOST", "smtp.gmail.com").strip()
+    try:
+        port = int(os.environ.get("VYBE_SMTP_PORT", "587"))
+    except ValueError:
+        port = 587
+    username = os.environ.get("VYBE_SMTP_USER", "").strip()
+    password = os.environ.get("VYBE_SMTP_PASSWORD", "").strip()
+    sender = os.environ.get("VYBE_SMTP_FROM", username).strip() or username
+    if not username or not password or not sender or not recipient:
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = "VYBE password reset code"
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(
+        f"Hello {student_name},\n\n"
+        f"Your VYBE password reset code is: {code}\n\n"
+        "This code is valid for 15 minutes and can be used only once.\n"
+        "If you did not request a password reset, you can ignore this email.\n\n"
+        "VYBE\nYour Campus. Your Community. Your Space."
+    )
+    try:
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=12) as smtp:
+                smtp.login(username, password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=12) as smtp:
+                smtp.ehlo(); smtp.starttls(); smtp.ehlo()
+                smtp.login(username, password)
+                smtp.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
 def create_admin_notification(kind, title, message, student_id=None):
     sent = send_whatsapp_notification(message)
     con = db()
@@ -278,7 +317,7 @@ def init_db():
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
-                phone_number TEXT,
+                email_address TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
                 expires_at TEXT,
@@ -355,7 +394,7 @@ def init_db():
                 student_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
-                phone_number TEXT,
+                email_address TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
                 expires_at TEXT,
@@ -382,10 +421,10 @@ def init_db():
         con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
     if not con.is_pg:
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
-        if "phone_number" not in reset_cols:
-            con.execute("ALTER TABLE password_reset_requests ADD COLUMN phone_number TEXT")
+        if "email_address" not in reset_cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN email_address TEXT")
     else:
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS phone_number TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS email_address TEXT")
 
     defaults = {
         "whatsapp_link": "",
@@ -618,27 +657,23 @@ def forgot_password():
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
-        phone = re.sub(r"[^0-9]", "", request.form.get("phone", ""))
-        if not sid or not name or len(phone) < 10:
-            flash("Enter your name, Student ID and a valid phone number.")
+        email = request.form.get("email", "").strip().lower()[:254]
+        if not sid or not name or not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
+            flash("Enter your name, Student ID and a valid email address.")
             return redirect(url_for("forgot_password"))
         con = db()
         student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
         if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
-            con.close()
-            flash("If the account is eligible, the password-change request has been sent to the admin.")
-            return redirect(url_for("forgot_password"))
+            con.close(); flash("If the account is eligible, the password-change request has been sent to the admin."); return redirect(url_for("forgot_password"))
         existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
         if existing:
-            con.close()
-            flash("A password-change request is already waiting for admin approval or is already approved.")
-            return redirect(url_for("forgot_password"))
-        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,phone_number) VALUES(?,?,?,?)", (student["id"], "pending", now(), phone))
+            con.close(); flash("A password-change request is already waiting for admin approval or is already approved."); return redirect(url_for("forgot_password"))
+        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,email_address) VALUES(?,?,?,?)", (student["id"], "pending", now(), email))
         con.commit(); con.close()
-        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nPhone: {phone}", student["id"])
+        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nEmail: {email}", student["id"])
         flash("Request sent to admin. You can change your password only after admin approval.")
         return redirect(url_for("forgot_password"))
-    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time login code will be sent to the phone number you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Phone number</div><input name="phone" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="Phone number for the login code"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a login code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time reset code will be sent to the email address you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email address</div><input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="your@email.com"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a reset code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
     return layout("Forgot Password", body)
 
 @app.route("/reset-password", methods=["GET", "POST"])
@@ -649,19 +684,16 @@ def reset_password():
         new_password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
         if len(new_password) < 6 or new_password != confirm or not sid or not code:
-            flash("Enter a valid approval code and matching password of at least 6 characters.")
-            return redirect(url_for("reset_password"))
+            flash("Enter a valid reset code and matching password of at least 6 characters."); return redirect(url_for("reset_password"))
         con = db()
         row = con.execute("SELECT r.id,r.student_id,r.approval_code_hash,r.expires_at,s.status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE s.student_id=? AND r.status='approved' ORDER BY r.id DESC LIMIT 1", (sid,)).fetchone()
         valid = bool(row and row["expires_at"] and row["expires_at"] > now() and check_password(code, row["approval_code_hash"]))
         if not valid:
-            con.close(); flash("The approval code is invalid or expired."); return redirect(url_for("reset_password"))
+            con.close(); flash("The reset code is invalid or expired."); return redirect(url_for("reset_password"))
         con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
         con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
-        con.commit(); con.close()
-        flash("Password changed successfully. You can now log in with your new password.")
-        return redirect(url_for("login"))
-    body='''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time approval code provided by the admin. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Admin approval code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
+        con.commit(); con.close(); flash("Password changed successfully. You can now log in with your new password."); return redirect(url_for("login"))
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time reset code sent to your email after admin approval. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Email reset code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
     return layout("Reset Password", body)
 
 
@@ -1386,26 +1418,27 @@ def admin_password_requests():
     html_rows=[]
     for r in rows:
         if r["status"] == "pending":
-            action=f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form></div>'''
+            action = f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form></div>'''
         elif r["status"] == "approved":
-            action='<span class="pill status-good">Approved · give the one-time code to the student</span>'
+            action = '<span class="pill status-good">Approved · reset code emailed</span>'
         else:
-            action=f'<span class="pill">{esc(r["status"])}</span>'
-        phone_cell = esc(r["phone_number"] or "—") + (f'''<form method="post" action="/admin/password-request/{r['id']}/delete-phone" onsubmit="return confirm('Delete this saved phone number? The request will remain for proof.')"><button class="btn dark" type="submit" style="margin-top:6px">Delete number</button></form>''' if r["phone_number"] else '<span class="small">Deleted</span>')
-        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td>{phone_cell}</td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving generates a one-time 6-digit code that the admin gives to the student. Admins never see the student's existing password.</p><div class="notice">For security, the approval code is shown only immediately after approval. It expires after 15 minutes and is invalid after one use.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Phone proof</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="6">No password requests.</td></tr>'}</table></div></section>'''
+            action = f'<span class="pill">{esc(r["status"])}</span>'
+        email = r["email_address"] or ""
+        email_cell = esc(email or "—")
+        if email:
+            email_cell += f'''<form method="post" action="/admin/password-request/{r['id']}/delete-email" onsubmit="return confirm('Delete this saved email address? The request will remain for proof.')"><button class="btn dark" type="submit" style="margin-top:6px">Delete email</button></form>'''
+        else:
+            email_cell += '<span class="small">Deleted</span>'
+        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td>{email_cell}</td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving sends a one-time 6-digit reset code to the student's saved email. Admins never see the student's existing password.</p><div class="notice">The reset code expires after 15 minutes and is invalid after one use. The saved email can be deleted without deleting the request record.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Email proof</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="6">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
 
-
-@app.route("/admin/password-request/<int:rid>/delete-phone", methods=["POST"])
+@app.route("/admin/password-request/<int:rid>/delete-email", methods=["POST"])
 @admin_required
-def admin_password_request_delete_phone(rid):
-    con = db()
-    con.execute("UPDATE password_reset_requests SET phone_number=NULL WHERE id=?", (rid,))
-    con.commit(); con.close()
-    flash("Saved phone number deleted. The request remains for proof.")
+def admin_password_request_delete_email(rid):
+    con=db(); con.execute("UPDATE password_reset_requests SET email_address=NULL WHERE id=?", (rid,)); con.commit(); con.close()
+    flash("Saved email address deleted. The request remains for proof.")
     return redirect(url_for("admin_password_requests"))
-
 
 @app.route("/admin/password-request/<int:rid>/<action>", methods=["POST"])
 @admin_required
@@ -1417,39 +1450,19 @@ def admin_password_request_action(rid, action):
     if not row or row["status"] != "pending":
         con.close(); flash("This password request is no longer pending."); return redirect(url_for("admin_password_requests"))
     if action == "reject":
-        con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,))
-        con.commit(); con.close(); flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
+        con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,)); con.commit(); con.close()
+        flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
+    email=row["email_address"] or ""
+    if not email:
+        con.close(); flash("This request has no saved email address. Ask the student to submit a new request."); return redirect(url_for("admin_password_requests"))
     code=f"{secrets.randbelow(1000000):06d}"
     approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-@app.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    if request.method == "POST":
-        sid = request.form.get("student_id", "").strip()[:80]
-        name = request.form.get("name", "").strip()[:80]
-        phone = re.sub(r"[^0-9]", "", request.form.get("phone", ""))
-        if not sid or not name or len(phone) < 10:
-            flash("Enter your name, Student ID and a valid phone number.")
-            return redirect(url_for("forgot_password"))
-        con = db()
-        student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
-        if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
-            con.close()
-            flash("If the account is eligible, the password-change request has been sent to the admin.")
-            return redirect(url_for("forgot_password"))
-        existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
-        if existing:
-            con.close()
-            flash("A password-change request is already waiting for admin approval or is already approved.")
-            return redirect(url_for("forgot_password"))
-        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,phone_number) VALUES(?,?,?,?)", (student["id"], "pending", now(), phone))
-        con.commit(); con.close()
-        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nPhone: {phone}", student["id"])
-        flash("Request sent to admin. You can change your password only after admin approval.")
-        return redirect(url_for("forgot_password"))
-    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time login code will be sent to the phone number you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Phone number</div><input name="phone" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="Phone number for the login code"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a login code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
-    return layout("Forgot Password", body)
-
-
+    if not send_password_reset_email(email, row["name"], row["student_id"], code):
+        con.close(); flash("Email could not be sent. Configure VYBE_SMTP_HOST, VYBE_SMTP_PORT, VYBE_SMTP_USER, VYBE_SMTP_PASSWORD and VYBE_SMTP_FROM on Render."); return redirect(url_for("admin_password_requests"))
+    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=?, expires_at=? WHERE id=?", (approved, hash_password(code), expires, rid))
+    con.commit(); con.close()
+    flash(f"Approved. The reset code was emailed to {email} and expires in 15 minutes.")
+    return redirect(url_for("admin_password_requests"))
 
 
 @app.route("/admin/notifications", endpoint="admin_notifications")
