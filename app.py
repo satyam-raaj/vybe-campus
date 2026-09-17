@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, jsonify, render_template_string
 
@@ -137,6 +138,53 @@ def valid_url(value, allowed_schemes=("https", "http")):
         return False
 
 
+def send_whatsapp_notification(message):
+    """Send an optional WhatsApp Cloud API text notification using Python stdlib only."""
+    con = db()
+    try:
+        enabled = setting(con, "whatsapp_notifications_enabled", "0") == "1"
+        version = setting(con, "whatsapp_api_version", "v23.0").strip() or "v23.0"
+        phone_number_id = setting(con, "whatsapp_phone_number_id", "").strip()
+        token = setting(con, "whatsapp_access_token", "").strip()
+        recipient = re.sub(r"[^0-9]", "", setting(con, "whatsapp_admin_number", "").strip())
+    finally:
+        con.close()
+    if not enabled or not phone_number_id or not token or not recipient:
+        return False
+    endpoint = f"https://graph.facebook.com/{version}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "text",
+        "text": {"preview_url": False, "body": message[:4000]},
+    }
+    try:
+        req = URLRequest(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=8) as response:
+            return 200 <= response.status < 300
+    except Exception:
+        return False
+
+
+def create_admin_notification(kind, title, message, student_id=None):
+    sent = send_whatsapp_notification(message)
+    con = db()
+    try:
+        con.execute(
+            "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
+            (kind, title, message, student_id, now(), bool(sent)),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return sent
+
+
 def setting(con, key, default=""):
     row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
@@ -208,6 +256,14 @@ def init_db():
                 backed_up BOOLEAN NOT NULL DEFAULT FALSE,
                 transports TEXT,
                 created_at TEXT NOT NULL
+            )""",            """CREATE TABLE IF NOT EXISTS notifications (
+                id BIGSERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE
             )""",
         ]
     else:
@@ -264,6 +320,15 @@ def init_db():
                 backed_up INTEGER NOT NULL DEFAULT 0,
                 transports TEXT,
                 created_at TEXT NOT NULL
+            )""",            """CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                student_id INTEGER,
+                created_at TEXT NOT NULL,
+                whatsapp_sent INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
             )""",
         ]
     con.executescript(statements)
@@ -282,6 +347,11 @@ def init_db():
         "google_drive_url": DRIVE_URL,
         "vybe_online": "1",
         "admin_password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+        "whatsapp_notifications_enabled": "0",
+        "whatsapp_api_version": "v23.0",
+        "whatsapp_phone_number_id": "",
+        "whatsapp_access_token": "",
+        "whatsapp_admin_number": "",
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -316,6 +386,18 @@ def admin_required(fn):
     def wrapper(*args, **kwargs):
         if not session.get("admin_authenticated"):
             return redirect(url_for("admin_login"))
+        endpoint = request.endpoint or ""
+        allowed_without_passkey = {
+            "admin_login", "admin_verify",
+            "passkey_auth_options", "passkey_auth_verify",
+            "passkey_register_options", "passkey_register_verify",
+        }
+        if endpoint not in allowed_without_passkey:
+            con = db()
+            count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+            con.close()
+            if count > 0 and not session.get("passkey_verified"):
+                return redirect(url_for("admin_verify"))
         return fn(*args, **kwargs)
     return wrapper
 
@@ -383,7 +465,7 @@ CSS = r"""
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Chats</a><a href="/admin/notifications">Alerts</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
         links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/logout">Logout</a>'
     else:
@@ -419,7 +501,14 @@ def register():
         con = db()
         try:
             con.execute("INSERT INTO students(name,student_id,password_hash,status,created_at) VALUES(?,?,?,?,?)", (name, sid, hash_password(password), "pending", now()))
+            new_student_id = con.execute("SELECT id FROM students WHERE student_id=?", (sid,)).fetchone()["id"]
             con.commit()
+            create_admin_notification(
+                "entry_request",
+                "New VYBE entry request",
+                f"🔔 New VYBE entry request\\nName: {name}\\nStudent ID: {sid}\\nThe student is waiting for admin approval.",
+                new_student_id,
+            )
             flash("Registration submitted. Your account is pending admin approval.")
         except Exception:
             con.rollback()
@@ -533,7 +622,15 @@ def issues():
         if category not in CATEGORIES or not title or not desc:
             con.close(); flash("Please complete the problem report."); return redirect(url_for("issues"))
         con.execute("INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)", (session["student_db_id"], category, title, desc, "Open", now()))
-        con.commit(); con.close(); flash("Campus problem reported."); return redirect(url_for("issues"))
+        student = con.execute("SELECT id,name,student_id FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+        con.commit(); con.close()
+        create_admin_notification(
+            "problem_report",
+            "New campus problem",
+            f"🐛 New VYBE problem report\\nName: {student['name']}\\nStudent ID: {student['student_id']}\\nTitle: {title}",
+            student["id"],
+        )
+        flash("Campus problem reported."); return redirect(url_for("issues"))
     rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall(); con.close()
     cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
     body = f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{''.join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No reports yet.</div>'}</div></div></section>'''
@@ -596,12 +693,20 @@ def accept_solution(iid):
 def admin_login():
     if request.method == "POST":
         password = request.form.get("password", "")
-        con = db(); stored = admin_password_hash(con); con.close()
+        con = db()
+        stored = admin_password_hash(con)
+        passkey_count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+        con.close()
         if check_password(password, stored):
-            session.clear(); session["admin_authenticated"] = True; session["passkey_verified"] = False
-            return redirect(url_for("admin_panel"))
+            session.clear()
+            session["admin_authenticated"] = True
+            session["passkey_verified"] = False
+            if passkey_count == 0:
+                flash("Password verified. Register your first admin passkey to finish setup.")
+                return redirect(url_for("admin_password"))
+            return redirect(url_for("admin_verify"))
         flash("Incorrect admin password.")
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">PRIVATE CONTROL CENTER</div><h1>Admin access.</h1><p class="muted">This area is separate from the student portal.</p><form class="form" method="post"><input type="password" name="password" required autocomplete="current-password" placeholder="Admin password"><button class="btn accent">Enter control center</button></form></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">PRIVATE CONTROL CENTER</div><h1>Admin access.</h1><p class="muted">Enter the admin password first. A registered passkey is required before the dashboard opens.</p><form class="form" method="post"><input type="password" name="password" required autocomplete="current-password" placeholder="Admin password"><button class="btn accent">Continue →</button></form></div></div>'''
     return layout("Admin Login", body)
 
 
@@ -620,10 +725,26 @@ def admin_panel():
         "issues": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
         "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
         "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
+        "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "alerts": con.execute("SELECT COUNT(*) AS c FROM notifications").fetchone()["c"],
     }
     online = setting(con, "vybe_online", "1") == "1"
     con.close()
-    body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1><div class="grid"><div class="card"><div class="kpi">{stats["students"]}</div><div class="muted">Students</div></div><div class="card"><div class="kpi">{stats["pending"]}</div><div class="muted">Pending</div></div><div class="card"><div class="kpi">{stats["issues"]}</div><div class="muted">Problems</div></div><div class="card"><div class="kpi">{stats["resources"]}</div><div class="muted">Resources</div></div><div class="card"><div class="kpi">{stats["solutions"]}</div><div class="muted">Community solutions</div></div></div><section class="section grid2"><div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p><p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p><form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div><div class="card"><h2>🔐 Security</h2><p class="muted">Password changes require a registered phone passkey.</p><a class="btn dark" href="/admin/password">Open security center →</a></div></section></section>'''
+    body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
+    <div class="grid">
+      <a class="card" href="/admin/students"><div class="kpi">{stats["students"]}</div><h3>Students</h3><p class="muted">Manage all student accounts.</p></a>
+      <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
+      <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
+      <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
+      <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Student chats</h3><p class="muted">Private problem and solution history.</p></a>
+      <a class="card" href="/admin/notifications"><div class="kpi">{stats["alerts"]}</div><h3>Notifications</h3><p class="muted">Entry requests and admin alerts.</p></a>
+    </div>
+    <section class="section grid2">
+      <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
+      <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
+      <form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div>
+      <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Sensitive credential changes require a fresh passkey verification.</p><a class="btn dark" href="/admin/password">Open security center →</a></div>
+    </section></section>'''
     return layout("Admin", body, admin=True)
 
 
@@ -645,7 +766,7 @@ def admin_students():
         elif s["status"] == "approved": action = f'<a class="btn danger" href="/admin/student/{s["id"]}/block">Block</a>'
         else: action = f'<a class="btn good" href="/admin/student/{s["id"]}/unblock">Unblock</a>'
         rows += f'<tr><td>{esc(s["name"])}</td><td>{esc(s["student_id"])}</td><td><span class="pill">{esc(s["status"])}</span></td><td>{esc(s["created_at"])}</td><td><div class="actions">{action}<a class="btn danger" href="/admin/student/{s["id"]}/delete" onclick="return confirm(\'Delete this student and all dependent records?\')">Delete</a></div></td></tr>'
-    body = f'''<section class="section"><h1>Students.</h1><p class="muted">Student IDs are visible here only to admins.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
+    body = f'''<section class="section" id="pending"><h1>Students.</h1><p class="muted">Student IDs are visible here only to admins.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
     return layout("Students", body, admin=True)
 
 
@@ -729,17 +850,62 @@ def problem_status(iid):
 @app.route("/admin/settings", methods=["GET","POST"])
 @admin_required
 def admin_settings():
-    con=db()
-    if request.method=="POST":
-        wa=request.form.get("whatsapp_link","").strip()[:500]; drive=request.form.get("google_drive_url","").strip()[:500]
-        if wa and not valid_url(wa): flash("WhatsApp link must be a valid URL.")
-        elif drive and not valid_url(drive): flash("Google Drive URL must be a valid URL.")
+    con = db()
+    if request.method == "POST":
+        wa = request.form.get("whatsapp_link", "").strip()[:500]
+        drive = request.form.get("google_drive_url", "").strip()[:500]
+        wa_enabled = "1" if request.form.get("whatsapp_notifications_enabled") == "1" else "0"
+        wa_version = request.form.get("whatsapp_api_version", "v23.0").strip()[:30] or "v23.0"
+        wa_phone_id = request.form.get("whatsapp_phone_number_id", "").strip()[:100]
+        wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
+        wa_admin = request.form.get("whatsapp_admin_number", "").strip()[:30]
+        if wa and not valid_url(wa):
+            flash("WhatsApp community link must be a valid URL.")
+        elif drive and not valid_url(drive):
+            flash("Google Drive URL must be a valid URL.")
         else:
-            set_setting(con,"whatsapp_link",wa); set_setting(con,"google_drive_url",drive or DRIVE_URL); con.commit(); flash("Configuration saved.")
-        con.close(); return redirect(url_for("admin_settings"))
-    wa=setting(con,"whatsapp_link",""); drive=setting(con,"google_drive_url",DRIVE_URL); online=setting(con,"vybe_online","1")=="1"; pk=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]; con.close()
-    body=f'''<section class="section"><h1>Settings.</h1><div class="grid2"><div class="card"><h2>☁️ Google Drive</h2><form class="form" method="post"><input name="google_drive_url" value="{esc(drive)}" required><div class="small">Students can only see this link after login.</div><h2 style="margin-top:18px">💬 WhatsApp Community</h2><input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/..." ><button class="btn accent">Save configuration</button></form></div><div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p><form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form><h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a></div></div></section>'''
-    return layout("Settings",body,admin=True)
+            set_setting(con, "whatsapp_link", wa)
+            set_setting(con, "google_drive_url", drive or DRIVE_URL)
+            set_setting(con, "whatsapp_notifications_enabled", wa_enabled)
+            set_setting(con, "whatsapp_api_version", wa_version)
+            set_setting(con, "whatsapp_phone_number_id", wa_phone_id)
+            set_setting(con, "whatsapp_access_token", wa_token)
+            set_setting(con, "whatsapp_admin_number", wa_admin)
+            con.commit()
+            flash("Configuration saved.")
+        con.close()
+        return redirect(url_for("admin_settings"))
+    wa = setting(con, "whatsapp_link", "")
+    drive = setting(con, "google_drive_url", DRIVE_URL)
+    online = setting(con, "vybe_online", "1") == "1"
+    pk = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+    wa_enabled = setting(con, "whatsapp_notifications_enabled", "0") == "1"
+    wa_version = setting(con, "whatsapp_api_version", "v23.0")
+    wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
+    wa_admin = setting(con, "whatsapp_admin_number", "")
+    con.close()
+    checked = "checked" if wa_enabled else ""
+    body = f'''<section class="section"><h1>Settings.</h1>
+    <div class="grid2">
+      <div class="card"><h2>☁️ Google Drive</h2><form class="form" method="post">
+        <input name="google_drive_url" value="{esc(drive)}" required>
+        <div class="small">Students can only see this link after login.</div>
+        <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
+        <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
+        <h2 style="margin-top:18px">🔔 WhatsApp admin alerts</h2>
+        <label class="small"><input type="checkbox" name="whatsapp_notifications_enabled" value="1" {checked} style="width:auto;margin-right:7px"> Send VYBE alerts to my WhatsApp</label>
+        <input name="whatsapp_phone_number_id" value="{esc(wa_phone_id)}" placeholder="WhatsApp Cloud API phone number ID">
+        <input name="whatsapp_admin_number" value="{esc(wa_admin)}" placeholder="Your WhatsApp number, e.g. 9198XXXXXXXX">
+        <input name="whatsapp_api_version" value="{esc(wa_version)}" placeholder="Graph API version, e.g. v23.0">
+        <input type="password" name="whatsapp_access_token" placeholder="WhatsApp Cloud API access token">
+        <div class="small">Automatic WhatsApp delivery requires a configured WhatsApp Cloud API sender and any Meta messaging/template rules that apply to the account.</div>
+        <button class="btn accent">Save configuration</button></form></div>
+      <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
+        <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
+        <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
+      </div>
+    </div></section>'''
+    return layout("Settings", body, admin=True)
 
 
 # ---------------------------------------------------------------------------
@@ -749,10 +915,15 @@ def admin_settings():
 @app.route("/passkey/register/options", methods=["POST"])
 @admin_required
 def passkey_register_options():
-    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured on this server."), 503
-    con=db(); existing=con.execute("SELECT credential_id FROM passkeys").fetchall(); con.close()
-    exclude=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in existing]
-    options=generate_registration_options(
+    if not webauthn_configured():
+        return jsonify(error="WebAuthn is not configured on this server."), 503
+    con = db()
+    existing = con.execute("SELECT credential_id FROM passkeys").fetchall()
+    con.close()
+    if existing and not session.get("passkey_verified"):
+        return jsonify(error="Verify your current passkey before registering another passkey."), 403
+    exclude = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in existing]
+    options = generate_registration_options(
         rp_id=PASSKEY_RP_ID,
         rp_name="VYBE",
         user_id=secrets.token_bytes(32),
@@ -770,19 +941,35 @@ def passkey_register_options():
 @app.route("/passkey/register/verify", methods=["POST"])
 @admin_required
 def passkey_register_verify():
-    if not webauthn_configured(): return jsonify(error="WebAuthn is not configured."),503
-    challenge_b64=session.pop("passkey_registration_challenge",None)
-    if not challenge_b64: return jsonify(error="Registration challenge expired."),400
+    if not webauthn_configured():
+        return jsonify(error="WebAuthn is not configured."), 503
+    challenge_b64 = session.pop("passkey_registration_challenge", None)
+    if not challenge_b64:
+        return jsonify(error="Registration challenge expired."), 400
     try:
-        credential=request.get_json(force=True)
-        verification=verify_registration_response(credential=credential, expected_challenge=base64.b64decode(challenge_b64), expected_rp_id=PASSKEY_RP_ID, expected_origin=PASSKEY_ORIGIN, require_user_verification=True)
-        cid=base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode("ascii")
-        pk=base64.urlsafe_b64encode(verification.credential_public_key).rstrip(b"=").decode("ascii")
-        transports=json.dumps(credential.get("response",{}).get("transports",[]))
-        con=db(); con.execute("INSERT INTO passkeys(credential_id,public_key,sign_count,device_type,backed_up,transports,created_at) VALUES(?,?,?,?,?,?,?)",(cid,pk,int(verification.sign_count),str(verification.credential_device_type),bool(verification.credential_backed_up),transports,now())); con.commit(); con.close()
+        credential = request.get_json(force=True)
+        verification = verify_registration_response(
+            credential=credential,
+            expected_challenge=base64.b64decode(challenge_b64),
+            expected_rp_id=PASSKEY_RP_ID,
+            expected_origin=PASSKEY_ORIGIN,
+            require_user_verification=True,
+        )
+        cid = base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode("ascii")
+        pk = base64.urlsafe_b64encode(verification.credential_public_key).rstrip(b"=").decode("ascii")
+        transports = json.dumps(credential.get("response", {}).get("transports", []))
+        con = db()
+        before = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+        con.execute(
+            "INSERT INTO passkeys(credential_id,public_key,sign_count,device_type,backed_up,transports,created_at) VALUES(?,?,?,?,?,?,?)",
+            (cid, pk, int(verification.sign_count), str(verification.credential_device_type), bool(verification.credential_backed_up), transports, now()),
+        )
+        con.commit()
+        con.close()
+        session["passkey_verified"] = False
         return jsonify(ok=True)
     except Exception as exc:
-        return jsonify(error="Passkey verification failed.", detail=str(exc) if app.debug else None),400
+        return jsonify(error="Passkey verification failed.", detail=str(exc) if app.debug else None), 400
 
 
 @app.route("/passkey/auth/options", methods=["POST"])
@@ -821,19 +1008,170 @@ def passkey_auth_verify():
 @admin_required
 def admin_password():
     if request.method == "POST":
-        # POST is deliberately not allowed to change the password without a fresh passkey ceremony.
         if not session.get("passkey_verified"):
-            flash("Verify the phone passkey before changing the password.")
+            flash("Verify the current passkey before changing the password.")
             return redirect(url_for("admin_password"))
-        current=request.form.get("current_password",""); new=request.form.get("new_password",""); confirm=request.form.get("confirm_password","")
-        con=db(); stored=admin_password_hash(con)
-        if not check_password(current,stored): con.close(); flash("Current password is incorrect."); return redirect(url_for("admin_password"))
-        if len(new)<12 or new!=confirm: con.close(); flash("New passwords must match and be at least 12 characters."); return redirect(url_for("admin_password"))
-        set_setting(con,"admin_password_hash",hash_password(new)); con.commit(); con.close(); session["passkey_verified"]=False; flash("Admin password changed. Verify the phone passkey again for another change."); return redirect(url_for("admin_panel"))
-    con=db(); count=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]; con.close()
-    web_status="ready" if webauthn_configured() else "not configured"
-    body=f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1><div class="two"><div class="card"><h2>📱 Register Phone Passkey</h2><p class="muted">Use your phone's fingerprint, Face ID or device PIN/passcode. VYBE does not receive your biometric data.</p><p class="small">WebAuthn: {web_status} · Credentials: {count}</p><button class="btn accent" id="registerPasskey">Register Phone Passkey</button><div id="pkMsg" class="small" style="margin-top:10px"></div></div><div class="card"><h2>🔐 Change Password</h2><p class="muted">A successful phone passkey verification is required before the password can be changed.</p><button class="btn dark" id="verifyPasskey">Verify Phone Passkey</button><form class="form" method="post" style="margin-top:16px"><input type="password" name="current_password" placeholder="Current password" required><input type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required><input type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required><button class="btn accent">Change Password</button></form><div id="authMsg" class="small" style="margin-top:10px"></div></div></div></section><script>{WEBAUTHN_JS}</script>'''
-    return layout("Security",body,admin=True)
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(new) < 12 or new != confirm:
+            flash("New passwords must match and be at least 12 characters.")
+            return redirect(url_for("admin_password"))
+        con = db()
+        set_setting(con, "admin_password_hash", hash_password(new))
+        con.commit()
+        con.close()
+        session["passkey_verified"] = False
+        flash("Admin password changed. Verify your passkey again for future sensitive actions.")
+        return redirect(url_for("admin_verify"))
+    con = db()
+    count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+    con.close()
+    web_status = "ready" if webauthn_configured() else "not configured"
+    if count == 0:
+        registration_note = "No passkey exists yet. Register your first passkey after entering the admin password."
+    elif session.get("passkey_verified"):
+        registration_note = "Current passkey verified. You may register another passkey."
+    else:
+        registration_note = "Verify your current passkey before registering another passkey."
+    body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1>
+    <div class="two">
+      <div class="card"><h2>📱 Passkeys</h2>
+        <p class="muted">Current credentials: {count}. Adding a second or later passkey requires verification of an existing passkey first.</p>
+        <p class="small">WebAuthn: {web_status}</p>
+        <button class="btn accent" id="registerPasskey">Register New Passkey</button>
+        <div id="pkMsg" class="small" style="margin-top:10px">{esc(registration_note)}</div>
+        <p style="margin-top:14px"><a class="btn dark" href="/admin/verify">Verify Current Passkey</a></p>
+      </div>
+      <div class="card"><h2>🔐 Change Admin Password</h2>
+        <p class="muted">You do not need the current password. A fresh current-passkey verification authorizes the change.</p>
+        <form class="form" method="post" style="margin-top:16px">
+          <div style="position:relative"><input id="newPassword" type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="newPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div>
+          <div style="position:relative"><input id="confirmPassword" type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required autocomplete="new-password"><button type="button" class="btn dark toggle-password" data-target="confirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div>
+          <button class="btn accent" {"disabled" if not session.get("passkey_verified") else ""}>Change Password</button>
+        </form>
+        <div class="small">{"Current passkey verified ✓" if session.get("passkey_verified") else "Verify current passkey above before changing the password."}</div>
+      </div>
+    </div></section><script>{WEBAUTHN_JS}</script>'''
+    return layout("Security", body, admin=True)
+
+
+@app.route("/admin/verify")
+@admin_required
+def admin_verify():
+    con = db()
+    count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+    con.close()
+    if count == 0:
+        return redirect(url_for("admin_password"))
+    body = f'''<div class="auth"><div class="card authbox"><div class="badge">SECOND FACTOR</div><h1>Verify passkey.</h1><p class="muted">Your admin password is correct. Verify your registered passkey to open the control center.</p><button class="btn accent" id="verifyPasskey">Verify Current Passkey</button><div id="authMsg" class="small" style="margin-top:12px"></div></div></div><script>{WEBAUTHN_JS}</script>'''
+    return layout("Admin Verification", body, admin=True)
+
+
+@app.route("/admin/chats")
+@admin_required
+def admin_chats():
+    con = db()
+    issues_rows = con.execute(
+        "SELECT i.*, s.name AS reporter_name, s.student_id AS reporter_sid "
+        "FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC"
+    ).fetchall()
+    solutions = con.execute(
+        "SELECT so.*, s.name AS author_name, s.student_id AS author_sid "
+        "FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC"
+    ).fetchall()
+    con.close()
+    by_issue = {}
+    for sol in solutions:
+        by_issue.setdefault(sol["issue_id"], []).append(sol)
+    blocks = ""
+    for issue in issues_rows:
+        sols = by_issue.get(issue["id"], [])
+        messages = [
+            f'<div class="bubble"><strong>{esc(issue["reporter_name"])} · {esc(issue["reporter_sid"])}</strong><div>{esc(issue["description"])}</div><div class="small">{esc(issue["created_at"])}</div></div>'
+        ]
+        messages += [
+            f'<div class="bubble"><strong>{esc(sol["author_name"])} · {esc(sol["author_sid"])}</strong><div>{esc(sol["text"])}</div><div class="small">{esc(sol["created_at"])}</div></div>'
+            for sol in sols
+        ]
+        blocks += f'''<div class="card"><div class="resource-meta"><span class="pill">#{issue["id"]}</span><span class="pill">{esc(issue["status"])}</span></div>
+        <h2>{esc(issue["reporter_name"])} <span class="small">({esc(issue["reporter_sid"])})</span></h2>
+        <h3>{esc(issue["title"])}</h3><div class="chat">{"".join(messages)}</div>
+        <form method="post" action="/admin/chat/{issue["id"]}/delete" onsubmit="return confirm('Delete this student chat and all solutions?')"><button class="btn danger">Delete this chat</button></form></div>'''
+    body = f'''<section class="section"><div class="badge">PRIVATE ADMIN CHAT HISTORY</div><h1>Student chats.</h1>
+    <p class="muted">Only admins can access this page. Each problem report and its community solutions are shown together with the student's name and ID.</p>
+    <div class="actions"><form method="post" action="/admin/chats/delete-all" onsubmit="return confirm('Delete ALL saved student chats and solutions? This cannot be undone.')"><button class="btn danger">Delete all chats</button></form></div>
+    <section style="display:grid;gap:16px">{blocks or '<div class="empty">No saved student chats yet.</div>'}</section></section>'''
+    return layout("Student Chats", body, admin=True)
+
+
+@app.route("/admin/chat/<int:iid>/delete", methods=["POST"])
+@admin_required
+def delete_admin_chat(iid):
+    con = db()
+    con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
+    con.execute("DELETE FROM issues WHERE id=?", (iid,))
+    con.commit()
+    con.close()
+    flash("Student chat deleted.")
+    return redirect(url_for("admin_chats"))
+
+
+@app.route("/admin/chats/delete-all", methods=["POST"])
+@admin_required
+def delete_all_admin_chats():
+    con = db()
+    con.execute("DELETE FROM solutions")
+    con.execute("DELETE FROM issues")
+    con.commit()
+    con.close()
+    flash("All saved student chats and solutions were deleted.")
+    return redirect(url_for("admin_chats"))
+
+
+@app.route("/admin/notifications")
+@admin_required
+def admin_notifications():
+    con = db()
+    rows = con.execute(
+        "SELECT n.*, s.name AS student_name, s.student_id AS student_sid "
+        "FROM notifications n LEFT JOIN students s ON s.id=n.student_id ORDER BY n.id DESC"
+    ).fetchall()
+    con.close()
+    html_rows = "".join(
+        f'''<tr><td>{esc(r["created_at"])}</td><td><span class="pill">{esc(r["kind"])}</span></td>
+        <td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"]).replace(chr(10), "<br>")}</span></td>
+        <td>{esc(r["student_name"] or "—")}<br>{esc(r["student_sid"] or "—")}</td>
+        <td>{"Sent ✓" if r["whatsapp_sent"] else "Dashboard only"}</td>
+        <td><form method="post" action="/admin/notification/{r["id"]}/delete" onsubmit="return confirm('Delete this notification?')"><button class="btn danger">Delete</button></form></td></tr>'''
+        for r in rows
+    )
+    body = f'''<section class="section"><div class="badge">ADMIN ALERTS</div><h1>Notifications.</h1>
+    <p class="muted">Entry requests are saved here. If WhatsApp Cloud API is configured, VYBE also attempts to send the alert to your number.</p>
+    <div class="actions"><form method="post" action="/admin/notifications/delete-all" onsubmit="return confirm('Delete ALL admin notifications?')"><button class="btn danger">Delete all notifications</button></form></div>
+    <div class="card tablewrap"><table><tr><th>Time</th><th>Type</th><th>Message</th><th>Student</th><th>WhatsApp</th><th>Action</th></tr>{html_rows or '<tr><td colspan="6">No notifications.</td></tr>'}</table></div></section>'''
+    return layout("Notifications", body, admin=True)
+
+
+@app.route("/admin/notification/<int:nid>/delete", methods=["POST"])
+@admin_required
+def delete_admin_notification(nid):
+    con = db()
+    con.execute("DELETE FROM notifications WHERE id=?", (nid,))
+    con.commit()
+    con.close()
+    flash("Notification deleted.")
+    return redirect(url_for("admin_notifications"))
+
+
+@app.route("/admin/notifications/delete-all", methods=["POST"])
+@admin_required
+def delete_all_admin_notifications():
+    con = db()
+    con.execute("DELETE FROM notifications")
+    con.commit()
+    con.close()
+    flash("All notifications deleted.")
+    return redirect(url_for("admin_notifications"))
 
 
 WEBAUTHN_JS = r'''
@@ -846,8 +1184,9 @@ async function postJSON(url,payload){let r=await fetch(url,{method:"POST",header
 function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was cancelled or timed out. Try again and choose your phone/device.";if(e&&e.name==="InvalidStateError")return "This passkey is already registered on this device.";if(e&&e.name==="SecurityError"){let u=location.href;return "WebAuthn SecurityError. Current page: "+u+" | RP ID: " + (window.VYBE_RP_ID||"not exposed") + " | Check that the site is HTTPS and the RP ID matches this domain.";}return (e&&e.name?e.name+": ":"")+(e&&e.message)||"Passkey setup failed."}
 const reg=document.getElementById("registerPasskey");
 if(reg)reg.onclick=async()=>{const msg=document.getElementById("pkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");reg.disabled=true;reg.textContent="Waiting for device…";msg.textContent="Choose your phone or another passkey device when your browser asks.";let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);o.rp={id:location.hostname,name:(o.rp&&o.rp.name)||"VYBE"};window.VYBE_RP_ID=o.rp.id;let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/passkey/register/verify",serializeCredential(c));msg.textContent="Phone passkey registered successfully.";setTimeout(()=>location.reload(),500)}catch(e){msg.textContent=pkError(e);reg.disabled=false;reg.textContent="Register Phone Passkey"}}
+document.querySelectorAll(".toggle-password").forEach(btn=>btn.onclick=()=>{const el=document.getElementById(btn.dataset.target);if(!el)return;el.type=el.type==="password"?"text":"password";btn.textContent=el.type==="password"?"👁":"🙈"});
 const ver=document.getElementById("verifyPasskey");
-if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified. You can now change the password.";ver.textContent="Passkey verified ✓"}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Phone Passkey"}}
+if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified.";ver.textContent="Passkey verified ✓";if(location.pathname==="/admin/verify")setTimeout(()=>location.href="/admin/panel",400)}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Phone Passkey"}}
 '''
 
 
@@ -856,7 +1195,7 @@ if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if
 @admin_required
 def reset_passkey_session():
     session["passkey_verified"] = False
-    return redirect(url_for("admin_password"))
+    return redirect(url_for("admin_verify"))
 
 
 # Initialize only after all helpers/decorators are defined, but before the app
