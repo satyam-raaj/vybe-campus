@@ -54,8 +54,10 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret-in-production")
 DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
-PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "localhost")
-PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "http://localhost:5000")
+# WebAuthn is bound to the deployed VYBE origin by default. Render can still
+# override these with environment variables if the public domain changes.
+PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "vybe-campus.onrender.com").strip().lower()
+PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "https://vybe-campus.onrender.com").strip().rstrip("/")
 DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
 ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
@@ -434,9 +436,18 @@ def init_db():
     else:
         # PostgreSQL migrations are idempotent and safe on existing deployments.
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
-        # Existing V14 deployments may already have this table. Keep the PostgreSQL
-        # column Boolean-compatible so inserts using True/False never hit a type mismatch.
+        # Existing deployments may have created success as SMALLINT/INTEGER.
+        # Convert it to a real PostgreSQL BOOLEAN so True/False inserts never fail.
         con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
+        success_type = con.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='admin_login_logs' AND column_name='success'"
+        ).fetchone()
+        if success_type and str(success_type["data_type"]).lower() != "boolean":
+            con.execute(
+                "ALTER TABLE admin_login_logs ALTER COLUMN success TYPE BOOLEAN "
+                "USING (CASE WHEN success IS NULL THEN FALSE ELSE success <> 0 END)"
+            )
 
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
@@ -543,8 +554,46 @@ def admin_password_hash(con):
     return stored
 
 
+def passkey_config():
+    """Return the RP ID/origin for the current public request.
+    Environment variables take precedence; otherwise use the current HTTPS host.
+    This prevents localhost from leaking into a deployed WebAuthn ceremony.
+    """
+    host = (request.host or "").split(":", 1)[0].strip().lower()
+    env_rp = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower()
+    env_origin = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip().rstrip("/")
+    rp_id = env_rp or host or PASSKEY_RP_ID
+    origin = env_origin or (
+        f"https://{host}" if request.is_secure else f"http://{host}"
+    )
+    return rp_id, origin
+
 def webauthn_configured():
-    return WEBAUTHN_AVAILABLE and bool(PASSKEY_RP_ID and PASSKEY_ORIGIN)
+    rp_id, origin = passkey_config()
+    return WEBAUTHN_AVAILABLE and bool(rp_id and origin)
+
+def passkey_values():
+    rp_id, origin = passkey_config()
+    # A WebAuthn RP ID must be the current host or a registrable parent domain.
+    host = (request.host or "").split(":", 1)[0].strip().lower()
+    if host and rp_id != host and not host.endswith("." + rp_id):
+        raise RuntimeError(f"WebAuthn RP ID '{rp_id}' does not match host '{host}'.")
+    if request.is_secure and not origin.lower().startswith("https://"):
+        raise RuntimeError("WebAuthn origin must use HTTPS in production.")
+    return rp_id, origin
+
+
+@app.route("/health")
+def health():
+    """Deployment health check; never exposes secrets or database contents."""
+    try:
+        con = db()
+        con.execute("SELECT 1").fetchone()
+        con.close()
+        return jsonify(status="ok", database="ok", webauthn=bool(WEBAUTHN_AVAILABLE))
+    except Exception as exc:
+        app.logger.exception("Health check failed")
+        return jsonify(status="error", database="unavailable"), 503
 
 
 # ---------------------------------------------------------------------------
@@ -1328,8 +1377,9 @@ def passkey_register_options():
     if existing and not session.get("passkey_verified"):
         return jsonify(error="Verify your current passkey before registering another passkey."), 403
     exclude = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in existing]
+    rp_id, origin = passkey_values()
     options = generate_registration_options(
-        rp_id=PASSKEY_RP_ID,
+        rp_id=rp_id,
         rp_name="VYBE",
         user_id=secrets.token_bytes(32),
         user_name="vybe-admin",
@@ -1356,8 +1406,8 @@ def passkey_register_verify():
         verification = verify_registration_response(
             credential=credential,
             expected_challenge=base64.b64decode(challenge_b64),
-            expected_rp_id=PASSKEY_RP_ID,
-            expected_origin=PASSKEY_ORIGIN,
+            expected_rp_id=passkey_values()[0],
+            expected_origin=passkey_values()[1],
             require_user_verification=True,
         )
         cid = base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode("ascii")
@@ -1384,7 +1434,8 @@ def passkey_auth_options():
     con=db(); rows=con.execute("SELECT credential_id FROM passkeys").fetchall(); con.close()
     if not rows: return jsonify(error="Register a phone passkey first."),400
     allow=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in rows]
-    options=generate_authentication_options(rp_id=PASSKEY_RP_ID, allow_credentials=allow, user_verification=UserVerificationRequirement.REQUIRED)
+    rp_id, origin = passkey_values()
+    options=generate_authentication_options(rp_id=rp_id, allow_credentials=allow, user_verification=UserVerificationRequirement.REQUIRED)
     session["passkey_auth_challenge"] = base64.b64encode(options.challenge).decode("ascii")
     return app.response_class(options_to_json(options), mimetype="application/json")
 
@@ -1400,7 +1451,8 @@ def passkey_auth_verify():
         cid=credential.get("id","")
         con=db(); row=con.execute("SELECT * FROM passkeys WHERE credential_id=?",(cid,)).fetchone(); con.close()
         if not row: return jsonify(error="Unknown passkey."),403
-        verification=verify_authentication_response(credential=credential, expected_challenge=base64.b64decode(challenge_b64), expected_rp_id=PASSKEY_RP_ID, expected_origin=PASSKEY_ORIGIN, credential_public_key=base64.urlsafe_b64decode(row["public_key"]+"="*((4-len(row["public_key"])%4)%4)), credential_current_sign_count=int(row["sign_count"]), require_user_verification=True)
+        rp_id, origin = passkey_values()
+        verification=verify_authentication_response(credential=credential, expected_challenge=base64.b64decode(challenge_b64), expected_rp_id=rp_id, expected_origin=origin, credential_public_key=base64.urlsafe_b64decode(row["public_key"]+"="*((4-len(row["public_key"])%4)%4)), credential_current_sign_count=int(row["sign_count"]), require_user_verification=True)
         con=db(); con.execute("UPDATE passkeys SET sign_count=?,device_type=?,backed_up=? WHERE id=?",(int(verification.new_sign_count),str(verification.credential_device_type),bool(verification.credential_backed_up),row["id"])); con.commit(); con.close()
         session["passkey_verified"] = True
         return jsonify(ok=True)
@@ -1661,13 +1713,13 @@ def delete_all_admin_notifications():
 WEBAUTHN_JS = r'''
 function b64ToBuf(v){v=v.replace(/-/g,"+").replace(/_/g,"/");while(v.length%4)v+="=";return Uint8Array.from(atob(v),c=>c.charCodeAt(0)).buffer}
 function bufToB64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}
-function decodeCreation(o){o.challenge=b64ToBuf(o.challenge);o.user.id=b64ToBuf(o.user.id);(o.excludeCredentials||[]).forEach(x=>x.id=b64ToBuf(x.id));const host=location.hostname;if(!o.rp||!o.rp.id)o.rp={id:host,name:"VYBE"};window.VYBE_RP_ID=o.rp.id;return o}
+function decodeCreation(o){o.challenge=b64ToBuf(o.challenge);o.user.id=b64ToBuf(o.user.id);(o.excludeCredentials||[]).forEach(x=>x.id=b64ToBuf(x.id));const host=location.hostname;if(!o.rp||!o.rp.id)o.rp={id:host,name:"VYBE"};if(o.rp.id!==host&&!host.endsWith("."+o.rp.id)){throw new Error("WebAuthn RP ID does not match this domain.")}window.VYBE_RP_ID=o.rp.id;return o}
 function decodeRequest(o){o.challenge=b64ToBuf(o.challenge);(o.allowCredentials||[]).forEach(x=>x.id=b64ToBuf(x.id));return o}
 function serializeCredential(c){return {id:c.id,rawId:bufToB64(c.rawId),type:c.type,response:{clientDataJSON:bufToB64(c.response.clientDataJSON),attestationObject:c.response.attestationObject?bufToB64(c.response.attestationObject):undefined,authenticatorData:c.response.authenticatorData?bufToB64(c.response.authenticatorData):undefined,signature:c.response.signature?bufToB64(c.response.signature):undefined,userHandle:c.response.userHandle?bufToB64(c.response.userHandle):undefined},clientExtensionResults:c.getClientExtensionResults?c.getClientExtensionResults():{}}}
 async function postJSON(url,payload){let r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});let j={};try{j=await r.json()}catch(_){throw new Error("Server returned an invalid response.")}if(!r.ok)throw new Error(j.error||"Request failed");return j}
-function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was cancelled or timed out. Try again and choose your phone/device.";if(e&&e.name==="InvalidStateError")return "This passkey is already registered on this device.";if(e&&e.name==="SecurityError"){let u=location.href;return "WebAuthn SecurityError. Current page: "+u+" | RP ID: " + (window.VYBE_RP_ID||"not exposed") + " | Check that the site is HTTPS and the RP ID matches this domain.";}return (e&&e.name?e.name+": ":"")+(e&&e.message)||"Passkey setup failed."}
+function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was cancelled or timed out. Try again and choose your phone/device.";if(e&&e.name==="InvalidStateError")return "This passkey is already registered on this device.";if(e&&e.name==="SecurityError"){let u=location.href;return "WebAuthn SecurityError. Current page: "+u+" | RP ID: " + (window.VYBE_RP_ID||"browser default/current origin") + " | Make sure you are using https://vybe-campus.onrender.com and not an old/preview domain.";}return (e&&e.name?e.name+": ":"")+(e&&e.message)||"Passkey setup failed."}
 const reg=document.getElementById("registerPasskey");
-if(reg)reg.onclick=async()=>{const msg=document.getElementById("pkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");reg.disabled=true;reg.textContent="Waiting for device…";msg.textContent="Choose your phone or another passkey device when your browser asks.";let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);o.rp={id:location.hostname,name:(o.rp&&o.rp.name)||"VYBE"};window.VYBE_RP_ID=o.rp.id;let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/passkey/register/verify",serializeCredential(c));msg.textContent="Phone passkey registered successfully.";setTimeout(()=>location.reload(),500)}catch(e){msg.textContent=pkError(e);reg.disabled=false;reg.textContent="Register Phone Passkey"}}
+if(reg)reg.onclick=async()=>{const msg=document.getElementById("pkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");reg.disabled=true;reg.textContent="Waiting for device…";msg.textContent="Choose your phone or another passkey device when your browser asks.";let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/passkey/register/verify",serializeCredential(c));msg.textContent="Phone passkey registered successfully.";setTimeout(()=>location.reload(),500)}catch(e){msg.textContent=pkError(e);reg.disabled=false;reg.textContent="Register Phone Passkey"}}
 const ver=document.getElementById("verifyPasskey");
 if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified.";ver.textContent="Passkey verified ✓";if(location.pathname==="/admin/verify")setTimeout(()=>location.href="/admin/panel",400)}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Phone Passkey"}}
 '''
