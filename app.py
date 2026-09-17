@@ -132,7 +132,7 @@ def record_admin_login(con, success, event="login"):
     user_agent = request.headers.get("User-Agent", "")[:500]
     con.execute(
         "INSERT INTO admin_login_logs(logged_at_ist,success,event,ip_address,user_agent) VALUES(?,?,?,?,?)",
-        (now_ist(), 1 if success else 0, event[:40], ip, user_agent),
+        (now_ist(), bool(success), event[:40], ip, user_agent),
     )
 
 
@@ -383,6 +383,14 @@ def init_db():
                 whatsapp_sent INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS admin_login_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                logged_at_ist TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 0,
+                event TEXT NOT NULL DEFAULT 'login',
+                ip_address TEXT,
+                user_agent TEXT
+            )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
@@ -406,6 +414,9 @@ def init_db():
     else:
         # PostgreSQL migrations are idempotent and safe on existing deployments.
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
+        # Existing V14 deployments may already have this table. Keep the PostgreSQL
+        # column Boolean-compatible so inserts using True/False never hit a type mismatch.
+        con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
 
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
