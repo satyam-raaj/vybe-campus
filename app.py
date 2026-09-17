@@ -256,6 +256,17 @@ def init_db():
                 backed_up BOOLEAN NOT NULL DEFAULT FALSE,
                 transports TEXT,
                 created_at TEXT NOT NULL
+            )""",            """CREATE TABLE IF NOT EXISTS community_messages (
+                id BIGSERIAL PRIMARY KEY,
+                student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""",            """CREATE TABLE IF NOT EXISTS community_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",            """CREATE TABLE IF NOT EXISTS notifications (
                 id BIGSERIAL PRIMARY KEY,
                 kind TEXT NOT NULL,
@@ -352,6 +363,7 @@ def init_db():
         "whatsapp_phone_number_id": "",
         "whatsapp_access_token": "",
         "whatsapp_admin_number": "",
+        "community_chat_enabled": "1",
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -465,9 +477,9 @@ CSS = r"""
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Chats</a><a href="/admin/notifications">Alerts</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -563,7 +575,7 @@ def dashboard():
     drive = setting(con, "google_drive_url", DRIVE_URL)
     wa = setting(con, "whatsapp_link", "")
     con.close()
-    body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Everything your campus needs, without exposing private Student IDs.</p></section><section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section><section class="section grid2"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">Open the live shared academic folder.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open Google Drive →</a></div><div class="card"><h2>💬 WhatsApp Community</h2><p class="muted">Academic material shared through the configured community.</p>{f'<a class="btn dark" target="_blank" rel="noopener noreferrer" href="{esc(wa)}">Open WhatsApp →</a>' if valid_url(wa) else '<span class="pill">Not configured yet</span>'}</div></section>'''
+    body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Everything your campus needs, without exposing private Student IDs.</p></section><section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section><section class="section"><a class="card" href="/chat"><div class="kpi">💬</div><h3>Community Chat</h3><p class="muted">Chat with other VYBE students. Everyone sees names, not Student IDs.</p></a></section><section class="section grid2"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">Open the live shared academic folder.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open Google Drive →</a></div><div class="card"><h2>💬 WhatsApp Community</h2><p class="muted">Academic material shared through the configured community.</p>{f'<a class="btn dark" target="_blank" rel="noopener noreferrer" href="{esc(wa)}">Open WhatsApp →</a>' if valid_url(wa) else '<span class="pill">Not configured yet</span>'}</div></section>'''
     return layout("Dashboard", body)
 
 
@@ -635,6 +647,68 @@ def issues():
     cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
     body = f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{''.join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No reports yet.</div>'}</div></div></section>'''
     return layout("Campus", body)
+
+
+@app.route("/chat", methods=["GET", "POST"])
+@student_required
+def chat():
+    con = db()
+    enabled = setting(con, "community_chat_enabled", "1") == "1"
+    if request.method == "POST":
+        if not enabled:
+            con.close()
+            flash("Community Chat is currently disabled by the admin.")
+            return redirect(url_for("chat"))
+        text = request.form.get("message", "").strip()[:1500]
+        if not text:
+            con.close()
+            flash("Please enter a message.")
+            return redirect(url_for("chat"))
+        con.execute("INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)", (session["student_db_id"], text, now()))
+        con.commit()
+        con.close()
+        return redirect(url_for("chat") + "#latest")
+    rows = con.execute("SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
+    me = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    con.close()
+    if not enabled:
+        body = '''<section class="section"><div class="badge">COMMUNITY CHAT</div><div class="card" style="margin-top:18px;text-align:center;padding:55px 25px"><div class="icon">💬</div><h1>Chat is offline.</h1><p class="muted">The administrator has temporarily disabled the community chat.</p></div></section>'''
+        return layout("Community Chat", body)
+    bubbles = ""
+    for r in rows:
+        mine = " mine" if r["student_id"] == session["student_db_id"] else ""
+        bubbles += f'''<div class="bubble{mine}"><strong>{esc(r["name"])}</strong><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div></div>'''
+    body = f'''<section class="section"><div class="badge">VYBE COMMUNITY CHAT</div><h1>Talk to the campus.</h1><p class="muted">Everyone can see the conversation. Only your registered name is shown — Student IDs and private account details stay hidden.</p></section><section class="section"><div class="card"><div id="chatMessages" class="chat" style="max-height:58vh;overflow:auto">{bubbles or '<div class="empty">No messages yet. Start the conversation.</div>'}<span id="latest"></span></div><form class="form" method="post" style="margin-top:15px"><textarea name="message" maxlength="1500" placeholder="Write a message..." required></textarea><button class="btn accent">Send message →</button></form><p class="small" style="margin-top:10px">Logged in as <strong>{esc(me["name"])}</strong></p></div></section><script>
+const chatBox=document.getElementById('chatMessages');
+function renderCommunityMessages(messages){{
+  if(!chatBox)return;
+  chatBox.innerHTML='';
+  if(!messages.length){{chatBox.innerHTML='<div class="empty">No messages yet. Start the conversation.</div>';return;}}
+  messages.forEach(m=>{{
+    const b=document.createElement('div'); b.className='bubble';
+    const n=document.createElement('strong'); n.textContent=m.name;
+    const t=document.createElement('div'); t.style.cssText='margin-top:5px;white-space:pre-wrap;word-break:break-word'; t.textContent=m.message;
+    const d=document.createElement('div'); d.className='small'; d.style.marginTop='5px'; d.textContent=m.created_at;
+    b.append(n,t,d); chatBox.appendChild(b);
+  }});
+  chatBox.scrollTop=chatBox.scrollHeight;
+}}
+async function refreshCommunityChat(){{
+  try{{const r=await fetch('/chat/messages',{{credentials:'same-origin',cache:'no-store'}});if(!r.ok)return;const j=await r.json();if(!j.enabled){{location.reload();return;}}renderCommunityMessages(j.messages);}}catch(e){{}}
+}}
+if(chatBox){{chatBox.scrollTop=chatBox.scrollHeight;setInterval(refreshCommunityChat,3000);}}
+</script>'''
+    return layout("Community Chat", body)
+
+
+@app.route("/chat/messages")
+@student_required
+def chat_messages():
+    con = db()
+    enabled = setting(con, "community_chat_enabled", "1") == "1"
+    rows = con.execute("SELECT cm.id, cm.student_id, cm.message, cm.created_at, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
+    con.close()
+    return jsonify({"enabled": enabled, "messages": [{"id": r["id"], "name": r["name"], "message": r["message"], "created_at": r["created_at"]} for r in rows]})
 
 
 @app.route("/community", methods=["GET", "POST"])
@@ -727,6 +801,7 @@ def admin_panel():
         "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
         "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
         "alerts": con.execute("SELECT COUNT(*) AS c FROM notifications").fetchone()["c"],
+        "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
     }
     online = setting(con, "vybe_online", "1") == "1"
     con.close()
@@ -736,7 +811,8 @@ def admin_panel():
       <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
       <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
       <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
-      <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Student chats</h3><p class="muted">Private problem and solution history.</p></a>
+      <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
+      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
       <a class="card" href="/admin/notifications"><div class="kpi">{stats["alerts"]}</div><h3>Notifications</h3><p class="muted">Entry requests and admin alerts.</p></a>
     </div>
     <section class="section grid2">
@@ -859,6 +935,7 @@ def admin_settings():
         wa_phone_id = request.form.get("whatsapp_phone_number_id", "").strip()[:100]
         wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
         wa_admin = request.form.get("whatsapp_admin_number", "").strip()[:30]
+        chat_enabled = "1" if request.form.get("community_chat_enabled") == "1" else "0"
         if wa and not valid_url(wa):
             flash("WhatsApp community link must be a valid URL.")
         elif drive and not valid_url(drive):
@@ -871,6 +948,7 @@ def admin_settings():
             set_setting(con, "whatsapp_phone_number_id", wa_phone_id)
             set_setting(con, "whatsapp_access_token", wa_token)
             set_setting(con, "whatsapp_admin_number", wa_admin)
+            set_setting(con, "community_chat_enabled", chat_enabled)
             con.commit()
             flash("Configuration saved.")
         con.close()
@@ -883,6 +961,7 @@ def admin_settings():
     wa_version = setting(con, "whatsapp_api_version", "v23.0")
     wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
     wa_admin = setting(con, "whatsapp_admin_number", "")
+    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
     con.close()
     checked = "checked" if wa_enabled else ""
     body = f'''<section class="section"><h1>Settings.</h1>
@@ -900,6 +979,7 @@ def admin_settings():
         <input type="password" name="whatsapp_access_token" placeholder="WhatsApp Cloud API access token">
         <div class="small">Automatic WhatsApp delivery requires a configured WhatsApp Cloud API sender and any Meta messaging/template rules that apply to the account.</div>
         <button class="btn accent">Save configuration</button></form></div>
+      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div>
       <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
         <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
         <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
@@ -1126,6 +1206,39 @@ def delete_all_admin_chats():
     con.close()
     flash("All saved student chats and solutions were deleted.")
     return redirect(url_for("admin_chats"))
+
+
+@app.route("/admin/community-chat", methods=["GET", "POST"])
+@admin_required
+def admin_community_chat():
+    con = db()
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "toggle":
+            current = setting(con, "community_chat_enabled", "1") == "1"
+            set_setting(con, "community_chat_enabled", "0" if current else "1")
+            con.commit(); con.close()
+            flash("Community Chat disabled." if current else "Community Chat enabled.")
+            return redirect(url_for("admin_community_chat"))
+        if action == "delete":
+            try: mid = int(request.form.get("message_id", "0"))
+            except ValueError: mid = 0
+            con.execute("DELETE FROM community_messages WHERE id=?", (mid,))
+            con.commit(); con.close(); flash("Community message deleted.")
+            return redirect(url_for("admin_community_chat"))
+        if action == "delete_all":
+            con.execute("DELETE FROM community_messages")
+            con.commit(); con.close(); flash("All community chat messages deleted.")
+            return redirect(url_for("admin_community_chat"))
+    enabled = setting(con, "community_chat_enabled", "1") == "1"
+    rows = con.execute("SELECT cm.*, s.name, s.student_id FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id DESC LIMIT 500").fetchall()
+    con.close()
+    bubbles = ""
+    for r in rows:
+        bubbles += f'''<div class="bubble"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><strong>{esc(r["name"])}</strong> <span class="small">({esc(r["student_id"])})</span><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div></div><form method="post" onsubmit="return confirm('Delete this message?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="message_id" value="{r["id"]}"><button class="btn danger">Delete</button></form></div></div>'''
+    status = "🟢 ON" if enabled else "🔴 OFF"
+    body = f'''<section class="section"><div class="badge">COMMUNITY CHAT CONTROL</div><h1>Community Chat.</h1><div class="grid2"><div class="card"><h2>{status}</h2><p class="muted">Students can {"send and read messages" if enabled else "not use the chat while it is disabled"}.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn {"danger" if enabled else "good"}">{"🔴 Turn Chat OFF" if enabled else "🟢 Turn Chat ON"}</button></form></div><div class="card"><h2>Moderation</h2><p class="muted">Delete individual messages or clear the entire community chat.</p><form method="post" onsubmit="return confirm('Delete ALL community chat messages? This cannot be undone.')"><input type="hidden" name="action" value="delete_all"><button class="btn danger">Delete all messages</button></form></div></div><section class="section"><div class="card"><h2>Recent messages</h2><div class="chat">{bubbles or '<div class="empty">No community messages yet.</div>'}</div></div></section></section>'''
+    return layout("Community Chat Control", body, admin=True)
 
 
 @app.route("/admin/notifications")
