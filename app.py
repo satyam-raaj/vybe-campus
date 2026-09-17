@@ -261,13 +261,8 @@ def init_db():
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL
-            )""",            """CREATE TABLE IF NOT EXISTS community_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                message TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
-            )""",            """CREATE TABLE IF NOT EXISTS notifications (
+            )""",
+            """CREATE TABLE IF NOT EXISTS notifications (
                 id BIGSERIAL PRIMARY KEY,
                 kind TEXT NOT NULL,
                 title TEXT NOT NULL,
