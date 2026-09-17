@@ -138,7 +138,7 @@ def valid_url(value, allowed_schemes=("https", "http")):
         return False
 
 
-def send_whatsapp_notification(message):
+def send_whatsapp_notification(message, recipient_override=None):
     """Send an optional WhatsApp Cloud API text notification using Python stdlib only."""
     con = db()
     try:
@@ -146,7 +146,8 @@ def send_whatsapp_notification(message):
         version = setting(con, "whatsapp_api_version", "v23.0").strip() or "v23.0"
         phone_number_id = setting(con, "whatsapp_phone_number_id", "").strip()
         token = setting(con, "whatsapp_access_token", "").strip()
-        recipient = re.sub(r"[^0-9]", "", setting(con, "whatsapp_admin_number", "").strip())
+        recipient_raw = recipient_override if recipient_override is not None else setting(con, "whatsapp_admin_number", "")
+        recipient = re.sub(r"[^0-9]", "", str(recipient_raw).strip())
     finally:
         con.close()
     if not enabled or not phone_number_id or not token or not recipient:
@@ -277,6 +278,7 @@ def init_db():
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
+                phone_number TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
                 expires_at TEXT,
@@ -353,6 +355,7 @@ def init_db():
                 student_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
+                phone_number TEXT,
                 approved_at TEXT,
                 approval_code_hash TEXT,
                 expires_at TEXT,
@@ -377,6 +380,12 @@ def init_db():
             con.execute("ALTER TABLE students ADD COLUMN last_seen TEXT")
     else:
         con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
+    if not con.is_pg:
+        reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
+        if "phone_number" not in reset_cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN phone_number TEXT")
+    else:
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS phone_number TEXT")
 
     defaults = {
         "whatsapp_link": "",
@@ -527,7 +536,7 @@ def layout(title, body, admin=False):
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>document.querySelectorAll(".toggle-password").forEach(btn=>btn.addEventListener("click",()=>{{const el=document.getElementById(btn.dataset.target);if(!el)return;el.type=el.type==="password"?"text":"password";btn.textContent=el.type==="password"?"👁":"🙈";}}));</script></body></html>'''
 
 
 @app.route("/offline")
@@ -609,8 +618,9 @@ def forgot_password():
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
-        if not sid or not name:
-            flash("Enter your name and Student ID.")
+        phone = re.sub(r"[^0-9]", "", request.form.get("phone", ""))
+        if not sid or not name or len(phone) < 10:
+            flash("Enter your name, Student ID and a valid phone number.")
             return redirect(url_for("forgot_password"))
         con = db()
         student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
@@ -623,14 +633,13 @@ def forgot_password():
             con.close()
             flash("A password-change request is already waiting for admin approval or is already approved.")
             return redirect(url_for("forgot_password"))
-        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", now()))
+        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,phone_number) VALUES(?,?,?,?)", (student["id"], "pending", now(), phone))
         con.commit(); con.close()
-        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
+        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nPhone: {phone}", student["id"])
         flash("Request sent to admin. You can change your password only after admin approval.")
         return redirect(url_for("forgot_password"))
-    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. Your password cannot be changed until the admin approves the request.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already have an approval code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
+    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time login code will be sent to the phone number you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Phone number</div><input name="phone" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="Phone number for the login code"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a login code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
     return layout("Forgot Password", body)
-
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
@@ -1382,9 +1391,20 @@ def admin_password_requests():
             action='<span class="pill status-good">Approved · give the one-time code to the student</span>'
         else:
             action=f'<span class="pill">{esc(r["status"])}</span>'
-        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving generates a one-time 6-digit code that the admin gives to the student. Admins never see the student's existing password.</p><div class="notice">For security, the approval code is shown only immediately after approval. It expires after 15 minutes and is invalid after one use.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
+        phone_cell = esc(r["phone_number"] or "—") + (f'''<form method="post" action="/admin/password-request/{r['id']}/delete-phone" onsubmit="return confirm('Delete this saved phone number? The request will remain for proof.')"><button class="btn dark" type="submit" style="margin-top:6px">Delete number</button></form>''' if r["phone_number"] else '<span class="small">Deleted</span>')
+        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td>{phone_cell}</td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving generates a one-time 6-digit code that the admin gives to the student. Admins never see the student's existing password.</p><div class="notice">For security, the approval code is shown only immediately after approval. It expires after 15 minutes and is invalid after one use.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Phone proof</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="6">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
+
+
+@app.route("/admin/password-request/<int:rid>/delete-phone", methods=["POST"])
+@admin_required
+def admin_password_request_delete_phone(rid):
+    con = db()
+    con.execute("UPDATE password_reset_requests SET phone_number=NULL WHERE id=?", (rid,))
+    con.commit(); con.close()
+    flash("Saved phone number deleted. The request remains for proof.")
+    return redirect(url_for("admin_password_requests"))
 
 
 @app.route("/admin/password-request/<int:rid>/<action>", methods=["POST"])
@@ -1401,10 +1421,35 @@ def admin_password_request_action(rid, action):
         con.commit(); con.close(); flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
     code=f"{secrets.randbelow(1000000):06d}"
     approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    con.execute("UPDATE password_reset_requests SET status='approved',approved_at=?,approval_code_hash=?,expires_at=? WHERE id=?", (approved,hash_password(code),expires,rid))
-    con.commit(); con.close()
-    flash(f"Approved {row['name']} ({row['student_id']}). One-time approval code: {code}. Give this code to the student; it expires in 15 minutes.")
-    return redirect(url_for("admin_password_requests"))
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        sid = request.form.get("student_id", "").strip()[:80]
+        name = request.form.get("name", "").strip()[:80]
+        phone = re.sub(r"[^0-9]", "", request.form.get("phone", ""))
+        if not sid or not name or len(phone) < 10:
+            flash("Enter your name, Student ID and a valid phone number.")
+            return redirect(url_for("forgot_password"))
+        con = db()
+        student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
+        if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
+            con.close()
+            flash("If the account is eligible, the password-change request has been sent to the admin.")
+            return redirect(url_for("forgot_password"))
+        existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
+        if existing:
+            con.close()
+            flash("A password-change request is already waiting for admin approval or is already approved.")
+            return redirect(url_for("forgot_password"))
+        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at,phone_number) VALUES(?,?,?,?)", (student["id"], "pending", now(), phone))
+        con.commit(); con.close()
+        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}\nPhone: {phone}", student["id"])
+        flash("Request sent to admin. You can change your password only after admin approval.")
+        return redirect(url_for("forgot_password"))
+    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. After approval, a one-time login code will be sent to the phone number you provide.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Phone number</div><input name="phone" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="Phone number for the login code"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already received a login code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
+    return layout("Forgot Password", body)
+
+
 
 
 @app.route("/admin/notifications", endpoint="admin_notifications")
