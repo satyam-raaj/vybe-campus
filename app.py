@@ -6,7 +6,7 @@ import secrets
 import hashlib
 import html
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
@@ -272,6 +272,16 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE
             )""",
+            """CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id BIGSERIAL PRIMARY KEY,
+                student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                requested_at TEXT NOT NULL,
+                approved_at TEXT,
+                approval_code_hash TEXT,
+                expires_at TEXT,
+                used_at TEXT
+            )""",
         ]
     else:
         statements = [
@@ -337,6 +347,17 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                requested_at TEXT NOT NULL,
+                approved_at TEXT,
+                approval_code_hash TEXT,
+                expires_at TEXT,
+                used_at TEXT,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",
         ]
     con.executescript(statements)
@@ -500,9 +521,9 @@ CSS = r"""
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/password-requests">Password Requests</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -555,7 +576,7 @@ def register():
         finally:
             con.close()
         return redirect(url_for("login"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><input type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your password"></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div style="position:relative"><input id="registerPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="btn dark toggle-password" data-target="registerPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -580,8 +601,80 @@ def login():
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
         session.clear(); session["student_db_id"] = row["id"]
         return redirect(url_for("dashboard"))
-    body = '''<div class="auth"><div class="card authbox"><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><input type="password" name="password" required autocomplete="current-password" placeholder="Your password"></div><button class="btn accent" type="submit">Enter VYBE →</button></form><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p></div></div>'''
+    body = '''<div class="auth"><div class="card authbox"><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div style="position:relative"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="btn dark toggle-password" data-target="loginPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p></div></div>'''
     return layout("Student Login", body)
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        sid = request.form.get("student_id", "").strip()[:80]
+        name = request.form.get("name", "").strip()[:80]
+        if not sid or not name:
+            flash("Enter your name and Student ID.")
+            return redirect(url_for("forgot_password"))
+        con = db()
+        student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
+        if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
+            con.close()
+            flash("If the account is eligible, the password-change request has been sent to the admin.")
+            return redirect(url_for("forgot_password"))
+        existing = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
+        if existing:
+            con.close()
+            flash("A password-change request is already waiting for admin approval or is already approved.")
+            return redirect(url_for("forgot_password"))
+        con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", now()))
+        con.commit(); con.close()
+        create_admin_notification("password_reset", "Password change request", f"🔐 Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
+        flash("Request sent to admin. You can change your password only after admin approval.")
+        return redirect(url_for("forgot_password"))
+    body='''<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Submit a request to the admin. Your password cannot be changed until the admin approves the request.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval →</button></form><div class="actions"><a class="btn dark" href="/reset-password">I already have an approval code</a><a class="btn dark" href="/login">Back to login</a></div></div></div>'''
+    return layout("Forgot Password", body)
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    if request.method == "POST":
+        sid = request.form.get("student_id", "").strip()[:80]
+        code = request.form.get("approval_code", "").strip()[:20]
+        new_password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(new_password) < 6 or new_password != confirm or not sid or not code:
+            flash("Enter a valid approval code and matching password of at least 6 characters.")
+            return redirect(url_for("reset_password"))
+        con = db()
+        row = con.execute("SELECT r.id,r.student_id,r.approval_code_hash,r.expires_at,s.status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE s.student_id=? AND r.status='approved' ORDER BY r.id DESC LIMIT 1", (sid,)).fetchone()
+        valid = bool(row and row["expires_at"] and row["expires_at"] > now() and check_password(code, row["approval_code_hash"]))
+        if not valid:
+            con.close(); flash("The approval code is invalid or expired."); return redirect(url_for("reset_password"))
+        con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
+        con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
+        con.commit(); con.close()
+        flash("Password changed successfully. You can now log in with your new password.")
+        return redirect(url_for("login"))
+    body='''<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Use the one-time approval code provided by the admin. The code expires after 15 minutes and can only be used once.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Admin approval code</div><input name="approval_code" required maxlength="20" inputmode="numeric" placeholder="6-digit code"></div><div><div class="label">New password</div><div style="position:relative"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="resetPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="resetConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Change password →</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Need admin approval first?</a></p></div></div>'''
+    return layout("Reset Password", body)
+
+
+@app.route("/account/password", methods=["GET", "POST"])
+@student_required
+def account_password():
+    con = db()
+    if request.method == "POST":
+        current = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        row = con.execute("SELECT password_hash FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+        if not check_password(current, row["password_hash"]):
+            con.close(); flash("Current password is incorrect."); return redirect(url_for("account_password"))
+        if len(new_password) < 6 or new_password != confirm:
+            con.close(); flash("New passwords must match and be at least 6 characters."); return redirect(url_for("account_password"))
+        con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), session["student_db_id"]))
+        con.commit(); con.close(); flash("Password changed successfully."); return redirect(url_for("dashboard"))
+    con.close()
+    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div style="position:relative"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="btn dark toggle-password" data-target="currentPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">New password</div><div style="position:relative"><input id="changePassword" type="password" name="new_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="btn dark toggle-password" data-target="changePassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><div><div class="label">Confirm new password</div><div style="position:relative"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="btn dark toggle-password" data-target="changeConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">👁</button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
+    return layout("Change Password", body)
+
 
 @app.route("/logout")
 def logout():
@@ -1277,6 +1370,45 @@ def admin_community_chat():
 
 @app.route("/admin/notifications")
 @admin_required
+@app.route("/admin/password-requests")
+@admin_required
+def admin_password_requests():
+    con = db()
+    rows = con.execute("SELECT r.*, s.name AS student_name, s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id ORDER BY r.id DESC").fetchall()
+    con.close()
+    html_rows=[]
+    for r in rows:
+        if r["status"] == "pending":
+            action=f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form></div>'''
+        elif r["status"] == "approved":
+            action='<span class="pill status-good">Approved · give the one-time code to the student</span>'
+        else:
+            action=f'<span class="pill">{esc(r["status"])}</span>'
+        html_rows.append(f'''<tr><td>{esc(r['requested_at'])}</td><td><strong>{esc(r['student_name'])}</strong><br><span class="small">{esc(r['student_sid'])}</span></td><td><span class="pill">{esc(r['status'])}</span></td><td>{esc(r['approved_at'] or '—')}<br><span class="small">{esc(r['expires_at'] or '')}</span></td><td>{action}</td></tr>''')
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change here. Approving generates a one-time 6-digit code that the admin gives to the student. Admins never see the student's existing password.</p><div class="notice">For security, the approval code is shown only immediately after approval. It expires after 15 minutes and is invalid after one use.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
+    return layout("Password Requests", body, admin=True)
+
+
+@app.route("/admin/password-request/<int:rid>/<action>", methods=["POST"])
+@admin_required
+def admin_password_request_action(rid, action):
+    if action not in ("approve", "reject"):
+        abort(400)
+    con=db()
+    row=con.execute("SELECT r.*,s.name,s.student_id FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (rid,)).fetchone()
+    if not row or row["status"] != "pending":
+        con.close(); flash("This password request is no longer pending."); return redirect(url_for("admin_password_requests"))
+    if action == "reject":
+        con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,))
+        con.commit(); con.close(); flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
+    code=f"{secrets.randbelow(1000000):06d}"
+    approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
+    con.execute("UPDATE password_reset_requests SET status='approved',approved_at=?,approval_code_hash=?,expires_at=? WHERE id=?", (approved,hash_password(code),expires,rid))
+    con.commit(); con.close()
+    flash(f"Approved {row['name']} ({row['student_id']}). One-time approval code: {code}. Give this code to the student; it expires in 15 minutes.")
+    return redirect(url_for("admin_password_requests"))
+
+
 def admin_notifications():
     con = db()
     rows = con.execute(
