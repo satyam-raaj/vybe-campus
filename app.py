@@ -568,6 +568,21 @@ def student_required(fn):
     return wrapper
 
 
+def content_manager_required(fn):
+    @wraps(fn)
+    @student_required
+    def wrapper(*args, **kwargs):
+        sid = session.get("student_db_id")
+        con = db()
+        row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
+        con.close()
+        if not row or row["value"] != "1":
+            flash("You do not have publisher access.")
+            return redirect(url_for("dashboard"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -686,7 +701,13 @@ def layout(title, body, admin=False):
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        publisher_link = ""
+        try:
+            _lc = db(); _lr = _lc.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{session.get('student_db_id')}",)).fetchone(); _lc.close()
+            if _lr and _lr["value"] == "1": publisher_link = '<a href="/publisher">Publisher</a>'
+        except Exception:
+            publisher_link = ""
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -1602,8 +1623,15 @@ def admin_students():
         student_sid = esc(s["student_id"])
         student_status = esc(s["status"])
         created_at = esc(s["created_at"])
-        rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}<a class="btn danger" href="/admin/student/{sid_num}/delete" onclick="return confirm(&quot;Delete this student and all dependent records?&quot;)">Delete</a></div></td></tr>'
-    body = f'''<section class="section" id="pending"><h1>Students.</h1><p class="muted">Approve or block students using their name and Student ID. Student passwords are private and are never visible to admins.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
+        access_con = db(); access_row = access_con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid_num}",)).fetchone(); access_con.close()
+        publisher = bool(access_row and access_row["value"] == "1")
+        if s["status"] == "approved":
+            access_action = (f'<form method="post" action="/admin/content-access/{sid_num}/revoke"><button class="btn" onclick="return confirm(\'Remove publisher access from this student?\')">Revoke publisher</button></form>' if publisher else f'<form method="post" action="/admin/content-access/{sid_num}/grant"><button class="btn accent">Give publisher access</button></form>')
+        else:
+            access_action = '<span class="small muted">Approve first</span>'
+        access_label = '<span class="pill">Publisher</span>' if publisher else '<span class="small muted">Student</span>'
+        rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}{access_action}<a class="btn danger" href="/admin/student/{sid_num}/delete" onclick="return confirm(&quot;Delete this student and all dependent records?&quot;)">Delete</a></div><div style="margin-top:6px">{access_label}</div></td></tr>'
+    body = f'''<section class="section" id="pending"><h1>Students.</h1><p class="muted">Approve or block students, or give a trusted student limited Publisher access. Publisher access allows creating announcements and upcoming events only; deleting them remains admin-only.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
     return layout("Students", body, admin=True)
 
 @app.route("/admin/student/<int:sid>/<action>")
@@ -1632,6 +1660,47 @@ def delete_all_students():
     con.execute("DELETE FROM issues")
     con.execute("DELETE FROM students")
     con.commit(); con.close(); flash("All students and dependent campus/community records were deleted."); return redirect(url_for("admin_students"))
+
+
+@app.route("/publisher", methods=["GET", "POST"])
+@content_manager_required
+def publisher():
+    if request.method == "POST":
+        kind = request.form.get("kind", "").strip()
+        con = db()
+        try:
+            if kind == "announcement":
+                title = request.form.get("title", "").strip()[:160]
+                message = request.form.get("message", "").strip()[:3000]
+                priority = request.form.get("priority", "Normal").strip()
+                expires = request.form.get("expires_at", "").strip()[:40]
+                if priority not in ("Normal", "Important", "High"): priority = "Normal"
+                if not title or not message:
+                    flash("Title and announcement message are required.")
+                else:
+                    con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
+                    con.commit(); flash("Announcement published to VYBE.")
+            elif kind == "event":
+                title = request.form.get("event_title", "").strip()[:160]
+                event_date = request.form.get("event_date", "").strip()[:20]
+                event_time = request.form.get("event_time", "").strip()[:20]
+                location = request.form.get("location", "").strip()[:160]
+                description = request.form.get("description", "").strip()[:1500]
+                if not title or not event_date:
+                    flash("Event title and date are required.")
+                else:
+                    con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
+                    con.commit(); flash("Event added to VYBE.")
+            else:
+                flash("Invalid publisher action.")
+        except Exception:
+            con.rollback(); app.logger.exception("Publisher action failed")
+            flash("Could not publish right now. Please try again.")
+        finally:
+            con.close()
+        return redirect(url_for("publisher"))
+    body = """<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add announcements and upcoming events. You cannot delete announcements or events.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new campus announcements and upcoming events. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
+    return layout("Publisher", body)
 
 
 @app.route("/admin/announcements", methods=["GET","POST"])
@@ -1694,6 +1763,27 @@ def delete_event(eid):
     con=db(); con.execute("DELETE FROM events WHERE id=?",(eid,)); con.commit(); con.close()
     flash("Event deleted.")
     return redirect(url_for("admin_events"))
+
+
+@app.route("/admin/content-access/<int:sid>/<action>", methods=["POST"])
+@admin_required
+def admin_content_access(sid, action):
+    if action not in ("grant", "revoke"):
+        abort(404)
+    con = db()
+    student = con.execute("SELECT id,name,status FROM students WHERE id=?", (sid,)).fetchone()
+    if not student:
+        con.close(); flash("Student not found."); return redirect(url_for("admin_students"))
+    if action == "grant":
+        if student["status"] != "approved":
+            con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_students"))
+        set_setting(con, f"content_manager_{sid}", "1")
+        flash(f"Publisher access granted to {student['name']}.")
+    else:
+        set_setting(con, f"content_manager_{sid}", "0")
+        flash(f"Publisher access revoked from {student['name']}.")
+    con.commit(); con.close()
+    return redirect(url_for("admin_students"))
 
 
 @app.route("/admin/resources")
