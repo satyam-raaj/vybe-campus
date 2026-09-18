@@ -643,11 +643,22 @@ def global_online_gate():
     return None
 
 
+@app.errorhandler(500)
+def handle_internal_server_error(error):
+    app.logger.exception("Unhandled VYBE server error", exc_info=error)
+    try:
+        return layout("VYBE Error", '<section class="section"><div class="auth"><div class="card authbox"><div class="badge">VYBE</div><h1>Something went wrong.</h1><p class="muted">That action could not be completed. Your data was not intentionally changed. Please go back and try again.</p><div class="actions"><a class="btn accent" href="javascript:history.back()">Go back</a><a class="btn dark" href="/dashboard">Dashboard</a></div></div></div></section>'), 500
+    except Exception:
+        return "VYBE could not complete that request. Please try again.", 500
+
+
 @app.after_request
 def security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "same-origin"
+    if session.get("student_db_id"):
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -675,7 +686,7 @@ def layout(title, body, admin=False):
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/notifications">🔔</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -713,14 +724,7 @@ def register():
                 "INSERT INTO students(name,student_id,password_hash,status,created_at,last_seen) VALUES(?,?,?,?,?,?)",
                 (name, sid, password_hash_value, "pending", now(), None),
             )
-            new_student_id = con.execute("SELECT id FROM students WHERE student_id=?", (sid,)).fetchone()["id"]
             con.commit()
-            create_admin_notification(
-                "entry_request",
-                "New VYBE entry request",
-                f"🔔 New VYBE entry request\nName: {name}\nStudent ID: {sid}\nThe student is waiting for admin approval.",
-                new_student_id,
-            )
             flash("Registration submitted. Your account is pending admin approval.")
         except Exception:
             con.rollback()
@@ -787,10 +791,6 @@ def forgot_password():
                 flash("We couldn't start the password-change request right now. Please try again in a moment.")
                 return redirect(url_for("forgot_password"))
             session["password_reset_request_id"] = request_id
-            try:
-                create_admin_notification("password_reset", "Password change request", f"Password change request\nName: {student['name']}\nStudent ID: {sid}", student["id"])
-            except Exception:
-                app.logger.exception("Non-fatal password-reset notification failure")
             flash("Request sent successfully. Keep this page open while the admin reviews it.")
             return redirect(url_for("forgot_password"))
         finally:
@@ -799,57 +799,42 @@ def forgot_password():
     request_id = session.get("password_reset_request_id")
     waiting_ui = ""
     if request_id:
-        waiting_ui = """
-        <div class="notice" id="resetStatusBox" style="margin-top:16px">
-          <strong id="resetStatusTitle">Waiting for admin approval...</strong>
-          <p class="small" id="resetStatusText" style="margin:7px 0 0">Your request has been sent. Keep this page open; VYBE will automatically update it when the admin approves you.</p>
-        </div>
-        <div id="inlineResetForm" style="display:none;margin-top:16px">
-          <div class="card" style="padding:18px">
-            <div class="badge">APPROVED</div>
-            <h2>Admin approved your request</h2>
-            <p class="muted">You can now change your password. Create a new password below. Your existing password is never shown to the admin.</p>
-            <form class="form" method="post" action="/reset-password">
-              <input type="hidden" name="request_id" value="{rid}">
-              <div><div class="label">New password</div><div style="position:relative"><input id="autoNewPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your new password"><button type="button" class="btn dark toggle-password" data-target="autoNewPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
-              <div><div class="label">Confirm new password</div><div style="position:relative"><input id="autoConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm your new password"><button type="button" class="btn dark toggle-password" data-target="autoConfirmPassword" style="position:absolute;right:7px;top:7px;padding:7px 10px">View</button></div></div>
-              <button class="btn accent" type="submit">Change password</button>
-            </form>
-          </div>
+        waiting_ui = f"""
+        <div class=\"notice\" id=\"resetStatusBox\" style=\"margin-top:16px\">
+          <strong id=\"resetStatusTitle\">Waiting for admin approval...</strong>
+          <p class=\"small\" id=\"resetStatusText\" style=\"margin:7px 0 0\">Your request is with the admin. Keep this page open; when approved, VYBE will open the new-password page automatically.</p>
         </div>
         <script>
-        (()=>{
-          const requestId = {rid};
-          const statusTitle = document.getElementById("resetStatusTitle");
-          const statusText = document.getElementById("resetStatusText");
-          const form = document.getElementById("inlineResetForm");
+        (()=>{{
+          const requestId = {int(request_id)};
+          const title = document.getElementById(\"resetStatusTitle\");
+          const text = document.getElementById(\"resetStatusText\");
           let timer = null;
-          async function checkResetStatus(){
-            try{
-              const r = await fetch(`/forgot-password/status?request_id=${requestId}`, {credentials:"same-origin", cache:"no-store"});
+          async function check(){{
+            try{{
+              const r = await fetch(`/forgot-password/status?request_id=${{requestId}}`, {{credentials: 'same-origin', cache: 'no-store'}});
               if(!r.ok) return;
               const j = await r.json();
-              if(j.status === "approved"){
-                statusTitle.textContent = "Admin approved your request";
-                statusText.textContent = "You can now change your password using the form below.";
-                form.style.display = "block";
+              if(j.status === 'approved'){{
+                title.textContent = 'Approved ✓';
+                text.textContent = 'Opening secure password page…';
                 if(timer) clearInterval(timer);
-              } else if(j.status === "rejected"){
-                statusTitle.textContent = "Password-change request rejected";
-                statusText.textContent = "Please submit a new request if you still need to change your password.";
+                window.location.href = '/reset-password';
+              }} else if(j.status === 'rejected'){{
+                title.textContent = 'Request rejected';
+                text.textContent = 'Please submit a new request if you still need to change your password.';
                 if(timer) clearInterval(timer);
-              } else if(j.status === "used" || j.status === "expired" || j.status === "invalid"){
-                statusTitle.textContent = "This reset request is no longer active";
-                statusText.textContent = "Please submit a new password-change request.";
+              }} else if(['used','expired','invalid'].includes(j.status)){{
+                title.textContent = 'Request is no longer active';
+                text.textContent = 'Please submit a new password-change request.';
                 if(timer) clearInterval(timer);
-              }
-            }catch(e){ }
-          }
-          checkResetStatus();
-          timer=setInterval(checkResetStatus, 2500);
-        })();
+              }}
+            }}catch(e){{}}
+          }}
+          check(); timer=setInterval(check, 2000);
+        }})();
         </script>
-        """.format(rid=int(request_id))
+        """
     body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Enter your name and Student ID to request a password change. After admin approval, this page will unlock the new-password form automatically.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
     return layout("Forgot Password", body)
 
@@ -887,12 +872,6 @@ def reset_password():
         row = con.execute("SELECT r.id,r.student_id,r.status,r.expires_at,s.status AS student_status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
         if not row or row["status"] != "approved" or row["student_status"] == "blocked":
             flash("Your password-change request has not been approved yet or is no longer active.")
-            return redirect(url_for("forgot_password"))
-        if row["expires_at"] and row["expires_at"] <= now():
-            con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=?", (row["id"],))
-            con.commit()
-            session.pop("password_reset_request_id", None)
-            flash("Your password-change approval has expired. Please submit a new request.")
             return redirect(url_for("forgot_password"))
         if request.method == "POST":
             posted_request_id = request.form.get("request_id", "").strip()
@@ -1110,17 +1089,6 @@ def search():
     return layout("Search",body)
 
 
-@app.route("/notifications")
-@student_required
-def student_notifications():
-    con=db()
-    rows=con.execute("SELECT * FROM notifications WHERE student_id=? OR student_id IS NULL ORDER BY id DESC LIMIT 50",(session["student_db_id"],)).fetchall()
-    con.close()
-    cards="".join(f'''<div class="feed-item"><span class="pill">{esc(r["kind"])}</span><h3 style="margin:9px 0 5px">{esc(r["title"])}</h3><p class="muted" style="white-space:pre-wrap;margin:0">{esc(r["message"])}</p><div class="small" style="margin-top:8px">{esc(r["created_at"])}</div></div>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">NOTIFICATION CENTER</div><h1>Your updates.</h1><p class="muted">Announcements, community activity and important VYBE alerts.</p></section><section class="section feed-list">{cards or '<div class="empty">No notifications yet.</div>'}</section>'''
-    return layout("Notifications",body)
-
-
 @app.route("/profile", methods=["GET","POST"])
 @student_required
 def profile():
@@ -1240,12 +1208,6 @@ def issues():
         con.execute("INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)", (session["student_db_id"], category, title, desc, "Open", now()))
         student = con.execute("SELECT id,name,student_id FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
         con.commit(); con.close()
-        create_admin_notification(
-            "problem_report",
-            "New campus problem",
-            f"🐛 New VYBE problem report\\nName: {student['name']}\\nStudent ID: {student['student_id']}\\nTitle: {title}",
-            student["id"],
-        )
         flash("Campus problem reported."); return redirect(url_for("issues"))
     rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall(); con.close()
     cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
@@ -1321,15 +1283,30 @@ def community():
     con = db()
     if request.method == "POST":
         try:
-            iid = int(request.form.get("issue_id", "0")); text = request.form.get("text", "").strip()[:1500]
-        except ValueError:
-            iid, text = 0, ""
-        issue = con.execute("SELECT id FROM issues WHERE id=?", (iid,)).fetchone()
-        if not issue or not text:
-            con.close(); flash("Could not post that solution."); return redirect(url_for("community"))
-        # No moderation flag exists: a solution becomes visible immediately.
-        con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
-        con.commit(); con.close(); flash("Solution posted to the community."); return redirect(url_for("community"))
+            iid = int(request.form.get("issue_id", "0"))
+        except (TypeError, ValueError):
+            iid = 0
+        text = request.form.get("text", "").strip()[:1500]
+        if iid <= 0 or not text:
+            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community"))
+        try:
+            # Any approved student may solve any other student's problem.
+            issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
+            if not issue:
+                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community"))
+            if issue["student_id"] == session["student_db_id"]:
+                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community"))
+            con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
+            con.commit()
+            con.close()
+            flash("Solution posted successfully.")
+            return redirect(url_for("community") + f"#problem-{iid}")
+        except Exception:
+            con.rollback()
+            con.close()
+            app.logger.exception("Community solution post failed")
+            flash("We couldn't post that solution right now. Please try again.")
+            return redirect(url_for("community"))
     issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
     solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
     by_issue = {}
@@ -1509,7 +1486,6 @@ def admin_panel():
         "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
         "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
         "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
-        "alerts": con.execute("SELECT COUNT(*) AS c FROM notifications").fetchone()["c"],
         "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
         "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
         "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
@@ -1527,7 +1503,6 @@ def admin_panel():
       <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
       <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
-      <a class="card" href="/admin/notifications"><div class="kpi">{stats["alerts"]}</div><h3>Notifications</h3><p class="muted">Entry requests and admin alerts.</p></a>
     </div>
     <section class="section grid2">
       <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data plus the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
@@ -1537,7 +1512,7 @@ def admin_panel():
       <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
       <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
       <form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div>
-      <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Sensitive credential changes require a fresh passkey verification.</p><a class="btn dark" href="/admin/password">Open security center →</a></div>
+      <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
     </section></section>'''
     return layout("Admin", body, admin=True)
 
@@ -1624,15 +1599,14 @@ def admin_announcements():
         if priority not in ("Normal","Important","High"): priority="Normal"
         if not title or not message:
             con.close(); flash("Title and announcement message are required."); return redirect(url_for("admin_announcements"))
-        con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)",(title,message,priority,now(),expires or None))
-        con.execute("INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",("announcement",title,message,None,now(),False))
+        con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
         con.commit(); con.close()
         flash("Announcement published to VYBE.")
         return redirect(url_for("admin_announcements"))
     rows=con.execute("SELECT * FROM announcements ORDER BY id DESC").fetchall()
     con.close()
     html_rows="".join(f'''<tr><td><span class="pill">{esc(r["priority"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"][:220])}</span></td><td>{esc(r["created_at"])}</td><td>{esc(r["expires_at"] or "No expiry")}</td><td><form method="post" action="/admin/announcement/{r["id"]}/delete" onsubmit="return confirm('Delete this announcement?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><div class="small">Expiry is optional. Students see active announcements on their dashboard.</div><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>How it works</h2><p class="muted">Published announcements appear on student dashboards, the Announcements page, search, notifications and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Priority</th><th>Announcement</th><th>Created</th><th>Expires</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No announcements yet.</td></tr>'}</table></div></section></section>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><div class="small">Expiry is optional. Students see active announcements on their dashboard.</div><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>How it works</h2><p class="muted">Published announcements appear on student dashboards, the Announcements page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Priority</th><th>Announcement</th><th>Created</th><th>Expires</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No announcements yet.</td></tr>'}</table></div></section></section>'''
     return layout("Announcements",body,admin=True)
 
 
@@ -1656,15 +1630,14 @@ def admin_events():
         description=request.form.get("description","").strip()[:1500]
         if not title or not event_date:
             con.close(); flash("Event title and date are required."); return redirect(url_for("admin_events"))
-        con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)",(title,event_date,event_time,location,description,now()))
-        con.execute("INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",("event",title,f"{event_date} {event_time} · {location}\n{description}",None,now(),False))
+        con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
         con.commit(); con.close()
         flash("Event added to VYBE.")
         return redirect(url_for("admin_events"))
     rows=con.execute("SELECT * FROM events ORDER BY event_date ASC,event_time ASC,id DESC").fetchall()
     con.close()
     html_rows="".join(f'''<tr><td>{esc(r["event_date"])}</td><td><strong>{esc(r["title"])}</strong><br><span class="small">🕒 {esc(r["event_time"] or "TBA")} · 📍 {esc(r["location"] or "TBA")}</span></td><td>{esc(r["description"][:180])}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search, notifications and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Details</th><th>Action</th></tr>{html_rows or '<tr><td colspan="4">No events yet.</td></tr>'}</table></div></section></section>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Details</th><th>Action</th></tr>{html_rows or '<tr><td colspan="4">No events yet.</td></tr>'}</table></div></section></section>'''
     return layout("Events",body,admin=True)
 
 
@@ -1732,7 +1705,6 @@ def admin_settings():
     if request.method == "POST":
         wa = request.form.get("whatsapp_link", "").strip()[:500]
         drive = request.form.get("google_drive_url", "").strip()[:500]
-        wa_enabled = "1" if request.form.get("whatsapp_notifications_enabled") == "1" else "0"
         wa_version = request.form.get("whatsapp_api_version", "v23.0").strip()[:30] or "v23.0"
         wa_phone_id = request.form.get("whatsapp_phone_number_id", "").strip()[:100]
         wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
@@ -1745,7 +1717,6 @@ def admin_settings():
         else:
             set_setting(con, "whatsapp_link", wa)
             set_setting(con, "google_drive_url", drive or DRIVE_URL)
-            set_setting(con, "whatsapp_notifications_enabled", wa_enabled)
             set_setting(con, "whatsapp_api_version", wa_version)
             set_setting(con, "whatsapp_phone_number_id", wa_phone_id)
             set_setting(con, "whatsapp_access_token", wa_token)
@@ -1759,13 +1730,11 @@ def admin_settings():
     drive = setting(con, "google_drive_url", DRIVE_URL)
     online = setting(con, "vybe_online", "1") == "1"
     pk = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
-    wa_enabled = setting(con, "whatsapp_notifications_enabled", "0") == "1"
     wa_version = setting(con, "whatsapp_api_version", "v23.0")
     wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
     wa_admin = setting(con, "whatsapp_admin_number", "")
     chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
     con.close()
-    checked = "checked" if wa_enabled else ""
     body = f'''<section class="section"><h1>Settings.</h1>
     <div class="grid2">
       <div class="card"><h2>☁️ Google Drive</h2><form class="form" method="post">
@@ -1773,13 +1742,6 @@ def admin_settings():
         <div class="small">Students can only see this link after login.</div>
         <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
         <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
-        <h2 style="margin-top:18px">🔔 WhatsApp admin alerts</h2>
-        <label class="small"><input type="checkbox" name="whatsapp_notifications_enabled" value="1" {checked} style="width:auto;margin-right:7px"> Send VYBE alerts to my WhatsApp</label>
-        <input name="whatsapp_phone_number_id" value="{esc(wa_phone_id)}" placeholder="WhatsApp Cloud API phone number ID">
-        <input name="whatsapp_admin_number" value="{esc(wa_admin)}" placeholder="Your WhatsApp number, e.g. 9198XXXXXXXX">
-        <input name="whatsapp_api_version" value="{esc(wa_version)}" placeholder="Graph API version, e.g. v23.0">
-        <input type="password" name="whatsapp_access_token" placeholder="WhatsApp Cloud API access token">
-        <div class="small">Automatic WhatsApp delivery requires a configured WhatsApp Cloud API sender and any Meta messaging/template rules that apply to the account.</div>
         <button class="btn accent">Save configuration</button></form></div>
       <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div>
       <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
@@ -2058,7 +2020,7 @@ def admin_password_requests():
         else:
             action = f'''<div class="actions"><span class="pill">{esc(r["status"])}</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         html_rows.append(f'''<tr><td>{esc(r["requested_at"])}</td><td><strong>{esc(r["student_name"])}</strong><br><span class="small">{esc(r["student_sid"])}</span></td><td><span class="pill">{esc(r["status"])}</span></td><td>{esc(r["approved_at"] or '—')}<br><span class="small">{esc(r["expires_at"] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, the student's open VYBE password-recovery page automatically unlocks a new-password form. No reset code is shown, and admins never see the student's existing password.</p><div class="notice">After approval, the student has 15 minutes to set a new password. The approval can only be used once.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, the student's open VYBE password-recovery page automatically unlocks a new-password form. No reset code is shown, and admins never see the student's existing password.</p><div class="notice">After approval, the student is taken directly to the new-password page. No reset code is required. The approval can only be used once.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
 
 
@@ -2082,57 +2044,12 @@ def admin_password_request_action(rid, action):
         con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,)); con.commit(); con.close()
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
 
-    approved=now(); expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    con.execute("UPDATE password_reset_requests SET status='approved', approval_code_hash=NULL, approval_code_token=NULL, expires_at=? WHERE id=?", (approved, expires, rid))
+    approved = now()
+    expires = None
+    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL WHERE id=?", (approved, rid))
     con.commit(); con.close()
     flash("Approved. The student can now set a new password directly on their recovery page for the next 15 minutes.")
     return redirect(url_for("admin_password_requests"))
-
-
-@app.route("/admin/notifications", endpoint="admin_notifications")
-@admin_required
-def admin_notifications():
-    con = db()
-    rows = con.execute(
-        "SELECT n.*, s.name AS student_name, s.student_id AS student_sid "
-        "FROM notifications n LEFT JOIN students s ON s.id=n.student_id ORDER BY n.id DESC"
-    ).fetchall()
-    con.close()
-    html_rows = "".join(
-        f'''<tr><td>{esc(r["created_at"])}</td><td><span class="pill">{esc(r["kind"])}</span></td>
-        <td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"]).replace(chr(10), "<br>")}</span></td>
-        <td>{esc(r["student_name"] or "—")}<br>{esc(r["student_sid"] or "—")}</td>
-        <td>{"Sent ✓" if r["whatsapp_sent"] else "Dashboard only"}</td>
-        <td><form method="post" action="/admin/notification/{r["id"]}/delete" onsubmit="return confirm('Delete this notification?')"><button class="btn danger">Delete</button></form></td></tr>'''
-        for r in rows
-    )
-    body = f'''<section class="section"><div class="badge">ADMIN ALERTS</div><h1>Notifications.</h1>
-    <p class="muted">Entry requests are saved here. If WhatsApp Cloud API is configured, VYBE also attempts to send the alert to your number.</p>
-    <div class="actions"><form method="post" action="/admin/notifications/delete-all" onsubmit="return confirm('Delete ALL admin notifications?')"><button class="btn danger">Delete all notifications</button></form></div>
-    <div class="card tablewrap"><table><tr><th>Time</th><th>Type</th><th>Message</th><th>Student</th><th>WhatsApp</th><th>Action</th></tr>{html_rows or '<tr><td colspan="6">No notifications.</td></tr>'}</table></div></section>'''
-    return layout("Notifications", body, admin=True)
-
-
-@app.route("/admin/notification/<int:nid>/delete", methods=["POST"])
-@admin_required
-def delete_admin_notification(nid):
-    con = db()
-    con.execute("DELETE FROM notifications WHERE id=?", (nid,))
-    con.commit()
-    con.close()
-    flash("Notification deleted.")
-    return redirect(url_for("admin_notifications"))
-
-
-@app.route("/admin/notifications/delete-all", methods=["POST"])
-@admin_required
-def delete_all_admin_notifications():
-    con = db()
-    con.execute("DELETE FROM notifications")
-    con.commit()
-    con.close()
-    flash("All notifications deleted.")
-    return redirect(url_for("admin_notifications"))
 
 
 WEBAUTHN_JS = r'''
