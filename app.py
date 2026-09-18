@@ -616,6 +616,10 @@ def init_db():
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
         con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
+        # Existing deployments may have the timetable table from before the
+        # Assistant text column was introduced. Add it before any upload tries
+        # to insert assistant_text, otherwise PostgreSQL rejects the INSERT.
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
         # Existing V14 deployments may already have this table. Keep the PostgreSQL
         # column Boolean-compatible so inserts using True/False never hit a type mismatch.
         con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
@@ -931,7 +935,7 @@ input:focus,textarea:focus,select:focus{border-color:#2d9de0;background:rgba(6,2
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/announcements">Announcements</a><a href="/admin/events">Events</a><a href="/admin/timetable">Timetable</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Chats</a><a href="/admin/community-chat">Community Chat</a><a href="/admin/assistant">Assistant</a><a href="/admin/status">Online / Offline</a><a href="/admin/analytics">Analytics</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/password-requests">Password Requests</a><a href="/admin/login-history">Login History</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/login-history">Login History</a><a href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
@@ -2262,8 +2266,10 @@ def admin_timetable():
             f.stream.seek(0); f.save(UPLOAD_DIR/filename)
             con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
             con.commit(); flash("Timetable posted to VYBE.")
-        except Exception:
-            con.rollback(); flash("Could not save the timetable. Please try again.")
+        except Exception as exc:
+            con.rollback()
+            app.logger.error("Timetable upload failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+            flash("Could not save the timetable. Please try again. The error has been logged.")
         finally: con.close()
         return redirect(url_for("admin_timetable"))
     rows=con.execute("SELECT * FROM timetables ORDER BY id DESC").fetchall(); con.close()
