@@ -20,6 +20,7 @@ from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 try:
@@ -58,8 +59,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret-in-production")
 DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
-PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "vybe-campus.onrender.com")
-PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "https://vybe-campus.onrender.com")
+RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
+PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or RENDER_HOST or "vybe-campus.onrender.com"
+PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID else "https://vybe-campus.onrender.com")
 DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
@@ -77,8 +79,11 @@ app.config.update(
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("VYBE_COOKIE_SECURE", "0") == "1",
+    SESSION_COOKIE_SECURE=os.environ.get("VYBE_COOKIE_SECURE", "1") == "1",
 )
+# Render sits behind a reverse proxy. Trust the forwarded scheme/host so
+# HTTPS cookies, redirects and WebAuthn origin checks behave consistently.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
 class DB:
@@ -230,12 +235,7 @@ def create_admin_notification(kind, title, message, student_id=None):
     except Exception:
         # The admin notification is supplementary. Never fail the user's
         # password-reset request because this optional audit/alert failed.
-        try:
-            con.rollback()
-            con.close()
-        except Exception:
-            pass
-    return sent
+        return sent
 
 
 def setting(con, key, default=""):
@@ -499,7 +499,14 @@ def init_db():
                 backed_up INTEGER NOT NULL DEFAULT 0,
                 transports TEXT,
                 created_at TEXT NOT NULL
-            )""",            """CREATE TABLE IF NOT EXISTS notifications (
+            )""",            """CREATE TABLE IF NOT EXISTS community_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 kind TEXT NOT NULL,
                 title TEXT NOT NULL,
@@ -764,10 +771,23 @@ def webauthn_configured():
 # Offline gate: admin login/admin routes remain available while public/student
 # routes receive the dedicated offline page.
 # ---------------------------------------------------------------------------
+@app.route("/healthz")
+def healthz():
+    """Small Render health endpoint that does not depend on student/admin state."""
+    try:
+        con = db()
+        con.execute("SELECT 1").fetchone()
+        con.close()
+        return jsonify(ok=True, service="VYBE")
+    except Exception as exc:
+        app.logger.error("VYBE health check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+        return jsonify(ok=False, service="VYBE", error="database unavailable"), 503
+
+
 @app.before_request
 def global_online_gate():
     path = request.path
-    if path.startswith("/admin") or path.startswith("/passkey") or path == "/offline":
+    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
     try:
         con = db()
