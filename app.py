@@ -2734,7 +2734,7 @@ init_db()
 
 
 # Admin login history deletion
-@app.route('/admin/login-history/delete/<int:history_id>', methods=['POST'])
+@app.route('/admin/login-history/delete/<int:history_id>', methods=['GET', 'POST'])
 @admin_required
 def admin_delete_login_history(history_id):
     con = get_db()
@@ -2742,11 +2742,18 @@ def admin_delete_login_history(history_id):
         con.execute("DELETE FROM login_history WHERE id = ?", (history_id,))
         con.commit()
         flash("Login history entry deleted.", "success")
+    except Exception as exc:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        flash(f"Could not delete login history: {exc}", "error")
     finally:
         con.close()
     return redirect(url_for('admin_login_history'))
 
-@app.route('/admin/login-history/delete-all', methods=['POST'])
+
+@app.route('/admin/login-history/delete-all', methods=['GET', 'POST'])
 @admin_required
 def admin_delete_all_login_history():
     con = get_db()
@@ -2754,6 +2761,12 @@ def admin_delete_all_login_history():
         con.execute("DELETE FROM login_history")
         con.commit()
         flash("All login history deleted.", "success")
+    except Exception as exc:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        flash(f"Could not delete login history: {exc}", "error")
     finally:
         con.close()
     return redirect(url_for('admin_login_history'))
