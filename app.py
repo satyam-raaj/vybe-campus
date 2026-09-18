@@ -11,6 +11,7 @@ import html
 import io
 import mimetypes
 import sqlite3
+import zlib
 from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from functools import wraps
@@ -416,7 +417,7 @@ def init_db():
             )""",
             """CREATE TABLE IF NOT EXISTS timetables (
                 id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
-                file_data BYTEA
+                file_data BYTEA, assistant_text TEXT NOT NULL DEFAULT ''
             )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id BIGSERIAL PRIMARY KEY,
@@ -539,7 +540,7 @@ def init_db():
             """CREATE TABLE IF NOT EXISTS timetables (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
-                file_data BLOB
+                file_data BLOB, assistant_text TEXT NOT NULL DEFAULT ''
             )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -599,6 +600,8 @@ def init_db():
         tt_cols = {r["name"] for r in con.execute("PRAGMA table_info(timetables)").fetchall()}
         if "file_data" not in tt_cols:
             con.execute("ALTER TABLE timetables ADD COLUMN file_data BLOB")
+        if "assistant_text" not in tt_cols:
+            con.execute("ALTER TABLE timetables ADD COLUMN assistant_text TEXT NOT NULL DEFAULT ''")
     else:
         # PostgreSQL migrations are idempotent and safe on existing deployments.
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
@@ -654,8 +657,6 @@ def init_db():
         "whatsapp_admin_number": "",
         "community_chat_enabled": "1",
         "vybe_assistant_enabled": "1",
-        "college_website_url": "",
-        "college_website_last_sync": "",
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -1148,6 +1149,51 @@ def _latest_timetables(con, limit=20):
     return con.execute("SELECT * FROM timetables ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
 
+def _decode_pdf_literal(value):
+    value=value.replace(b"\\n",b"\n").replace(b"\\r",b"\r").replace(b"\\t",b"\t")
+    value=value.replace(b"\\(",b"(").replace(b"\\)",b")").replace(b"\\\\",b"\\")
+    def repl(m):
+        try: return bytes([int(m.group(1),8)])
+        except Exception: return b""
+    value=re.sub(rb"\\([0-7]{1,3})",repl,value)
+    return value.decode("utf-8","ignore") or value.decode("latin-1","ignore")
+
+
+def _extract_pdf_text(file_data,max_chars=30000):
+    if not file_data or not file_data.startswith(b"%PDF"): return ""
+    chunks=[]
+    try:
+        for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream",file_data,re.S):
+            raw=match.group(1); header=file_data[max(0,match.start()-1200):match.start()]
+            if b"/FlateDecode" in header:
+                try: raw=zlib.decompress(raw)
+                except Exception: continue
+            text=raw.decode("latin-1","ignore")
+            for block in re.findall(r"BT(.*?)ET",text,re.S):
+                strings=[]
+                for m in re.finditer(r"\((?:\\.|[^\\)])*\)\s*(?:Tj|'|\")",block):
+                    token=m.group(0); a=token.find("(")+1; b=token.rfind(")")
+                    if b>a: strings.append(_decode_pdf_literal(token[a:b].encode("latin-1","ignore")))
+                for arr in re.findall(r"\[(.*?)\]\s*TJ",block,re.S):
+                    for token in re.findall(r"\((?:\\.|[^\\)])*\)",arr):
+                        strings.append(_decode_pdf_literal(token[1:-1].encode("latin-1","ignore")))
+                if strings: chunks.append(" ".join(x for x in strings if x.strip()))
+                if sum(map(len,chunks))>=max_chars: break
+            if sum(map(len,chunks))>=max_chars: break
+    except Exception: return ""
+    return re.sub(r"\s+"," "," ".join(chunks)).strip()[:max_chars]
+
+
+def _timetable_text(file_data,suffix,browser_text=""):
+    browser_text=re.sub(r"\s+"," ",browser_text or "").strip()[:30000]
+    return browser_text or (_extract_pdf_text(file_data) if suffix==".pdf" else "")
+
+
+def _timetable_ocr_script(form_id,file_id,text_id,status_id):
+    return rf'''<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>(function(){{const form=document.getElementById({form_id!r}),file=document.getElementById({file_id!r}),hidden=document.getElementById({text_id!r}),status=document.getElementById({status_id!r});if(!form||!file||!hidden)return;form.addEventListener('submit',async function(e){{const f=file.files&&file.files[0];if(!f||!/^image\/(png|jpeg|webp)$/i.test(f.type)||hidden.value.trim())return;e.preventDefault();if(status)status.textContent='Reading timetable image… please wait.';try{{const result=await Tesseract.recognize(f,'eng',{{logger:function(m){{if(status&&m.status)status.textContent='Reading timetable image… '+Math.round((m.progress||0)*100)+'%';}}}});hidden.value=(result.data.text||'').trim().slice(0,30000);if(status)status.textContent=hidden.value?'Timetable text captured for VYBE Assistant.':'No readable text found; the image was still uploaded.';form.submit();}}catch(err){{if(status)status.textContent='Image reading failed; the timetable will still be uploaded.';form.submit();}}}});}})();</script>'''
+
+
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
     out=[]
@@ -1168,18 +1214,16 @@ def _campus_search(con, q, limit=8):
     ).fetchall():
         out.append({"type":"Community","title":r["title"],"text":f'{r["status"]} · {r["description"]}',"url":"/community#problem-"+str(r["id"]),"date":r["created_at"]})
     for r in con.execute(
-        "SELECT id,title,original_name,created_at FROM timetables WHERE title LIKE ? OR original_name LIKE ? ORDER BY id DESC LIMIT ?",
-        (like,like,limit)
+        "SELECT id,title,original_name,assistant_text,created_at FROM timetables WHERE title LIKE ? OR original_name LIKE ? OR assistant_text LIKE ? ORDER BY id DESC LIMIT ?",
+        (like,like,like,limit)
     ).fetchall():
-        out.append({"type":"Timetable","title":r["title"],"text":r["original_name"],"url":"/timetable","date":r["created_at"]})
+        out.append({"type":"Timetable","title":r["title"],"text":(r["assistant_text"] or r["original_name"])[:1500],"url":"/timetable","date":r["created_at"]})
     for r in con.execute(
         "SELECT id,title,course,semester,subject,description FROM resources "
         "WHERE title LIKE ? OR course LIKE ? OR subject LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?",
         (like,like,like,like,limit)
     ).fetchall():
         out.append({"type":"Resource","title":r["title"],"text":f'{r["course"]} · {r["semester"]} · {r["subject"]} · {r["description"]}',"url":"/academics?q="+q,"date":""})
-    for r in con.execute("SELECT source_url,title,text,updated_at FROM campus_pages WHERE title LIKE ? OR text LIKE ? ORDER BY id DESC LIMIT ?",(like,like,limit)).fetchall():
-        out.append({"type":"College Website","title":r["title"],"text":r["text"][:500],"url":r["source_url"],"date":r["updated_at"]})
     return out[:limit*4]
 
 
@@ -1208,6 +1252,22 @@ def _free_vybe_answer(con, question):
     """Free, deterministic VYBE assistant: no external AI/API is required."""
     q = re.sub(r"\s+", " ", question.lower()).strip()
     ist = _current_ist()
+    timetable_words = ("timetable", "time table", "class schedule", "class timing", "period", "lecture", "which class", "which room", "what class", "class at", "class tomorrow")
+
+    if any(x in q for x in timetable_words):
+        rows=con.execute("SELECT id,title,original_name,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 8").fetchall()
+        if not rows: return "🗓️ No timetable has been uploaded to VYBE yet."
+        terms=[w for w in re.findall(r"[a-z0-9]+",q) if len(w)>2 and w not in {"timetable","table","class","schedule","what","which","room","timing","period","lecture","tomorrow","today"}]
+        matches=[]
+        for r in rows:
+            hay=(r["title"]+" "+(r["assistant_text"] or "")).lower()
+            if not terms or all(t in hay for t in terms[:4]): matches.append(r)
+        matches=matches or rows[:3]
+        lines=["🗓️ Timetable information from VYBE:"]
+        for r in matches[:3]:
+            text=(r["assistant_text"] or "").strip()
+            lines.append(f"• {r['title']}: {text[:1800] if text else 'The timetable file is available in Timetable, but no readable text was extracted from this upload.'}")
+        return "\n".join(lines)
 
     if any(x in q for x in ("what time", "current time", "time now", "time is it", "what's the time", "whats the time")):
         return f"🕐 The current VYBE time is {_format_ist(ist)}."
@@ -1264,14 +1324,8 @@ def _free_vybe_answer(con, question):
 
     results = _campus_search(con, question, 8)
     if results:
-        website=[x for x in results if x['type']=='College Website']
-        if website:
-            return "🌐 From the official college website:\n" + "\n".join(f"• {x['title']} — {x['text']}\n  Source: {x['url']}" for x in website[:5])
         return "🔎 I found this in VYBE:\n" + "\n".join(f"• {x['title']} — {x['text']}" for x in results[:5])
-    if setting(con,'college_website_url',''):
-        return "I couldn't find a verified answer in VYBE's campus data or the synced official college website. Please check the official college website or ask the administration."
-    return "I can help with VYBE campus information. The admin can also connect the official college website so I can search its public information."
-
+    return "I couldn't find a verified answer in VYBE's campus data yet. Ask the admin to upload the relevant timetable/resource or add the information to VYBE."
 
 @app.route("/chat")
 @student_required
@@ -1762,8 +1816,8 @@ def admin_panel():
       <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a><a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
     </div>
     <section class="section grid2">
-      <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data plus the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
-      <div class="card"><h2>🧠 What it can answer</h2><p class="muted">Announcements, new updates, events, notes/files, resources, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
+      <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
+      <div class="card"><h2>🧠 What it can answer</h2><p class="muted">Announcements, updates, events, notes/files, resources, uploaded timetable data, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
     </section>
     <section class="section grid2">
       <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
@@ -1778,10 +1832,10 @@ def admin_panel():
 @admin_required
 def admin_analytics():
     con=db()
-    stats={"students":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],"pending":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],"resources":con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],"announcements":con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],"events":con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],"problems":con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],"solutions":con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],"saved":con.execute("SELECT COUNT(*) AS c FROM saved_reports").fetchone()["c"],"helpful":con.execute("SELECT COUNT(*) AS c FROM helpful_votes").fetchone()["c"],"website_pages":con.execute("SELECT COUNT(*) AS c FROM campus_pages").fetchone()["c"]}
+    stats={"students":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],"pending":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],"resources":con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],"announcements":con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],"events":con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],"problems":con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],"solutions":con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],"saved":con.execute("SELECT COUNT(*) AS c FROM saved_reports").fetchone()["c"],"helpful":con.execute("SELECT COUNT(*) AS c FROM helpful_votes").fetchone()["c"],"timetables":con.execute("SELECT COUNT(*) AS c FROM timetables").fetchone()["c"]}
     top=con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE status='approved' ORDER BY reputation_points DESC,helpful_answers DESC LIMIT 10").fetchall(); con.close()
     rows="".join(f'<tr><td>{esc(x["name"])}</td><td>{x["reputation_points"]}</td><td>{x["helpful_answers"]}</td><td>{x["accepted_solutions"]}</td></tr>' for x in top)
-    body=f'''<section class="section"><div class="badge">ADMIN ANALYTICS</div><h1>Campus analytics.</h1><p class="muted">Operational counts from VYBE's own database. No external analytics service is required.</p><section class="grid"><div class="card"><div class="kpi">{stats["students"]}</div><h3>Approved students</h3></div><div class="card"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3></div><div class="card"><div class="kpi">{stats["problems"]}</div><h3>Campus problems</h3></div><div class="card"><div class="kpi">{stats["solutions"]}</div><h3>Open solutions</h3></div><div class="card"><div class="kpi">{stats["helpful"]}</div><h3>Helpful votes</h3></div><div class="card"><div class="kpi">{stats["saved"]}</div><h3>Saved reports</h3></div><div class="card"><div class="kpi">{stats["website_pages"]}</div><h3>Website pages synced</h3></div><div class="card"><div class="kpi">{stats["pending"]}</div><h3>Pending students</h3></div></section><section class="section"><div class="card tablewrap"><h2>Top VYBE contributors</h2><table><tr><th>Student</th><th>Points</th><th>Helpful answers</th><th>Accepted solutions</th></tr>{rows or '<tr><td colspan="4">No contributor data yet.</td></tr>'}</table></div></section></section>'''
+    body=f'''<section class="section"><div class="badge">ADMIN ANALYTICS</div><h1>Campus analytics.</h1><p class="muted">Operational counts from VYBE's own database. No external analytics service is required.</p><section class="grid"><div class="card"><div class="kpi">{stats["students"]}</div><h3>Approved students</h3></div><div class="card"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3></div><div class="card"><div class="kpi">{stats["problems"]}</div><h3>Campus problems</h3></div><div class="card"><div class="kpi">{stats["solutions"]}</div><h3>Open solutions</h3></div><div class="card"><div class="kpi">{stats["helpful"]}</div><h3>Helpful votes</h3></div><div class="card"><div class="kpi">{stats["saved"]}</div><h3>Saved reports</h3></div><div class="card"><div class="kpi">{stats["timetables"]}</div><h3>Timetables</h3></div><div class="card"><div class="kpi">{stats["pending"]}</div><h3>Pending students</h3></div></section><section class="section"><div class="card tablewrap"><h2>Top VYBE contributors</h2><table><tr><th>Student</th><th>Points</th><th>Helpful answers</th><th>Accepted solutions</th></tr>{rows or '<tr><td colspan="4">No contributor data yet.</td></tr>'}</table></div></section></section>'''
     return layout("Analytics",body,admin=True)
 
 
@@ -1893,14 +1947,15 @@ def publisher():
                     flash("Timetable title and file are required.")
                 else:
                     suffix=Path(f.filename).suffix.lower()
-                    allowed={".pdf",".doc",".docx",".png",".jpg",".jpeg",".webp"}
+                    allowed={".pdf",".png",".jpg",".jpeg",".webp"}
                     if suffix not in allowed:
-                        flash("Timetable must be a PDF, Word document or image file.")
+                        flash("Timetable must be a PDF or image file.")
                     else:
                         filename=secrets.token_hex(16)+suffix
                         file_data=f.read()
+                        assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
                         f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data) VALUES(?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data))
+                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
                         con.commit(); flash("Timetable posted to VYBE.")
             elif kind == "event":
                 title = request.form.get("event_title", "").strip()[:160]
@@ -1921,7 +1976,7 @@ def publisher():
         finally:
             con.close()
         return redirect(url_for("publisher"))
-    body = """<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add new announcements, upcoming events and timetable versions. You cannot delete or edit existing posts.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>New timetable</h2><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="timetable"><input name="timetable_title" maxlength="160" placeholder="e.g. Semester 5 Timetable" required><input type="file" name="timetable_file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" required><div class="small">Upload a PDF, Word file or image. Posting a new timetable creates a new version; deletion stays admin-only.</div><button class="btn accent">Post timetable →</button></form></div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new announcements, upcoming events and timetable versions. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
+    body = f"""<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add new announcements, upcoming events and timetable versions. You cannot delete or edit existing posts.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>New timetable</h2><form id="publisherTimetableForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="timetable"><input name="timetable_title" maxlength="160" placeholder="e.g. Semester 5 Timetable" required><input id="publisherTimetableFile" type="file" name="timetable_file" accept=".pdf,.png,.jpg,.jpeg,.webp" required><input id="publisherTimetableText" type="hidden" name="assistant_text"><div id="publisherTimetableStatus" class="small">PDF text is extracted automatically. Images are read in your browser before upload.</div><button class="btn accent">Post timetable →</button></form>{_timetable_ocr_script("publisherTimetableForm","publisherTimetableFile","publisherTimetableText","publisherTimetableStatus")}</div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new announcements, upcoming events and timetable versions. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
     return layout("Publisher", body)
 
 
@@ -2018,14 +2073,15 @@ def admin_timetable():
         if not title or not f or not f.filename:
             con.close(); flash("Timetable title and file are required."); return redirect(url_for("admin_timetable"))
         suffix=Path(f.filename).suffix.lower()
-        allowed={".pdf",".doc",".docx",".png",".jpg",".jpeg",".webp"}
+        allowed={".pdf",".png",".jpg",".jpeg",".webp"}
         if suffix not in allowed:
-            con.close(); flash("Timetable must be a PDF, Word document or image file."); return redirect(url_for("admin_timetable"))
+            con.close(); flash("Timetable must be a PDF or image file."); return redirect(url_for("admin_timetable"))
         filename=secrets.token_hex(16)+suffix
         try:
             file_data=f.read()
+            assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
             f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data) VALUES(?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data))
+            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
             con.commit(); flash("Timetable posted to VYBE.")
         except Exception:
             con.rollback(); flash("Could not save the timetable. Please try again.")
@@ -2033,7 +2089,7 @@ def admin_timetable():
         return redirect(url_for("admin_timetable"))
     rows=con.execute("SELECT * FROM timetables ORDER BY id DESC").fetchall(); con.close()
     html_rows="".join(f'''<tr><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["original_name"])}</span></td><td>{esc(r["created_at"])}</td><td><a class="btn dark" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">View</a> <form style="display:inline" method="post" action="/admin/timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this timetable?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form class="form" method="post" enctype="multipart/form-data"><input name="title" maxlength="160" placeholder="Timetable title" required><input type="file" name="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" required><div class="small">PDF, Word (.doc/.docx) or image (.png/.jpg/.jpeg/.webp).</div><button class="btn accent">Post timetable →</button></form></div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form id="adminTimetableForm" class="form" method="post" enctype="multipart/form-data"><input name="title" maxlength="160" placeholder="Timetable title" required><input id="adminTimetableFile" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp" required><input id="adminTimetableText" type="hidden" name="assistant_text"><div id="adminTimetableStatus" class="small">PDF text is extracted automatically. Images are read in your browser before upload.</div><button class="btn accent">Post timetable →</button></form>{_timetable_ocr_script("adminTimetableForm","adminTimetableFile","adminTimetableText","adminTimetableStatus")}</div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
     return layout("Timetable",body,admin=True)
 
 
@@ -2104,26 +2160,11 @@ def problem_status(iid):
     con.close(); return redirect(url_for("admin_problems"))
 
 
-@app.route("/admin/assistant/website-sync")
-@admin_required
-def admin_website_sync():
-    con=db(); site=setting(con,'college_website_url','')
-    if not site:
-        con.close(); flash('Save the official college website link first.'); return redirect(url_for('admin_settings'))
-    try:
-        count=_sync_college_website(con,site); con.commit(); flash(f'Official college website synced: {count} public pages indexed.')
-    except Exception:
-        con.rollback(); app.logger.exception('College website sync failed'); flash('Website sync failed. Make sure the site is public and reachable.')
-    finally: con.close()
-    return redirect(url_for('admin_settings'))
-
-
 @app.route("/admin/settings", methods=["GET","POST"])
 @admin_required
 def admin_settings():
     con = db()
     if request.method == "POST":
-        website = _normalize_public_url(request.form.get("college_website_url","").strip()[:500])
         wa = request.form.get("whatsapp_link", "").strip()[:500]
         drive = request.form.get("google_drive_url", "").strip()[:500]
         wa_version = request.form.get("whatsapp_api_version", "v23.0").strip()[:30] or "v23.0"
@@ -2131,14 +2172,11 @@ def admin_settings():
         wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
         wa_admin = request.form.get("whatsapp_admin_number", "").strip()[:30]
         chat_enabled = "1" if request.form.get("community_chat_enabled") == "1" else "0"
-        if request.form.get("save_website")=="1" and request.form.get("college_website_url","").strip() and not website:
-            flash("Official college website must be a valid http(s) URL.")
-        elif wa and not valid_url(wa):
+        if wa and not valid_url(wa):
             flash("WhatsApp community link must be a valid URL.")
         elif drive and not valid_url(drive):
             flash("Google Drive URL must be a valid URL.")
         else:
-            if request.form.get("save_website")=="1": set_setting(con,"college_website_url",website)
             set_setting(con, "whatsapp_link", wa)
             set_setting(con, "google_drive_url", drive or DRIVE_URL)
             set_setting(con, "whatsapp_api_version", wa_version)
@@ -2158,8 +2196,6 @@ def admin_settings():
     wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
     wa_admin = setting(con, "whatsapp_admin_number", "")
     chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-    website_url = setting(con, "college_website_url", "")
-    website_sync = setting(con, "college_website_last_sync", "Never")
     con.close()
     body = f'''<section class="section"><h1>Settings.</h1>
     <div class="grid2">
@@ -2169,7 +2205,7 @@ def admin_settings():
         <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
         <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
         <button class="btn accent">Save configuration</button></form></div>
-      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🌐 Official College Website</h2><p class="muted">Free source for Ask VYBE. VYBE stores a small public-text snapshot in your existing database.</p><form class="form" method="post"><input name="college_website_url" value="{esc(website_url)}" placeholder="https://official-college-website.edu"><input type="hidden" name="save_website" value="1"><button class="btn accent">Save website link</button></form><p class="small">Last sync: {esc(website_sync)}</p><a class="btn dark" href="/admin/assistant/website-sync">Sync website now →</a></div>
+      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🗓️ Timetable → VYBE Assistant</h2><p class="muted">Upload a timetable PDF or image from the Timetable page. VYBE extracts the timetable text so the free Assistant can answer timetable questions.</p><a class="btn dark" href="/admin/timetable">Upload timetable →</a></div>
       <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
         <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
         <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
