@@ -19,6 +19,7 @@ from urllib.parse import urlparse, urljoin
 from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
+from werkzeug.exceptions import HTTPException
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 try:
@@ -676,9 +677,15 @@ def student_required(fn):
         sid = session.get("student_db_id")
         if not sid:
             return redirect(url_for("login"))
-        con = db()
-        row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone()
-        con.close()
+        try:
+            con = db()
+            row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone()
+            con.close()
+        except Exception as exc:
+            app.logger.error("Student authentication check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+            session.clear()
+            flash("VYBE could not verify your account right now. Please try again.")
+            return redirect(url_for("login"))
         if not row or row["status"] != "approved":
             session.clear()
             flash("Your student access is not currently active.")
@@ -714,9 +721,14 @@ def admin_required(fn):
             "passkey_register_options", "passkey_register_verify",
         }
         if endpoint not in allowed_without_passkey:
-            con = db()
-            count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
-            con.close()
+            try:
+                con = db()
+                count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+                con.close()
+            except Exception as exc:
+                app.logger.error("Admin passkey check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+                flash("VYBE could not verify admin security right now. Please try again.")
+                return redirect(url_for("admin_login"))
             if count > 0 and not session.get("passkey_verified"):
                 return redirect(url_for("admin_verify"))
         return fn(*args, **kwargs)
@@ -777,13 +789,39 @@ def global_online_gate():
     return None
 
 
+def _safe_500_page():
+    # Keep the 500 response independent of the database/layout system so the
+    # error handler itself can never cause a second exception.
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}</style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(error):
+    # Flask may wrap an underlying exception in Werkzeug's 500 error handler.
+    # Log the original exception and traceback so Render contains the real
+    # cause instead of only “InternalServerError: 500”.
+    if isinstance(error, HTTPException):
+        return error
+    app.logger.error(
+        "UNHANDLED VYBE EXCEPTION: %s: %s",
+        type(error).__name__,
+        str(error),
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    return _safe_500_page(), 500
+
 @app.errorhandler(500)
 def handle_internal_server_error(error):
-    app.logger.exception("Unhandled VYBE server error", exc_info=error)
-    try:
-        return layout("VYBE Error", '<section class="section"><div class="auth"><div class="card authbox"><div class="badge">VYBE</div><h1>Something went wrong.</h1><p class="muted">That action could not be completed. Your data was not intentionally changed. Please go back and try again.</p><div class="actions"><a class="btn accent" href="javascript:history.back()">Go back</a><a class="btn dark" href="/dashboard">Dashboard</a></div></div></div></section>'), 500
-    except Exception:
-        return "VYBE could not complete that request. Please try again.", 500
+    original = getattr(error, "original_exception", None)
+    if original is not None:
+        app.logger.error(
+            "VYBE ORIGINAL 500 EXCEPTION: %s: %s",
+            type(original).__name__,
+            str(original),
+            exc_info=(type(original), original, original.__traceback__),
+        )
+    else:
+        app.logger.error("VYBE 500 response: %s", error, exc_info=(type(error), error, error.__traceback__))
+    return _safe_500_page(), 500
 
 
 @app.after_request
@@ -1211,6 +1249,15 @@ def _free_vybe_answer(con, question):
     if setting(con,'college_website_url',''):
         return "I couldn't find a verified answer in VYBE's campus data or the synced official college website. Please check the official college website or ask the administration."
     return "I can help with VYBE campus information. The admin can also connect the official college website so I can search its public information."
+
+
+@app.route("/chat")
+@student_required
+def chat_alias():
+    # The header's Chat button previously pointed to an endpoint that was not
+    # registered in this build. Keep Chat as a stable entry point without
+    # creating a second chat system.
+    return redirect(url_for("community"))
 
 
 @app.route("/announcements")
