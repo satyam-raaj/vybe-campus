@@ -8,6 +8,8 @@ import json
 import secrets
 import hashlib
 import html
+import io
+import mimetypes
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -280,6 +282,9 @@ def init_db():
                 subject TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 file_name TEXT,
+                original_name TEXT,
+                mime_type TEXT,
+                file_data BYTEA,
                 created_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS issues (
@@ -346,10 +351,8 @@ def init_db():
                 used_at TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS timetables (
-                id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS timetables (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL
+                id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
+                file_data BYTEA
             )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id BIGSERIAL PRIMARY KEY,
@@ -395,6 +398,9 @@ def init_db():
                 subject TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 file_name TEXT,
+                original_name TEXT,
+                mime_type TEXT,
+                file_data BLOB,
                 created_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS issues (
@@ -459,6 +465,11 @@ def init_db():
                 used_at TEXT,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",
+            """CREATE TABLE IF NOT EXISTS timetables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
+                file_data BLOB
+            )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -484,9 +495,22 @@ def init_db():
         cols = {r["name"] for r in con.execute("PRAGMA table_info(resources)").fetchall()}
         if "resource_type" not in cols:
             con.execute("ALTER TABLE resources ADD COLUMN resource_type TEXT NOT NULL DEFAULT 'Study material'")
+        if "original_name" not in cols:
+            con.execute("ALTER TABLE resources ADD COLUMN original_name TEXT")
+        if "mime_type" not in cols:
+            con.execute("ALTER TABLE resources ADD COLUMN mime_type TEXT")
+        if "file_data" not in cols:
+            con.execute("ALTER TABLE resources ADD COLUMN file_data BLOB")
+        tt_cols = {r["name"] for r in con.execute("PRAGMA table_info(timetables)").fetchall()}
+        if "file_data" not in tt_cols:
+            con.execute("ALTER TABLE timetables ADD COLUMN file_data BLOB")
     else:
         # PostgreSQL migrations are idempotent and safe on existing deployments.
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS original_name TEXT")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
         # Existing V14 deployments may already have this table. Keep the PostgreSQL
         # column Boolean-compatible so inserts using True/False never hit a type mismatch.
         con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
@@ -1129,9 +1153,13 @@ def timetable():
 @app.route("/timetable-file/<int:tid>")
 @student_required
 def timetable_file(tid):
-    con=db(); row=con.execute("SELECT file_name,original_name FROM timetables WHERE id=?",(tid,)).fetchone(); con.close()
+    con=db(); row=con.execute("SELECT file_name,original_name,file_data FROM timetables WHERE id=?",(tid,)).fetchone(); con.close()
     if not row: abort(404)
-    return send_from_directory(UPLOAD_DIR,row["file_name"],as_attachment=False,download_name=row["original_name"])
+    if row["file_data"] is not None:
+        return send_file(io.BytesIO(bytes(row["file_data"])), mimetype=mimetypes.guess_type(row["original_name"] or row["file_name"])[0] or "application/octet-stream", as_attachment=False, download_name=row["original_name"] or row["file_name"])
+    path=UPLOAD_DIR/row["file_name"]
+    if not path.is_file(): abort(404)
+    return send_file(path, mimetype=mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=row["original_name"])
 
 
 @app.route("/search")
@@ -1250,9 +1278,18 @@ def academics():
 @app.route("/resource/<int:rid>")
 @student_required
 def resource(rid):
-    con = db(); r = con.execute("SELECT file_name FROM resources WHERE id=?", (rid,)).fetchone(); con.close()
-    if not r or not r["file_name"]: abort(404)
-    return send_from_directory(UPLOAD_DIR, r["file_name"], as_attachment=False)
+    con = db(); r = con.execute("SELECT file_name, original_name, mime_type, file_data FROM resources WHERE id=?", (rid,)).fetchone(); con.close()
+    if not r or (not r["file_name"] and not r["file_data"]): abort(404)
+    # Prefer the database copy so a student can open material even when the
+    # web process is on a different instance or the local upload directory
+    # was reset during a deployment.
+    data = r["file_data"]
+    if data is not None:
+        download_name = r["original_name"] or r["file_name"] or "resource-file"
+        return send_file(io.BytesIO(bytes(data)), mimetype=r["mime_type"] or mimetypes.guess_type(download_name)[0] or "application/octet-stream", as_attachment=False, download_name=download_name)
+    path = UPLOAD_DIR / r["file_name"]
+    if not path.is_file(): abort(404)
+    return send_file(path, mimetype=r["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=r["original_name"] or path.name)
 
 
 @app.route("/issues", methods=["GET", "POST"])
@@ -1731,8 +1768,9 @@ def publisher():
                         flash("Timetable must be a PDF, Word document or image file.")
                     else:
                         filename=secrets.token_hex(16)+suffix
-                        f.save(UPLOAD_DIR/filename)
-                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at) VALUES(?,?,?,?)",(title,filename,Path(f.filename).name[:240],now()))
+                        file_data=f.read()
+                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data) VALUES(?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data))
                         con.commit(); flash("Timetable posted to VYBE.")
             elif kind == "event":
                 title = request.form.get("event_title", "").strip()[:160]
@@ -1855,8 +1893,9 @@ def admin_timetable():
             con.close(); flash("Timetable must be a PDF, Word document or image file."); return redirect(url_for("admin_timetable"))
         filename=secrets.token_hex(16)+suffix
         try:
-            f.save(UPLOAD_DIR/filename)
-            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at) VALUES(?,?,?,?)",(title,filename,Path(f.filename).name[:240],now()))
+            file_data=f.read()
+            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data) VALUES(?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data))
             con.commit(); flash("Timetable posted to VYBE.")
         except Exception:
             con.rollback(); flash("Could not save the timetable. Please try again.")
@@ -1893,12 +1932,18 @@ def admin_resources():
 @admin_required
 def add_resource():
     title=request.form.get("title","").strip()[:150]; typ=request.form.get("resource_type","Study material")[:80]; course=request.form.get("course","").strip()[:100]; sem=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:100]; desc=request.form.get("description","").strip()[:1000]
-    f=request.files.get("file"); filename=None
+    f=request.files.get("file"); filename=None; original_name=None; mime_type=None; file_data=None
     if f and f.filename:
         suffix=Path(f.filename).suffix.lower()
         if suffix not in ALLOWED_EXT: flash("That file type is not allowed."); return redirect(url_for("admin_resources"))
-        filename=secrets.token_hex(16)+suffix; f.save(UPLOAD_DIR/filename)
-    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,created_at) VALUES(?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,now())); con.commit(); con.close(); flash("Resource added."); return redirect(url_for("admin_resources"))
+        original_name=Path(f.filename).name[:240]
+        filename=secrets.token_hex(16)+suffix
+        mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+        file_data=f.read()
+        # Keep a local copy for compatibility, while also storing the bytes in the DB
+        # so uploads survive multi-instance deployments/restarts.
+        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,now())); con.commit(); con.close(); flash("Resource added."); return redirect(url_for("admin_resources"))
 
 
 @app.route("/admin/resource/<int:rid>/delete")
