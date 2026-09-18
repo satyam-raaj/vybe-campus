@@ -57,6 +57,9 @@ DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
 PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "vybe-campus.onrender.com")
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "https://vybe-campus.onrender.com")
 DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
+VYBE_AI_API_KEY = os.environ.get("VYBE_AI_API_KEY", "").strip()
+VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
+VYBE_AI_ENDPOINT = os.environ.get("VYBE_AI_ENDPOINT", "https://api.openai.com/v1/responses").strip()
 ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
@@ -261,7 +264,12 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL,
                 last_login TEXT,
-                last_seen TEXT
+                last_seen TEXT,
+                reputation_points INTEGER NOT NULL DEFAULT 0,
+                helpful_answers INTEGER NOT NULL DEFAULT 0,
+                accepted_solutions INTEGER NOT NULL DEFAULT 0,
+                bio TEXT NOT NULL DEFAULT '',
+                interests TEXT NOT NULL DEFAULT ''
             )""",
             """CREATE TABLE IF NOT EXISTS resources (
                 id BIGSERIAL PRIMARY KEY,
@@ -337,6 +345,23 @@ def init_db():
                 expires_at TEXT,
                 used_at TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS announcements (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'Normal',
+                created_at TEXT NOT NULL,
+                expires_at TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS events (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                event_time TEXT NOT NULL DEFAULT '',
+                location TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )""",
         ]
     else:
         statements = [
@@ -348,7 +373,12 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL,
                 last_login TEXT,
-                last_seen TEXT
+                last_seen TEXT,
+                reputation_points INTEGER NOT NULL DEFAULT 0,
+                helpful_answers INTEGER NOT NULL DEFAULT 0,
+                accepted_solutions INTEGER NOT NULL DEFAULT 0,
+                bio TEXT NOT NULL DEFAULT '',
+                interests TEXT NOT NULL DEFAULT ''
             )""",
             """CREATE TABLE IF NOT EXISTS resources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -423,6 +453,23 @@ def init_db():
                 used_at TEXT,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",
+            """CREATE TABLE IF NOT EXISTS announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'Normal',
+                created_at TEXT NOT NULL,
+                expires_at TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                event_time TEXT NOT NULL DEFAULT '',
+                location TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )""",
         ]
     con.executescript(statements)
 
@@ -444,6 +491,25 @@ def init_db():
             con.execute("ALTER TABLE students ADD COLUMN last_seen TEXT")
     else:
         con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
+    # Student profile/reputation migrations for existing VYBE deployments.
+    if not con.is_pg:
+        student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
+        for col, definition in (
+            ("reputation_points", "INTEGER NOT NULL DEFAULT 0"),
+            ("helpful_answers", "INTEGER NOT NULL DEFAULT 0"),
+            ("accepted_solutions", "INTEGER NOT NULL DEFAULT 0"),
+            ("bio", "TEXT NOT NULL DEFAULT ''"),
+            ("interests", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if col not in student_cols:
+                con.execute(f"ALTER TABLE students ADD COLUMN {col} {definition}")
+    else:
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS reputation_points INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS helpful_answers INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS accepted_solutions INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS interests TEXT NOT NULL DEFAULT ''")
+
     if not con.is_pg:
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
         if "approval_code_token" not in reset_cols:
@@ -588,15 +654,27 @@ def security_headers(response):
 
 CSS = r"""
 :root{--bg:#050505;--bg2:#0b0b0d;--panel:rgba(255,255,255,.055);--line:rgba(255,255,255,.11);--line2:rgba(255,255,255,.18);--text:#f5f5f7;--muted:#a1a1a6;--good:#62e6a2;--warn:#ffd166;--bad:#ff6878;--shadow:0 28px 90px rgba(0,0,0,.42)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navlinks{display:none}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.notice-card{position:relative;overflow:hidden}
+.notice-card:after{content:"";position:absolute;inset:auto -40px -70px auto;width:170px;height:170px;background:rgba(255,255,255,.045);filter:blur(25px);border-radius:50%}
+.event-date{font-size:30px;font-weight:850;letter-spacing:-.06em}
+.feed-list{display:grid;gap:12px}
+.feed-item{padding:17px 18px;border:1px solid var(--line);border-radius:19px;background:rgba(255,255,255,.04);transition:.2s ease}
+.feed-item:hover{transform:translateY(-2px);border-color:var(--line2)}
+.ai-box{background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.14);border-radius:28px;padding:24px;box-shadow:var(--shadow)}
+.ai-answer{white-space:pre-wrap;line-height:1.7}
+.profile-avatar{width:74px;height:74px;border-radius:22px;background:#f5f5f7;color:#080808;display:grid;place-items:center;font-size:28px;font-weight:900;box-shadow:0 12px 30px rgba(255,255,255,.08)}
+.stat-row{display:flex;gap:10px;flex-wrap:wrap}
+.stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navlinks{display:none}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}}
 """
 
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/password-requests">Password Requests</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/announcements">Announcements</a><a href="/admin/events">Events</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/password-requests">Password Requests</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/announcements">Announcements</a><a href="/events">Events</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/assistant">✨ Ask VYBE</a><a href="/profile">Profile</a><a href="/notifications">🔔</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -862,11 +940,185 @@ def logout():
     session.clear(); return redirect(url_for("home"))
 
 
+def _active_announcements(con, limit=6):
+    return con.execute(
+        "SELECT * FROM announcements WHERE expires_at IS NULL OR expires_at='' OR expires_at>=? "
+        "ORDER BY CASE WHEN priority='High' THEN 0 WHEN priority='Important' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+        (now(), limit)
+    ).fetchall()
+
+
+def _upcoming_events(con, limit=6):
+    return con.execute(
+        "SELECT * FROM events WHERE event_date>=? ORDER BY event_date ASC, event_time ASC, id ASC LIMIT ?",
+        (datetime.now(timezone.utc).strftime("%Y-%m-%d"), limit)
+    ).fetchall()
+
+
+def _campus_search(con, q, limit=8):
+    like=f"%{q}%"
+    out=[]
+    for r in con.execute(
+        "SELECT id,title,message,priority,created_at FROM announcements "
+        "WHERE title LIKE ? OR message LIKE ? ORDER BY id DESC LIMIT ?", (like,like,limit)
+    ).fetchall():
+        out.append({"type":"Announcement","title":r["title"],"text":r["message"],"url":"/announcements","date":r["created_at"]})
+    for r in con.execute(
+        "SELECT id,title,event_date,event_time,location,description FROM events "
+        "WHERE title LIKE ? OR description LIKE ? OR location LIKE ? ORDER BY event_date ASC LIMIT ?",
+        (like,like,like,limit)
+    ).fetchall():
+        out.append({"type":"Event","title":r["title"],"text":f'{r["event_date"]} {r["event_time"]} · {r["location"]} · {r["description"]}',"url":"/events","date":r["event_date"]})
+    for r in con.execute(
+        "SELECT id,title,description,status,created_at FROM issues "
+        "WHERE title LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?", (like,like,limit)
+    ).fetchall():
+        out.append({"type":"Community","title":r["title"],"text":f'{r["status"]} · {r["description"]}',"url":"/community#problem-"+str(r["id"]),"date":r["created_at"]})
+    for r in con.execute(
+        "SELECT id,title,course,semester,subject,description FROM resources "
+        "WHERE title LIKE ? OR course LIKE ? OR subject LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?",
+        (like,like,like,like,limit)
+    ).fetchall():
+        out.append({"type":"Resource","title":r["title"],"text":f'{r["course"]} · {r["semester"]} · {r["subject"]} · {r["description"]}',"url":"/academics?q="+q,"date":""})
+    return out[:limit*3]
+
+
+def _ai_context(con, question):
+    results=_campus_search(con, question, limit=5)
+    if results:
+        return "\n".join(f'[{x["type"]}] {x["title"]}: {x["text"]}' for x in results)
+    anns=_active_announcements(con,4)
+    evs=_upcoming_events(con,4)
+    return "\n".join(
+        [f'[Announcement] {x["title"]}: {x["message"]}' for x in anns] +
+        [f'[Event] {x["title"]}: {x["event_date"]} {x["event_time"]} at {x["location"]}: {x["description"]}' for x in evs]
+    )
+
+
+def _extract_ai_text(data):
+    if isinstance(data, dict):
+        if isinstance(data.get("output_text"), str):
+            return data["output_text"].strip()
+        chunks=[]
+        for item in data.get("output", []) or []:
+            if isinstance(item, dict):
+                for c in item.get("content", []) or []:
+                    if isinstance(c, dict) and isinstance(c.get("text"), str):
+                        chunks.append(c["text"])
+        if chunks:
+            return "\n".join(chunks).strip()
+    return ""
+
+
+def ask_vybe_ai(question, context):
+    if not VYBE_AI_API_KEY:
+        return None
+    prompt = (
+        "You are VYBE, a private college campus assistant. Answer using only the supplied VYBE campus context. "
+        "If the context does not contain the answer, clearly say you do not have that information and suggest where "
+        "the student should look. Never reveal Student IDs, passwords, private account data, or admin-only information. "
+        "Keep the answer concise and useful.\n\nCAMPUS CONTEXT:\n"+context+"\n\nSTUDENT QUESTION:\n"+question
+    )
+    payload=json.dumps({"model":VYBE_AI_MODEL,"input":prompt,"max_output_tokens":500}).encode("utf-8")
+    try:
+        req=URLRequest(VYBE_AI_ENDPOINT,data=payload,headers={"Authorization":f"Bearer {VYBE_AI_API_KEY}","Content-Type":"application/json"},method="POST")
+        with urlopen(req, timeout=20) as response:
+            data=json.loads(response.read().decode("utf-8"))
+        return _extract_ai_text(data) or None
+    except Exception:
+        return None
+
+
+@app.route("/announcements")
+@student_required
+def announcements():
+    con=db(); rows=_active_announcements(con,30); con.close()
+    cards=""
+    for r in rows:
+        badge="🚨 "+esc(r["priority"]) if r["priority"] in ("High","Important") else "📢 Announcement"
+        cards += f'''<div class="card notice-card"><div class="badge">{badge}</div><h2>{esc(r["title"])}</h2><p class="muted" style="white-space:pre-wrap">{esc(r["message"])}</p><div class="small">{esc(r["created_at"])}</div></div>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS UPDATES</div><h1>Announcements.</h1><p class="muted">Important campus information, in one place.</p></section><section class="section" style="display:grid;gap:14px">{cards or '<div class="empty">No active announcements.</div>'}</section>'''
+    return layout("Announcements",body)
+
+
+@app.route("/events")
+@student_required
+def events():
+    con=db(); rows=_upcoming_events(con,30); con.close()
+    cards=""
+    for r in rows:
+        cards += f'''<div class="card"><div class="badge">🎉 EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small">🕒 {esc(r["event_time"] or "Time TBA")} · 📍 {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>What's happening.</h1><p class="muted">Upcoming events and activities around campus.</p></section><section class="section grid">{cards or '<div class="empty">No upcoming events.</div>'}</section>'''
+    return layout("Events",body)
+
+
+@app.route("/search")
+@student_required
+def search():
+    q=request.args.get("q","").strip()[:100]
+    results=[]
+    con=db()
+    if q: results=_campus_search(con,q,8)
+    con.close()
+    cards=""
+    for r in results:
+        cards += f'''<a class="feed-item" href="{esc(r["url"])}"><span class="pill">{esc(r["type"])}</span><h3 style="margin:9px 0 5px">{esc(r["title"])}</h3><p class="muted" style="margin:0">{esc(r["text"])}</p></a>'''
+    body=f'''<section class="section"><div class="badge">VYBE SEARCH</div><h1>Find anything.</h1><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" maxlength="100" placeholder="Search announcements, events, resources, community..."><button class="btn accent">Search VYBE →</button></form></div></section><section class="section feed-list">{cards or ('<div class="empty">Search your campus information from one place.</div>' if not q else '<div class="empty">Nothing matched that search.</div>')}</section>'''
+    return layout("Search",body)
+
+
+@app.route("/notifications")
+@student_required
+def student_notifications():
+    con=db()
+    rows=con.execute("SELECT * FROM notifications WHERE student_id=? OR student_id IS NULL ORDER BY id DESC LIMIT 50",(session["student_db_id"],)).fetchall()
+    con.close()
+    cards="".join(f'''<div class="feed-item"><span class="pill">{esc(r["kind"])}</span><h3 style="margin:9px 0 5px">{esc(r["title"])}</h3><p class="muted" style="white-space:pre-wrap;margin:0">{esc(r["message"])}</p><div class="small" style="margin-top:8px">{esc(r["created_at"])}</div></div>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">NOTIFICATION CENTER</div><h1>Your updates.</h1><p class="muted">Announcements, community activity and important VYBE alerts.</p></section><section class="section feed-list">{cards or '<div class="empty">No notifications yet.</div>'}</section>'''
+    return layout("Notifications",body)
+
+
+@app.route("/profile", methods=["GET","POST"])
+@student_required
+def profile():
+    con=db()
+    if request.method=="POST":
+        bio=request.form.get("bio","").strip()[:300]
+        interests=request.form.get("interests","").strip()[:200]
+        con.execute("UPDATE students SET bio=?, interests=? WHERE id=?",(bio,interests,session["student_db_id"]))
+        con.commit(); con.close(); flash("Profile updated."); return redirect(url_for("profile"))
+    s=con.execute("SELECT name,student_id,bio,interests,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?",(session["student_db_id"],)).fetchone()
+    con.close()
+    initials="".join(x[0] for x in s["name"].split()[:2]).upper() or "V"
+    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(s["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip">⭐ {s["reputation_points"]} VYBE points</span><span class="stat-chip">💡 {s["helpful_answers"]} helpful answers</span><span class="stat-chip">✓ {s["accepted_solutions"]} accepted solutions</span></div></div></section><section class="section"><div class="card"><h2>About you.</h2><form class="form" method="post"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(s["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(s["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form><p class="small">Only your name, bio and interests are intended for your campus profile. Student IDs and passwords remain private.</p></div></section>'''
+    return layout("Profile",body)
+
+
+@app.route("/assistant", methods=["GET","POST"])
+@student_required
+def assistant():
+    question=request.form.get("question","").strip()[:1000] if request.method=="POST" else ""
+    answer=""; sources=[]
+    con=db()
+    if question:
+        sources=_campus_search(con,question,6)
+        answer=ask_vybe_ai(question,_ai_context(con,question))
+        if not answer:
+            if sources:
+                answer="I found these VYBE results that may answer your question:\n\n" + "\n".join(f'• {x["title"]} — {x["text"]}' for x in sources[:5])
+            else:
+                answer="I couldn't find that in VYBE's current campus information. Try a different phrase or check Announcements, Events, Academics, or Community."
+    con.close()
+    source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Ask about announcements, events, resources or community discussions. VYBE answers from campus data only.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. When is the next event? Where are the Data Structures notes?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px">{esc(answer)}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+    return layout("Ask VYBE",body)
+
+
 @app.route("/dashboard")
 @student_required
 def dashboard():
     con = db()
-    s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    s = con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
     counts = {
         "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
         "issues": con.execute("SELECT COUNT(*) AS c FROM issues WHERE student_id=?", (session["student_db_id"],)).fetchone()["c"],
@@ -874,8 +1126,17 @@ def dashboard():
     }
     drive = setting(con, "google_drive_url", DRIVE_URL)
     wa = setting(con, "whatsapp_link", "")
+    anns = _active_announcements(con, 4)
+    evs = _upcoming_events(con, 4)
     con.close()
-    body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Everything your campus needs, without exposing private Student IDs.</p></section><section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section><section class="section"><a class="community-launch" href="/chat"><div class="community-icon">💬</div><div class="community-copy"><h3>Community Chat</h3><p>Talk with your campus community · names only, Student IDs stay private.</p></div><div class="community-arrow">→</div></a></section><section class="section grid2"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">Open the live shared academic folder.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open Google Drive →</a></div><div class="card"><h2>💬 WhatsApp Community</h2><p class="muted">Academic material shared through the configured community.</p>{f'<a class="btn dark" target="_blank" rel="noopener noreferrer" href="{esc(wa)}">Open WhatsApp →</a>' if valid_url(wa) else '<span class="pill">Not configured yet</span>'}</div></section>'''
+    ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
+    event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
+    body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Your campus, your community, your space — now in one cleaner home.</p><div class="stat-row" style="margin-top:18px"><span class="stat-chip">⭐ {s["reputation_points"]} VYBE points</span><span class="stat-chip">💡 {s["helpful_answers"]} helpful answers</span></div></section>
+    <section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section>
+    <section class="section grid2"><div class="card"><div class="badge">📢 CAMPUS</div><h2>Latest announcements</h2><div class="feed-list" style="margin-top:12px">{ann_html or '<div class="empty">No active announcements.</div>'}</div><div class="actions"><a class="btn dark" href="/announcements">View all →</a></div></div>
+    <div class="card"><div class="badge">🎉 WHAT'S ON</div><h2>Upcoming events</h2><div class="feed-list" style="margin-top:12px">{event_html or '<div class="empty">No upcoming events.</div>'}</div><div class="actions"><a class="btn dark" href="/events">View events →</a></div></div></section>
+    <section class="section grid2"><a class="community-launch" href="/chat"><div class="community-icon">💬</div><div class="community-copy"><h3>Community Chat</h3><p>Talk with your campus community · names only, Student IDs stay private.</p></div><div class="community-arrow">→</div></a><a class="community-launch" href="/assistant"><div class="community-icon">✨</div><div class="community-copy"><h3>Ask VYBE</h3><p>Ask questions about your campus information and get a quick answer.</p></div><div class="community-arrow">→</div></a></section>
+    <section class="section grid2"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">Open the live shared academic folder.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open Google Drive →</a></div><div class="card"><h2>💬 WhatsApp Community</h2><p class="muted">Academic material shared through the configured community.</p>{f'<a class="btn dark" target="_blank" rel="noopener noreferrer" href="{esc(wa)}">Open WhatsApp →</a>' if valid_url(wa) else '<span class="pill">Not configured yet</span>'}</div></section>'''
     return layout("Dashboard", body)
 
 
@@ -1054,6 +1315,9 @@ def accept_solution(iid):
     other = con.execute("SELECT 1 FROM solutions WHERE issue_id=? AND student_id<>? LIMIT 1", (iid, session["student_db_id"])).fetchone()
     if not other:
         con.close(); abort(403)
+    accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id LIMIT 1", (iid, session["student_db_id"])).fetchone()
+    if accepted:
+        con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+25, helpful_answers=COALESCE(helpful_answers,0)+1, accepted_solutions=COALESCE(accepted_solutions,0)+1 WHERE id=?", (accepted["student_id"],))
     # CASCADE handles dependent solutions before the issue is removed.
     con.execute("DELETE FROM issues WHERE id=?", (iid,)); con.commit(); con.close()
     flash("Problem solved. The problem and its entire community chat were deleted.")
@@ -1204,6 +1468,8 @@ def admin_panel():
         "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
         "alerts": con.execute("SELECT COUNT(*) AS c FROM notifications").fetchone()["c"],
         "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
+        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
     }
     online = setting(con, "vybe_online", "1") == "1"
     con.close()
@@ -1213,6 +1479,8 @@ def admin_panel():
       <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
       <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
       <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
+      <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
+      <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
       <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
       <a class="card" href="/admin/notifications"><div class="kpi">{stats["alerts"]}</div><h3>Notifications</h3><p class="muted">Entry requests and admin alerts.</p></a>
@@ -1282,6 +1550,70 @@ def delete_all_students():
     con.execute("DELETE FROM issues")
     con.execute("DELETE FROM students")
     con.commit(); con.close(); flash("All students and dependent campus/community records were deleted."); return redirect(url_for("admin_students"))
+
+
+@app.route("/admin/announcements", methods=["GET","POST"])
+@admin_required
+def admin_announcements():
+    con=db()
+    if request.method=="POST":
+        title=request.form.get("title","").strip()[:160]
+        message=request.form.get("message","").strip()[:3000]
+        priority=request.form.get("priority","Normal").strip()
+        expires=request.form.get("expires_at","").strip()[:40]
+        if priority not in ("Normal","Important","High"): priority="Normal"
+        if not title or not message:
+            con.close(); flash("Title and announcement message are required."); return redirect(url_for("admin_announcements"))
+        con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)",(title,message,priority,now(),expires or None))
+        con.execute("INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",("announcement",title,message,None,now(),False))
+        con.commit(); con.close()
+        flash("Announcement published to VYBE.")
+        return redirect(url_for("admin_announcements"))
+    rows=con.execute("SELECT * FROM announcements ORDER BY id DESC").fetchall()
+    con.close()
+    html_rows="".join(f'''<tr><td><span class="pill">{esc(r["priority"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"][:220])}</span></td><td>{esc(r["created_at"])}</td><td>{esc(r["expires_at"] or "No expiry")}</td><td><form method="post" action="/admin/announcement/{r["id"]}/delete" onsubmit="return confirm('Delete this announcement?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">CAMPUS ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><div class="small">Expiry is optional. Students see active announcements on their dashboard.</div><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>How it works</h2><p class="muted">Published announcements appear on student dashboards, the Announcements page, search, notifications and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Priority</th><th>Announcement</th><th>Created</th><th>Expires</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No announcements yet.</td></tr>'}</table></div></section></section>'''
+    return layout("Announcements",body,admin=True)
+
+
+@app.route("/admin/announcement/<int:aid>/delete", methods=["POST"])
+@admin_required
+def delete_announcement(aid):
+    con=db(); con.execute("DELETE FROM announcements WHERE id=?",(aid,)); con.commit(); con.close()
+    flash("Announcement deleted.")
+    return redirect(url_for("admin_announcements"))
+
+
+@app.route("/admin/events", methods=["GET","POST"])
+@admin_required
+def admin_events():
+    con=db()
+    if request.method=="POST":
+        title=request.form.get("title","").strip()[:160]
+        event_date=request.form.get("event_date","").strip()[:20]
+        event_time=request.form.get("event_time","").strip()[:20]
+        location=request.form.get("location","").strip()[:160]
+        description=request.form.get("description","").strip()[:1500]
+        if not title or not event_date:
+            con.close(); flash("Event title and date are required."); return redirect(url_for("admin_events"))
+        con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)",(title,event_date,event_time,location,description,now()))
+        con.execute("INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",("event",title,f"{event_date} {event_time} · {location}\n{description}",None,now(),False))
+        con.commit(); con.close()
+        flash("Event added to VYBE.")
+        return redirect(url_for("admin_events"))
+    rows=con.execute("SELECT * FROM events ORDER BY event_date ASC,event_time ASC,id DESC").fetchall()
+    con.close()
+    html_rows="".join(f'''<tr><td>{esc(r["event_date"])}</td><td><strong>{esc(r["title"])}</strong><br><span class="small">🕒 {esc(r["event_time"] or "TBA")} · 📍 {esc(r["location"] or "TBA")}</span></td><td>{esc(r["description"][:180])}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search, notifications and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Details</th><th>Action</th></tr>{html_rows or '<tr><td colspan="4">No events yet.</td></tr>'}</table></div></section></section>'''
+    return layout("Events",body,admin=True)
+
+
+@app.route("/admin/event/<int:eid>/delete", methods=["POST"])
+@admin_required
+def delete_event(eid):
+    con=db(); con.execute("DELETE FROM events WHERE id=?",(eid,)); con.commit(); con.close()
+    flash("Event deleted.")
+    return redirect(url_for("admin_events"))
 
 
 @app.route("/admin/resources")
