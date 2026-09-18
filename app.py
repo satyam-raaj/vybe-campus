@@ -345,6 +345,12 @@ def init_db():
                 expires_at TEXT,
                 used_at TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS timetables (
+                id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS timetables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id BIGSERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -693,13 +699,13 @@ CSS = r"""
 .profile-avatar{width:74px;height:74px;border-radius:22px;background:#f5f5f7;color:#080808;display:grid;place-items:center;font-size:28px;font-weight:900;box-shadow:0 12px 30px rgba(255,255,255,.08)}
 .stat-row{display:flex;gap:10px;flex-wrap:wrap}
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navlinks{display:none}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navin{padding:10px 14px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
 """
 
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
         publisher_link = ""
         try:
@@ -707,11 +713,11 @@ def layout(title, body, admin=False):
             if _lr and _lr["value"] == "1": publisher_link = '<a href="/publisher">Publisher</a>'
         except Exception:
             publisher_link = ""
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/timetable">Timetable</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div></div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";btn.setAttribute("aria-label",show?"Hide password":"View password");btn.setAttribute("title",show?"Hide password":"View password");}});}})();</script></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div><div class="mobile-nav" id="vybeMobileNav">{links}</div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
 
 
 @app.route("/offline")
@@ -956,6 +962,10 @@ def _upcoming_events(con, limit=6):
     ).fetchall()
 
 
+def _latest_timetables(con, limit=20):
+    return con.execute("SELECT * FROM timetables ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
     out=[]
@@ -975,6 +985,11 @@ def _campus_search(con, q, limit=8):
         "WHERE title LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?", (like,like,limit)
     ).fetchall():
         out.append({"type":"Community","title":r["title"],"text":f'{r["status"]} · {r["description"]}',"url":"/community#problem-"+str(r["id"]),"date":r["created_at"]})
+    for r in con.execute(
+        "SELECT id,title,original_name,created_at FROM timetables WHERE title LIKE ? OR original_name LIKE ? ORDER BY id DESC LIMIT ?",
+        (like,like,limit)
+    ).fetchall():
+        out.append({"type":"Timetable","title":r["title"],"text":r["original_name"],"url":"/timetable","date":r["created_at"]})
     for r in con.execute(
         "SELECT id,title,course,semester,subject,description FROM resources "
         "WHERE title LIKE ? OR course LIKE ? OR subject LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?",
@@ -1093,6 +1108,30 @@ def events():
         cards += f'''<div class="card"><div class="badge">🎉 EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small">🕒 {esc(r["event_time"] or "Time TBA")} · 📍 {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
     body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>What's happening.</h1><p class="muted">Upcoming events and activities around campus.</p></section><section class="section grid">{cards or '<div class="empty">No upcoming events.</div>'}</section>'''
     return layout("Events",body)
+
+
+@app.route("/timetable")
+@student_required
+def timetable():
+    con=db(); rows=_latest_timetables(con,30); con.close()
+    cards=""
+    for r in rows:
+        suffix=Path(r["original_name"]).suffix.lower()
+        if suffix in (".png",".jpg",".jpeg",".webp"):
+            preview=f'<img src="/timetable-file/{r["id"]}" alt="{esc(r["title"])}" style="display:block;width:100%;max-height:720px;object-fit:contain;border-radius:18px;background:#08080a">'
+        else:
+            preview=f'<div class="notice"><strong>📄 {esc(r["original_name"])}</strong><p class="small">This timetable is a document. Open it below.</p></div>'
+        cards += f'<div class="card"><div class="badge">🗓️ TIMETABLE</div><h2>{esc(r["title"])}</h2><p class="small">Updated {esc(r["created_at"])}</p>{preview}<div class="actions"><a class="btn accent" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">Open / view timetable →</a></div></div>'
+    body=f'<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">The latest timetable posted by VYBE admin or an approved publisher.</p></section><section class="section" style="display:grid;gap:16px">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
+    return layout("Timetable",body)
+
+
+@app.route("/timetable-file/<int:tid>")
+@student_required
+def timetable_file(tid):
+    con=db(); row=con.execute("SELECT file_name,original_name FROM timetables WHERE id=?",(tid,)).fetchone(); con.close()
+    if not row: abort(404)
+    return send_from_directory(UPLOAD_DIR,row["file_name"],as_attachment=False,download_name=row["original_name"])
 
 
 @app.route("/search")
@@ -1680,6 +1719,21 @@ def publisher():
                 else:
                     con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
                     con.commit(); flash("Announcement published to VYBE.")
+            elif kind == "timetable":
+                title = request.form.get("timetable_title", "").strip()[:160]
+                f = request.files.get("timetable_file")
+                if not title or not f or not f.filename:
+                    flash("Timetable title and file are required.")
+                else:
+                    suffix=Path(f.filename).suffix.lower()
+                    allowed={".pdf",".doc",".docx",".png",".jpg",".jpeg",".webp"}
+                    if suffix not in allowed:
+                        flash("Timetable must be a PDF, Word document or image file.")
+                    else:
+                        filename=secrets.token_hex(16)+suffix
+                        f.save(UPLOAD_DIR/filename)
+                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at) VALUES(?,?,?,?)",(title,filename,Path(f.filename).name[:240],now()))
+                        con.commit(); flash("Timetable posted to VYBE.")
             elif kind == "event":
                 title = request.form.get("event_title", "").strip()[:160]
                 event_date = request.form.get("event_date", "").strip()[:20]
@@ -1699,7 +1753,7 @@ def publisher():
         finally:
             con.close()
         return redirect(url_for("publisher"))
-    body = """<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add announcements and upcoming events. You cannot delete announcements or events.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new campus announcements and upcoming events. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
+    body = """<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add new announcements, upcoming events and timetable versions. You cannot delete or edit existing posts.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>New timetable</h2><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="timetable"><input name="timetable_title" maxlength="160" placeholder="e.g. Semester 5 Timetable" required><input type="file" name="timetable_file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" required><div class="small">Upload a PDF, Word file or image. Posting a new timetable creates a new version; deletion stays admin-only.</div><button class="btn accent">Post timetable →</button></form></div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new announcements, upcoming events and timetable versions. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
     return layout("Publisher", body)
 
 
@@ -1784,6 +1838,46 @@ def admin_content_access(sid, action):
         flash(f"Publisher access revoked from {student['name']}.")
     con.commit(); con.close()
     return redirect(url_for("admin_students"))
+
+
+@app.route("/admin/timetable", methods=["GET","POST"])
+@admin_required
+def admin_timetable():
+    con=db()
+    if request.method=="POST":
+        title=request.form.get("title","").strip()[:160]
+        f=request.files.get("file")
+        if not title or not f or not f.filename:
+            con.close(); flash("Timetable title and file are required."); return redirect(url_for("admin_timetable"))
+        suffix=Path(f.filename).suffix.lower()
+        allowed={".pdf",".doc",".docx",".png",".jpg",".jpeg",".webp"}
+        if suffix not in allowed:
+            con.close(); flash("Timetable must be a PDF, Word document or image file."); return redirect(url_for("admin_timetable"))
+        filename=secrets.token_hex(16)+suffix
+        try:
+            f.save(UPLOAD_DIR/filename)
+            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at) VALUES(?,?,?,?)",(title,filename,Path(f.filename).name[:240],now()))
+            con.commit(); flash("Timetable posted to VYBE.")
+        except Exception:
+            con.rollback(); flash("Could not save the timetable. Please try again.")
+        finally: con.close()
+        return redirect(url_for("admin_timetable"))
+    rows=con.execute("SELECT * FROM timetables ORDER BY id DESC").fetchall(); con.close()
+    html_rows="".join(f'''<tr><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["original_name"])}</span></td><td>{esc(r["created_at"])}</td><td><a class="btn dark" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">View</a> <form style="display:inline" method="post" action="/admin/timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this timetable?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form class="form" method="post" enctype="multipart/form-data"><input name="title" maxlength="160" placeholder="Timetable title" required><input type="file" name="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" required><div class="small">PDF, Word (.doc/.docx) or image (.png/.jpg/.jpeg/.webp).</div><button class="btn accent">Post timetable →</button></form></div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
+    return layout("Timetable",body,admin=True)
+
+
+@app.route("/admin/timetable/<int:tid>/delete", methods=["POST"])
+@admin_required
+def delete_timetable(tid):
+    con=db(); row=con.execute("SELECT file_name FROM timetables WHERE id=?",(tid,)).fetchone()
+    if row:
+        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
+        except Exception: pass
+        con.execute("DELETE FROM timetables WHERE id=?",(tid,)); con.commit(); flash("Timetable deleted.")
+    else: flash("Timetable not found.")
+    con.close(); return redirect(url_for("admin_timetable"))
 
 
 @app.route("/admin/resources")
