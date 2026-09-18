@@ -935,7 +935,7 @@ input:focus,textarea:focus,select:focus{border-color:#2d9de0;background:rgba(6,2
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/login-history">Login History</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
