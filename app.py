@@ -57,7 +57,7 @@ DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
 PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "vybe-campus.onrender.com")
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "https://vybe-campus.onrender.com")
 DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
-VYBE_AI_API_KEY = os.environ.get("VYBE_AI_API_KEY", "").strip()
+VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
 VYBE_AI_ENDPOINT = os.environ.get("VYBE_AI_ENDPOINT", "https://api.openai.com/v1/responses").strip()
 ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
@@ -528,6 +528,7 @@ def init_db():
         "whatsapp_access_token": "",
         "whatsapp_admin_number": "",
         "community_chat_enabled": "1",
+        "vybe_assistant_enabled": "1",
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -672,9 +673,9 @@ CSS = r"""
 
 def layout(title, body, admin=False):
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/announcements">Announcements</a><a href="/admin/events">Events</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Problem Chats</a><a href="/admin/community-chat">💬 Community Chat</a><a href="/admin/notifications">Alerts</a><a href="/admin/password-requests">Password Requests</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
-        links = '<a href="/dashboard">Home</a><a href="/announcements">Announcements</a><a href="/events">Events</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/assistant">✨ Ask VYBE</a><a href="/profile">Profile</a><a href="/notifications">🔔</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/notifications">🔔</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
@@ -995,38 +996,80 @@ def _ai_context(con, question):
     )
 
 
-def _extract_ai_text(data):
-    if isinstance(data, dict):
-        if isinstance(data.get("output_text"), str):
-            return data["output_text"].strip()
-        chunks=[]
-        for item in data.get("output", []) or []:
-            if isinstance(item, dict):
-                for c in item.get("content", []) or []:
-                    if isinstance(c, dict) and isinstance(c.get("text"), str):
-                        chunks.append(c["text"])
-        if chunks:
-            return "\n".join(chunks).strip()
-    return ""
+def _current_ist():
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Kolkata"))
 
 
-def ask_vybe_ai(question, context):
-    if not VYBE_AI_API_KEY:
-        return None
-    prompt = (
-        "You are VYBE, a private college campus assistant. Answer using only the supplied VYBE campus context. "
-        "If the context does not contain the answer, clearly say you do not have that information and suggest where "
-        "the student should look. Never reveal Student IDs, passwords, private account data, or admin-only information. "
-        "Keep the answer concise and useful.\n\nCAMPUS CONTEXT:\n"+context+"\n\nSTUDENT QUESTION:\n"+question
-    )
-    payload=json.dumps({"model":VYBE_AI_MODEL,"input":prompt,"max_output_tokens":500}).encode("utf-8")
-    try:
-        req=URLRequest(VYBE_AI_ENDPOINT,data=payload,headers={"Authorization":f"Bearer {VYBE_AI_API_KEY}","Content-Type":"application/json"},method="POST")
-        with urlopen(req, timeout=20) as response:
-            data=json.loads(response.read().decode("utf-8"))
-        return _extract_ai_text(data) or None
-    except Exception:
-        return None
+def _format_ist(dt):
+    return dt.strftime("%A, %d %B %Y at %I:%M %p IST")
+
+
+def _free_vybe_answer(con, question):
+    """Free, deterministic VYBE assistant: no external AI/API is required."""
+    q = re.sub(r"\s+", " ", question.lower()).strip()
+    ist = _current_ist()
+
+    if any(x in q for x in ("what time", "current time", "time now", "time is it", "what's the time", "whats the time")):
+        return f"🕐 The current VYBE time is {_format_ist(ist)}."
+    if any(x in q for x in ("today's date", "todays date", "current date", "what date", "what day is it", "today date")):
+        return f"📅 Today is {_format_ist(ist)}."
+
+    if any(x in q for x in ("announcement", "announcements", "latest update", "new update", "new updates", "campus update", "campus news", "what's new", "whats new")):
+        rows = _active_announcements(con, 8)
+        if not rows:
+            return "📢 There are no active campus announcements right now."
+        lines = ["📢 Latest VYBE announcements:"]
+        for r in rows[:5]:
+            lines.append(f"• {r['title']} — {r['message']}")
+        return "\n".join(lines)
+
+    if any(x in q for x in ("event", "events", "happening", "schedule", "program", "programs", "this week", "upcoming")):
+        rows = _upcoming_events(con, 8)
+        if not rows:
+            return "🎉 There are no upcoming events listed in VYBE right now."
+        lines = ["🎉 Upcoming VYBE events:"]
+        for r in rows[:5]:
+            lines.append(f"• {r['title']} — {r['event_date']} · {r['event_time'] or 'Time TBA'} · {r['location'] or 'Location TBA'}")
+        return "\n".join(lines)
+
+    resource_words = ("note", "notes", "pyq", "pyqs", "assignment", "assignments", "study material", "syllabus", "file", "files", "resource", "resources", "where is", "where are", "find")
+    if any(x in q for x in resource_words):
+        search_terms = [w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2 and w not in {"where", "what", "are", "the", "for", "from", "find", "file", "files", "notes", "note", "resource", "resources", "please", "show", "give", "me"}]
+        rows = []
+        if search_terms:
+            like = "%" + "%".join(search_terms[:4]) + "%"
+            rows = con.execute(
+                "SELECT id,title,resource_type,course,semester,subject,description,file_name FROM resources "
+                "WHERE title LIKE ? OR course LIKE ? OR semester LIKE ? OR subject LIKE ? OR description LIKE ? "
+                "ORDER BY id DESC LIMIT 8", (like,like,like,like,like)
+            ).fetchall()
+        if not rows:
+            rows = con.execute("SELECT id,title,resource_type,course,semester,subject,description,file_name FROM resources ORDER BY id DESC LIMIT 8").fetchall()
+        if not rows:
+            drive = setting(con, "google_drive_url", DRIVE_URL)
+            return f"📚 I couldn't find a VYBE resource yet. Check Academics or the shared Google Drive: {drive}"
+        lines = ["📚 I found these VYBE resources:"]
+        for r in rows[:5]:
+            location = f"Open in VYBE: /resource/{r['id']}" if r['file_name'] else "Available through the configured Google Drive / link resource"
+            lines.append(f"• {r['title']} — {r['course']} · {r['semester']} · {r['subject']} — {location}")
+        return "\n".join(lines) + "\n\nYou can also open Academics → Search to find more notes and files."
+
+    if any(x in q for x in ("community", "question", "questions", "solution", "solutions", "problem", "problems", "chat")):
+        like = f"%{question.strip()[:80]}%"
+        rows = con.execute("SELECT id,title,description,status FROM issues WHERE title LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT 5", (like,like)).fetchall()
+        if rows:
+            return "💬 Matching community problems:\n" + "\n".join(f"• {r['title']} — {r['status']} — /community#problem-{r['id']}" for r in rows)
+        count = con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"]
+        return f"💬 VYBE has {count} campus problem(s) in Community. Open Community to view questions and solutions."
+
+    results = _campus_search(con, question, 6)
+    if results:
+        return "🔎 I found this in VYBE:\n" + "\n".join(f"• {x['title']} — {x['text']}" for x in results[:5])
+
+    return ("I can help with VYBE campus information — announcements, new updates, events, notes/files, "
+            "resources, community questions/solutions, and the current date or time. "
+            "Try asking something like ‘What are the latest announcements?’ or ‘Where are the notes?’")
 
 
 @app.route("/announcements")
@@ -1097,20 +1140,20 @@ def profile():
 @app.route("/assistant", methods=["GET","POST"])
 @student_required
 def assistant():
-    question=request.form.get("question","").strip()[:1000] if request.method=="POST" else ""
-    answer=""; sources=[]
-    con=db()
-    if question:
-        sources=_campus_search(con,question,6)
-        answer=ask_vybe_ai(question,_ai_context(con,question))
-        if not answer:
-            if sources:
-                answer="I found these VYBE results that may answer your question:\n\n" + "\n".join(f'• {x["title"]} — {x["text"]}' for x in sources[:5])
-            else:
-                answer="I couldn't find that in VYBE's current campus information. Try a different phrase or check Announcements, Events, Academics, or Community."
+    con = db()
+    enabled = setting(con, "vybe_assistant_enabled", "1") == "1"
+    question = request.form.get("question", "").strip()[:1000] if request.method == "POST" else ""
+    answer = ""
+    sources = []
+    if question and enabled:
+        answer = _free_vybe_answer(con, question)
+        sources = _campus_search(con, question, 6)
     con.close()
+    if not enabled:
+        body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
+        return layout("Ask VYBE", body)
     source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Ask about announcements, events, resources or community discussions. VYBE answers from campus data only.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. When is the next event? Where are the Data Structures notes?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px">{esc(answer)}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{esc(answer)}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
@@ -1471,6 +1514,7 @@ def admin_panel():
         "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
         "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
     }
+    assistant_enabled = setting(con, "vybe_assistant_enabled", "1") == "1"
     online = setting(con, "vybe_online", "1") == "1"
     con.close()
     body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
@@ -1486,12 +1530,28 @@ def admin_panel():
       <a class="card" href="/admin/notifications"><div class="kpi">{stats["alerts"]}</div><h3>Notifications</h3><p class="muted">Entry requests and admin alerts.</p></a>
     </div>
     <section class="section grid2">
+      <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data plus the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
+      <div class="card"><h2>🧠 What it can answer</h2><p class="muted">Announcements, new updates, events, notes/files, resources, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
+    </section>
+    <section class="section grid2">
       <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
       <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
       <form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div>
       <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Sensitive credential changes require a fresh passkey verification.</p><a class="btn dark" href="/admin/password">Open security center →</a></div>
     </section></section>'''
     return layout("Admin", body, admin=True)
+
+
+@app.route("/admin/assistant", methods=["POST"])
+@admin_required
+def admin_assistant():
+    con = db()
+    current = setting(con, "vybe_assistant_enabled", "1") == "1"
+    set_setting(con, "vybe_assistant_enabled", "0" if current else "1")
+    con.commit()
+    con.close()
+    flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
+    return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/status", methods=["POST"])
