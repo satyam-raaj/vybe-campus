@@ -1944,7 +1944,13 @@ def admin_login_history():
     for r in rows:
         state = '<span class="pill status-good">Success</span>' if r["success"] else '<span class="pill status-bad">Failed</span>'
         items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td></tr>'''
-    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table>
+<div style="display:flex;justify-content:flex-end;margin:10px 0;">
+<form method="post" action="{{ url_for('admin_delete_all_login_history') }}" onsubmit="return confirm('Delete all login history?');">
+<button type="submit" class="danger">Delete All History</button>
+</form>
+</div>
+</div></section>'''
     return layout("Admin Login History", body, admin=True)
 
 
@@ -2725,6 +2731,33 @@ def reset_passkey_session():
 # Initialize only after all helpers/decorators are defined, but before the app
 # is served. This also guarantees the database is ready during import under Gunicorn.
 init_db()
+
+
+# Admin login history deletion
+@app.route('/admin/login-history/delete/<int:history_id>', methods=['POST'])
+@admin_required
+def admin_delete_login_history(history_id):
+    con = get_db()
+    try:
+        con.execute("DELETE FROM login_history WHERE id = ?", (history_id,))
+        con.commit()
+        flash("Login history entry deleted.", "success")
+    finally:
+        con.close()
+    return redirect(url_for('admin_login_history'))
+
+@app.route('/admin/login-history/delete-all', methods=['POST'])
+@admin_required
+def admin_delete_all_login_history():
+    con = get_db()
+    try:
+        con.execute("DELETE FROM login_history")
+        con.commit()
+        flash("All login history deleted.", "success")
+    finally:
+        con.close()
+    return redirect(url_for('admin_login_history'))
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
