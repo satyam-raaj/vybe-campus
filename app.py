@@ -1943,7 +1943,7 @@ def admin_login_history():
     items = ""
     for r in rows:
         state = '<span class="pill status-good">Success</span>' if r["success"] else '<span class="pill status-bad">Failed</span>'
-        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td><td><form method="post" action="/admin/login-history/delete/{r["id"]}" onsubmit="return confirm('Delete this login history entry?');"><button type="submit" class="danger">Delete</button></form></td></tr>'''
+        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td><td><form method="post" action="{{ url_for('admin_delete_login_history', history_id=r['id']) }}" onsubmit="return confirm('Delete this login history entry?');"><button type="submit" class="danger">Delete</button></form></td></tr>'''
     body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th><th>Action</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table>
 <div style="display:flex;justify-content:flex-end;margin:10px 0;">
 <form method="post" action="/admin/login-history/delete-all" onsubmit="return confirm('Delete all login history?');">
@@ -2741,18 +2741,25 @@ init_db()
 def admin_delete_login_history(history_id):
     con = get_db()
     try:
-        con.execute("DELETE FROM admin_login_logs WHERE id = ?", (history_id,))
-        con.commit()
-        flash("Login history entry deleted.", "success")
-    except Exception as exc:
+        # Delete by primary key from the actual login-log table.
+        cur = con.execute("SELECT id FROM admin_login_logs WHERE id = ?", (int(history_id),))
+        row = cur.fetchone()
+        if not row:
+            flash("That login history entry no longer exists.", "error")
+        else:
+            con.execute("DELETE FROM admin_login_logs WHERE id = ?", (int(history_id),))
+            con.commit()
+            flash("Login history entry deleted.", "success")
+    except Exception:
         try:
             con.rollback()
         except Exception:
             pass
-        flash("Could not delete login history entry.", "error")
+        flash("Could not delete that login history entry. Please try again.", "error")
     finally:
         con.close()
     return redirect("/admin/login-history")
+
 
 @app.route('/admin/login-history/delete-all', methods=['POST'])
 @admin_required
@@ -2767,7 +2774,7 @@ def admin_delete_all_login_history():
             con.rollback()
         except Exception:
             pass
-        flash("Could not delete login history.", "error")
+        flash("Could not delete login history. Please try again.", "error")
     finally:
         con.close()
     return redirect("/admin/login-history")
