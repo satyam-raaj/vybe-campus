@@ -17,6 +17,7 @@ from html.parser import HTMLParser
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
+from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
@@ -350,6 +351,7 @@ def init_db():
                 original_name TEXT,
                 mime_type TEXT,
                 file_data BYTEA,
+                assistant_text TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS issues (
@@ -466,6 +468,7 @@ def init_db():
                 original_name TEXT,
                 mime_type TEXT,
                 file_data BLOB,
+                assistant_text TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS issues (
@@ -597,6 +600,8 @@ def init_db():
             con.execute("ALTER TABLE resources ADD COLUMN mime_type TEXT")
         if "file_data" not in cols:
             con.execute("ALTER TABLE resources ADD COLUMN file_data BLOB")
+        if "assistant_text" not in cols:
+            con.execute("ALTER TABLE resources ADD COLUMN assistant_text TEXT NOT NULL DEFAULT ''")
         tt_cols = {r["name"] for r in con.execute("PRAGMA table_info(timetables)").fetchall()}
         if "file_data" not in tt_cols:
             con.execute("ALTER TABLE timetables ADD COLUMN file_data BLOB")
@@ -608,6 +613,7 @@ def init_db():
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS original_name TEXT")
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT")
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
         con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
         # Existing V14 deployments may already have this table. Keep the PostgreSQL
         # column Boolean-compatible so inserts using True/False never hit a type mismatch.
@@ -858,8 +864,8 @@ def security_headers(response):
 
 
 CSS = r"""
-:root{--bg:#040608;--bg2:#090d12;--panel:rgba(255,255,255,.045);--line:rgba(150,190,225,.12);--line2:rgba(105,185,255,.34);--text:#f5f7fb;--muted:#98a4b5;--accent:#69b9ff;--accent2:#3b9cf3;--good:#62e6a2;--warn:#ffd166;--bad:#ff6878;--shadow:0 28px 90px rgba(0,0,0,.48)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(74,158,235,.055),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(58,142,220,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#f5f8fc,#dbeeff);color:#06101a;border-color:rgba(105,185,255,.45)}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:rgba(105,185,255,.72);background:rgba(255,255,255,.055);box-shadow:0 0 0 4px rgba(105,185,255,.08)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+:root{--bg:#050505;--bg2:#0b0b0d;--panel:rgba(255,255,255,.055);--line:rgba(255,255,255,.11);--line2:rgba(255,255,255,.18);--text:#f5f5f7;--muted:#a1a1a6;--good:#62e6a2;--warn:#ffd166;--bad:#ff6878;--shadow:0 28px 90px rgba(0,0,0,.42)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
 .notice-card:after{content:"";position:absolute;inset:auto -40px -70px auto;width:170px;height:170px;background:rgba(255,255,255,.045);filter:blur(25px);border-radius:50%}
 .event-date{font-size:30px;font-weight:850;letter-spacing:-.06em}
@@ -872,8 +878,7 @@ CSS = r"""
 .stat-row{display:flex;gap:10px;flex-wrap:wrap}
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
 .student-top-tools{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}.top-stat,.top-tool{min-height:38px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.055);display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 9px;color:#eee;font-size:12px;white-space:nowrap}.top-stat{flex-direction:column;line-height:1;min-width:58px}.top-stat small{font-size:8px;color:var(--muted);text-transform:uppercase}.top-search{display:flex;align-items:center;width:190px}.top-search input{height:38px;border-radius:12px 0 0 12px;padding:8px 10px;font-size:12px}.top-search button{height:38px;width:38px;border:1px solid #2a2a2e;border-left:0;border-radius:0 12px 12px 0;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.page-back,.mobile-back{border:1px solid var(--line);background:rgba(255,255,255,.05);color:#ddd;border-radius:12px;padding:8px 12px;cursor:pointer}.page-back{margin:2px 0 4px}.mobile-back{display:none;width:100%;text-align:left}
-.student-home{max-width:1040px;margin:0 auto}.student-home-head{padding:24px 0 20px}.student-home-head h1{font-size:clamp(38px,6vw,64px);margin:16px 0 8px;letter-spacing:-.065em}.student-home-head p{font-size:17px}.student-feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.student-feature{position:relative;display:flex;align-items:center;gap:16px;min-height:128px;padding:22px 24px;border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.025));border:1px solid var(--line);box-shadow:0 18px 55px rgba(0,0,0,.26);transition:.25s ease}.student-feature:hover{transform:translateY(-2px);border-color:rgba(105,185,255,.35)}.student-feature.primary{border-color:rgba(105,185,255,.28);box-shadow:0 18px 55px rgba(20,105,180,.12)}.student-feature-icon{width:54px;height:54px;flex:0 0 54px;display:grid;place-items:center;border-radius:17px;background:rgba(105,185,255,.10);border:1px solid rgba(105,185,255,.22);font-size:25px}.student-feature-copy{min-width:0;flex:1}.student-feature-copy h2{font-size:22px;margin:0 0 5px}.student-feature-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.student-arrow{font-size:24px;color:#9fcfff}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{min-height:108px;padding:19px;border-radius:22px;background:rgba(255,255,255,.035);border:1px solid var(--line);display:flex;align-items:center;gap:13px;transition:.2s}.student-mini:hover{border-color:rgba(105,185,255,.28);transform:translateY(-2px)}.student-mini h3{font-size:16px;margin:0 0 3px}.student-mini p{margin:0;color:var(--muted);font-size:12px}.student-link-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-link{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-radius:20px;background:rgba(255,255,255,.03);border:1px solid var(--line)}.student-link:hover{border-color:rgba(105,185,255,.28)}.admin-section-title{margin:4px 0 12px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#7e91a8}.admin-card{min-height:126px}.admin-card .kpi{color:#dfefff}.admin-card:hover .kpi{color:var(--accent)}.blue-accent{color:var(--accent)}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.student-home{width:100%}.student-home-head{padding:14px 2px 14px}.student-home-head h1{font-size:38px;line-height:1.02}.student-home-head p{font-size:14px;line-height:1.5}.student-feature-grid,.student-mini-grid,.student-link-row{grid-template-columns:1fr;gap:10px}.student-feature{min-height:104px;padding:17px;border-radius:20px}.student-feature-icon{width:48px;height:48px;flex-basis:48px;border-radius:15px}.student-feature-copy h2{font-size:18px}.student-feature-copy p{font-size:12px}.student-arrow{font-size:20px}.student-mini{min-height:84px;padding:15px;border-radius:18px}.student-link{padding:15px 16px}.student-home .section{padding:10px 0}.top-stat{border-color:rgba(105,185,255,.14)}.top-search input{border-color:rgba(105,185,255,.16)}.top-search button{border-color:rgba(105,185,255,.20)}.grid,.grid2,.two{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.page-back{display:inline-flex}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.student-home{max-width:900px;margin:0 auto;padding:34px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(0,174,255,.75);border-radius:999px;color:#5fc9ff;background:rgba(0,151,255,.08);font-size:12px;font-weight:800;letter-spacing:.08em}.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#a9b9d0;margin:0}.student-home-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.student-home-stats span{padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid var(--line);color:#cdd7e5;font-size:12px}.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(92,124,157,.28);border-radius:24px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));box-shadow:0 18px 50px rgba(0,0,0,.25);transition:.25s ease;overflow:hidden}.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5);box-shadow:0 22px 60px rgba(0,0,0,.32)}.student-feature.primary{border-color:rgba(0,190,255,.78);background:linear-gradient(135deg,rgba(14,42,61,.96),rgba(9,16,24,.94));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,112,190,.13)}.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(60,96,132,.45),rgba(15,27,40,.8));border:1px solid rgba(130,181,225,.22);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#a7b8cf;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#70caff}.student-arrow{font-size:37px;color:#8ba6c5;line-height:1}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.25s ease}.student-mini:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#829ab7}.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7b8cf}.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(92,124,157,.28);background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(52,91,125,.3);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb0c5}.campus-tool b{font-size:26px;color:#819bb9;font-weight:400}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini{min-height:72px;padding:10px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.page-back{display:inline-flex}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
 """
 
 
@@ -881,7 +886,7 @@ def layout(title, body, admin=False):
     # Always initialize this before branching; admin/guest pages also need it.
     student_tools = ""
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/timetable">Timetable</a><a href="/admin/analytics">Analytics</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
         publisher_link = ""
         try:
@@ -899,7 +904,7 @@ def layout(title, body, admin=False):
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
         student_tools=""
-    mobile_links = links.replace('<a href="/issues">Campus</a>', '<a href="/issues">Campus</a><a class="menu-sub" href="/issues#saved-reports">↳ Saved Reports</a>') if student_tools else links
+    mobile_links = links.replace('<a href="/issues">Campus</a>', '<a href="/issues">Campus</a><a class="menu-sub" href="/timetable">↳ Timetable</a><a class="menu-sub" href="/issues#saved-reports">↳ Saved Reports</a>') if student_tools else links
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>{student_tools}<div class="navlinks">{links}</div><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div><div class="mobile-nav" id="vybeMobileNav"><button class="mobile-back" type="button" onclick="history.back()">← Back</button>{mobile_links}</div></div><main class="wrap"><button class="page-back" type="button" onclick="if(history.length>1)history.back();else location.href='/dashboard'">← Back</button>{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
 
@@ -1159,91 +1164,100 @@ def _decode_pdf_literal(value):
     value=re.sub(rb"\\([0-7]{1,3})",repl,value)
     return value.decode("utf-8","ignore") or value.decode("latin-1","ignore")
 
-def _decode_pdf_hex(value):
-    try:
-        raw=re.sub(rb"\s+",b"",value)
-        if len(raw)%2: raw += b"0"
-        data=bytes.fromhex(raw.decode("ascii","ignore"))
-        if data.startswith(b"\xfe\xff"): return data.decode("utf-16-be","ignore")
-        if b"\x00" in data[:80]:
-            try: return data.decode("utf-16-be","ignore")
-            except Exception: pass
-        return data.decode("utf-8","ignore") or data.decode("latin-1","ignore")
-    except Exception: return ""
 
-def _extract_pdf_text(file_data,max_chars=30000):
+def _extract_pdf_text(file_data,max_chars=50000):
     if not file_data or not file_data.startswith(b"%PDF"): return ""
-    chunks=[]; total=0
+    try:
+        import fitz
+        doc=fitz.open(stream=file_data,filetype="pdf")
+        text="\n".join(page.get_text("text") for page in doc)
+        doc.close()
+        if text.strip(): return re.sub(r"\s+"," ",text).strip()[:max_chars]
+    except Exception: pass
+    try:
+        from pypdf import PdfReader
+        reader=PdfReader(io.BytesIO(file_data))
+        text="\n".join((page.extract_text() or "") for page in reader.pages)
+        if text.strip(): return re.sub(r"\s+"," ",text).strip()[:max_chars]
+    except Exception: pass
+    chunks=[]
     try:
         for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream",file_data,re.S):
-            raw=match.group(1); header=file_data[max(0,match.start()-1800):match.start()]
+            raw=match.group(1); header=file_data[max(0,match.start()-1600):match.start()]
             if b"/FlateDecode" in header:
                 try: raw=zlib.decompress(raw)
                 except Exception: continue
             text=raw.decode("latin-1","ignore")
             for block in re.findall(r"BT(.*?)ET",text,re.S):
-                pieces=[]
-                for token in re.finditer(r"\((?:\\.|[^\\)])*\)|<([0-9A-Fa-f\s]+)>|T\*|Td|TD",block):
-                    tok=token.group(0)
-                    if tok in ("T*","Td","TD"): pieces.append("\n")
-                    elif tok.startswith("("): pieces.append(_decode_pdf_literal(tok[1:-1].encode("latin-1","ignore")))
-                    elif tok.startswith("<"): pieces.append(_decode_pdf_hex(tok[1:-1].encode("ascii","ignore")))
-                if pieces:
-                    cleaned=" ".join(x.strip() for x in pieces if x.strip())
-                    if cleaned: chunks.append(cleaned); total+=len(cleaned)
-                    if total>=max_chars: break
-            if total>=max_chars: break
+                strings=[_decode_pdf_literal(x[1:-1].encode("latin-1","ignore")) for x in re.findall(r"\((?:\\.|[^\\)])*\)",block)]
+                for arr in re.findall(r"\[(.*?)\]\s*TJ",block,re.S):
+                    strings += [_decode_pdf_literal(x[1:-1].encode("latin-1","ignore")) for x in re.findall(r"\((?:\\.|[^\\)])*\)",arr)]
+                if strings: chunks.append(" ".join(x for x in strings if x.strip()))
+                if sum(map(len,chunks))>=max_chars: break
+            if sum(map(len,chunks))>=max_chars: break
     except Exception: return ""
-    text="\n".join(chunks); text=re.sub(r"[ \t]+"," ",text); text=re.sub(r"\n{3,}","\n\n",text).strip()
-    return text[:max_chars]
+    return re.sub(r"\s+"," "," ".join(chunks)).strip()[:max_chars]
+
+
+def _extract_zip_xml_text(file_data,suffix,max_chars=50000):
+    if suffix not in (".docx",".pptx",".xlsx",".odt",".odp"): return ""
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_data)) as z:
+            names=z.namelist()
+            if suffix==".docx": targets=[n for n in names if n.startswith("word/") and n.endswith(".xml")]
+            elif suffix==".pptx": targets=[n for n in names if re.match(r"ppt/slides/slide\d+\.xml$",n)]
+            elif suffix==".xlsx": targets=[n for n in names if n.startswith("xl/sharedStrings") and n.endswith(".xml")] + [n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$",n)]
+            else: targets=[n for n in names if n.endswith(".xml")]
+            parts=[]
+            for name in targets:
+                try:
+                    root=ET.fromstring(z.read(name))
+                    vals=[t.text for t in root.iter() if t.text and t.text.strip()]
+                    if vals: parts.append(" ".join(vals))
+                except Exception: pass
+            return re.sub(r"\s+"," ","\n".join(parts)).strip()[:max_chars]
+    except Exception: return ""
+
+
+def _extract_image_text(file_data,max_chars=50000):
+    try:
+        from PIL import Image
+        import pytesseract
+        img=Image.open(io.BytesIO(file_data))
+        text=pytesseract.image_to_string(img)
+        return re.sub(r"\s+"," ",text).strip()[:max_chars]
+    except Exception:
+        return ""
+
+
+def _extract_doc_text(file_data,suffix,max_chars=50000):
+    if not file_data: return ""
+    if suffix==".pdf": return _extract_pdf_text(file_data,max_chars)
+    if suffix in (".png",".jpg",".jpeg",".webp"): return _extract_image_text(file_data,max_chars)
+    if suffix in (".docx",".pptx",".xlsx",".odt",".odp"): return _extract_zip_xml_text(file_data,suffix,max_chars)
+    if suffix in (".txt",".csv",".md",".rtf",".json",".html",".htm"):
+        return re.sub(r"\s+"," ",file_data.decode("utf-8","ignore")).strip()[:max_chars]
+    if suffix==".doc":
+        try:
+            raw=file_data.decode("utf-16le","ignore")+" "+file_data.decode("latin-1","ignore")
+            chunks=re.findall(r"[A-Za-z0-9][A-Za-z0-9 ,.;:!?()/'\"\-]{3,}",raw)
+            return re.sub(r"\s+"," "," ".join(chunks)).strip()[:max_chars]
+        except Exception: return ""
+    return ""
+
 
 def _timetable_text(file_data,suffix,browser_text=""):
-    browser_text=re.sub(r"\s+"," ",(browser_text or "")).strip()[:30000]
-    if browser_text: return browser_text
-    return _extract_pdf_text(file_data) if suffix==".pdf" else ""
+    browser_text=re.sub(r"\s+"," ",browser_text or "").strip()[:50000]
+    return browser_text or _extract_doc_text(file_data,suffix,50000)
 
-def _normalize_timetable_text(text):
-    text=re.sub(r"\r\n?","\n",text or "")
-    return [re.sub(r"[ \t]+"," ",line).strip(" |\t") for line in text.split("\n") if line.strip()]
 
-def _timetable_answer(con, question):
-    rows=con.execute("SELECT id,title,original_name,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 8").fetchall()
-    if not rows: return "🗓️ No timetable has been uploaded to VYBE yet."
-    q=re.sub(r"\s+"," ",(question or "").lower()).strip()
-    teacher_intent=any(x in q for x in ("teacher","teachers","faculty","professor","prof","instructor","sir","mam","ma'am","who teaches","teacher name","faculty name"))
-    stop={"tell","me","the","teacher","teachers","faculty","professor","prof","instructor","name","names","who","teaches","is","are","my","of","for","from","in","on","timetable","time","table","class","schedule","period","lecture","which","what","when","today","tomorrow","please","can","you","give","show"}
-    subject_terms=[w for w in re.findall(r"[a-z0-9]+",q) if len(w)>2 and w not in stop]
-    ranked=[]
-    for r in rows:
-        text=(r["assistant_text"] or "").strip(); lines=_normalize_timetable_text(text); hay=text.lower(); score=sum(5 for t in subject_terms[:5] if t in hay)
-        if teacher_intent: score += sum(3 for line in lines if re.search(r"\b(teacher|faculty|professor|prof|instructor)\b",line,re.I))
-        ranked.append((score,r,lines))
-    ranked.sort(key=lambda x:(x[0],x[1]["id"]),reverse=True)
-    best=ranked[:4]
-    if teacher_intent:
-        answers=[]
-        for _,r,lines in best:
-            for i,line in enumerate(lines):
-                low=line.lower(); hit=any(k in low for k in ("teacher","faculty","professor","prof","instructor")); subject_hit=bool(subject_terms) and any(t in low for t in subject_terms[:4])
-                if hit or subject_hit: answers.append("• "+" ".join(lines[max(0,i-1):min(len(lines),i+2)]))
-        answers=list(dict.fromkeys(answers))
-        if answers: return "👨‍🏫 Teacher/faculty information found in the uploaded timetable:\n"+"\n".join(answers[:6])
-        fallback=[]
-        for _,r,lines in best:
-            for line in lines:
-                if subject_terms and any(t in line.lower() for t in subject_terms[:4]): fallback.append("• "+line)
-        fallback=list(dict.fromkeys(fallback))
-        if fallback: return "👨‍🏫 I found timetable entries related to your question, but the teacher label is not explicit:\n"+"\n".join(fallback[:6])
-        return "👨‍🏫 I couldn't find an explicit teacher/faculty name in the readable timetable text. If the timetable is an image or scanned PDF, re-upload the timetable as a clear PNG/JPG so VYBE can OCR it."
-    out=["🗓️ Timetable information from VYBE:"]
-    for _,r,lines in best[:3]:
-        relevant=[line for line in lines if subject_terms and any(t in line.lower() for t in subject_terms[:5])] or lines[:8]
-        out.append("• "+r["title"]); out.extend("  "+line for line in relevant[:8])
-    return "\n".join(out)[:7000]
+def _resource_ocr_script(form_id,file_id,text_id,status_id):
+    return rf'''<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>(function(){{const form=document.getElementById({form_id!r}),file=document.getElementById({file_id!r}),hidden=document.getElementById({text_id!r}),status=document.getElementById({status_id!r});if(!form||!file||!hidden)return;form.addEventListener('submit',async function(e){{const f=file.files&&file.files[0];if(!f)return;const ext=(f.name.split('.').pop()||'').toLowerCase();if(!['png','jpg','jpeg','webp'].includes(ext)||hidden.value.trim())return;e.preventDefault();if(status)status.textContent='Reading file for Ask VYBE… please wait.';try{{const result=await Tesseract.recognize(f,'eng',{{logger:function(m){{if(status&&m.status)status.textContent='Reading file… '+Math.round((m.progress||0)*100)+'%';}}}});hidden.value=(result.data.text||'').trim().slice(0,50000);if(status)status.textContent=hidden.value?'File text captured for Ask VYBE.':'No readable text found; the file was still uploaded.';form.submit();}}catch(err){{if(status)status.textContent='Could not read image text; the file will still be uploaded.';form.submit();}}}});}})();</script>'''
+
 
 def _timetable_ocr_script(form_id,file_id,text_id,status_id):
-    return rf'''<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script>(function(){{const form=document.getElementById({form_id!r}),file=document.getElementById({file_id!r}),hidden=document.getElementById({text_id!r}),status=document.getElementById({status_id!r});if(!form||!file||!hidden)return;form.addEventListener('submit',async function(e){{const f=file.files&&file.files[0];if(!f||!/^image\/(png|jpeg|webp)$/i.test(f.type)||hidden.value.trim())return;e.preventDefault();if(status)status.textContent='Reading timetable image… please wait.';try{{const result=await Tesseract.recognize(f,'eng',{{logger:function(m){{if(status&&m.status)status.textContent='Reading timetable image… '+Math.round((m.progress||0)*100)+'%';}}}});hidden.value=(result.data.text||'').trim().slice(0,30000);if(status)status.textContent=hidden.value?'Timetable text captured for VYBE Assistant.':'No readable text found; the image was still uploaded.';form.submit();}}catch(err){{if(status)status.textContent='Image reading failed; uploading without OCR.';form.submit();}}}});}})();</script>'''
+    return _resource_ocr_script(form_id,file_id,text_id,status_id)
 
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
@@ -1270,11 +1284,13 @@ def _campus_search(con, q, limit=8):
     ).fetchall():
         out.append({"type":"Timetable","title":r["title"],"text":(r["assistant_text"] or r["original_name"])[:1500],"url":"/timetable","date":r["created_at"]})
     for r in con.execute(
-        "SELECT id,title,course,semester,subject,description FROM resources "
-        "WHERE title LIKE ? OR course LIKE ? OR subject LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT ?",
-        (like,like,like,like,limit)
+        "SELECT id,title,course,semester,subject,description,assistant_text FROM resources "
+        "WHERE title LIKE ? OR course LIKE ? OR subject LIKE ? OR description LIKE ? OR assistant_text LIKE ? ORDER BY id DESC LIMIT ?",
+        (like,like,like,like,like,limit)
     ).fetchall():
-        out.append({"type":"Resource","title":r["title"],"text":f'{r["course"]} · {r["semester"]} · {r["subject"]} · {r["description"]}',"url":"/academics?q="+q,"date":""})
+        content=(r["assistant_text"] or "").strip()
+        meta=f'{r["course"]} · {r["semester"]} · {r["subject"]} · {r["description"]}'
+        out.append({"type":"Resource","title":r["title"],"text":(meta + ((" · "+content) if content else ""))[:3000],"url":"/academics?q="+q,"date":""})
     return out[:limit*4]
 
 
@@ -1303,10 +1319,35 @@ def _free_vybe_answer(con, question):
     """Free, deterministic VYBE assistant: no external AI/API is required."""
     q = re.sub(r"\s+", " ", question.lower()).strip()
     ist = _current_ist()
-    timetable_words = ("timetable", "time table", "class schedule", "class timing", "period", "lecture", "which class", "which room", "what class", "class at", "class tomorrow", "teacher", "teachers", "faculty", "professor", "prof", "instructor", "who teaches")
+    timetable_words = ("timetable", "time table", "class schedule", "class timing", "period", "lecture", "which class", "which room", "what class", "class at", "class tomorrow", "teacher", "teachers", "faculty", "professor", "prof", "instructor", "who teaches", "teacher name", "faculty name")
 
     if any(x in q for x in timetable_words):
-        return _timetable_answer(con, question)
+        rows=con.execute("SELECT id,title,original_name,file_data,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 8").fetchall()
+        if not rows: return "🗓️ No timetable has been uploaded to VYBE yet."
+        terms=[w for w in re.findall(r"[a-z0-9]+",q) if len(w)>2 and w not in {"timetable","table","class","schedule","what","which","room","timing","period","lecture","tomorrow","today"}]
+        matches=[]
+        for r in rows:
+            if not (r["assistant_text"] or "").strip() and r["file_data"]:
+                extracted=_extract_doc_text(bytes(r["file_data"]),Path(r["original_name"] or "").suffix.lower(),50000)
+                if extracted:
+                    try: con.execute("UPDATE timetables SET assistant_text=? WHERE id=?",(extracted,r["id"])); r["assistant_text"]=extracted
+                    except Exception: pass
+            hay=(r["title"]+" "+(r["assistant_text"] or "")).lower()
+            if not terms or all(t in hay for t in terms[:4]): matches.append(r)
+        matches=matches or rows[:3]
+        teacher_intent=any(x in q for x in ("teacher","teachers","faculty","professor","prof","instructor","who teaches","teacher name","faculty name","sir","mam","ma'am"))
+        lines=["🗓️ Timetable information from VYBE:"]
+        for r in matches[:3]:
+            text=(r["assistant_text"] or "").strip()
+            if teacher_intent and text:
+                teacher_lines=[]
+                for line in re.split(r"[\n|]+",text):
+                    if re.search(r"\b(teacher|faculty|professor|prof|instructor|sir|mam|ma'am)\b",line,re.I): teacher_lines.append(line.strip())
+                if teacher_lines: text="\n".join(teacher_lines[:12])
+            lines.append(f"• {r['title']}: {text[:2200] if text else 'The timetable file is available in Timetable, but no readable text was extracted from this upload.'}")
+        try: con.commit()
+        except Exception: pass
+        return "\n".join(lines)
 
     if any(x in q for x in ("what time", "current time", "time now", "time is it", "what's the time", "whats the time")):
         return f"🕐 The current VYBE time is {_format_ist(ist)}."
@@ -1331,35 +1372,39 @@ def _free_vybe_answer(con, question):
             lines.append(f"• {r['title']} — {r['event_date']} · {r['event_time'] or 'Time TBA'} · {r['location'] or 'Location TBA'}")
         return "\n".join(lines)
 
-    resource_words = ("note", "notes", "pyq", "pyqs", "assignment", "assignments", "study material", "syllabus", "file", "files", "resource", "resources", "where is", "where are", "find")
+    resource_words = ("note", "notes", "pyq", "pyqs", "assignment", "assignments", "study material", "syllabus", "file", "files", "resource", "resources", "document", "documents", "pdf", "word", "ppt", "slide", "where is", "where are", "find", "read", "contains", "written")
     if any(x in q for x in resource_words):
-        search_terms = [w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2 and w not in {"where", "what", "are", "the", "for", "from", "find", "file", "files", "notes", "note", "resource", "resources", "please", "show", "give", "me"}]
-        rows = []
+        search_terms=[w for w in re.findall(r"[a-z0-9]+",q) if len(w)>2 and w not in {"where","what","are","the","for","from","find","file","files","notes","note","resource","resources","please","show","give","me","read","written","contains","document","documents","pdf","word","ppt","slide"}]
+        rows=[]
         if search_terms:
-            like = "%" + "%".join(search_terms[:4]) + "%"
-            rows = con.execute(
-                "SELECT id,title,resource_type,course,semester,subject,description,file_name FROM resources "
-                "WHERE title LIKE ? OR course LIKE ? OR semester LIKE ? OR subject LIKE ? OR description LIKE ? "
-                "ORDER BY id DESC LIMIT 8", (like,like,like,like,like)
-            ).fetchall()
+            clauses=[]; params=[]
+            for t in search_terms[:6]:
+                like=f"%{t}%"; clauses.append("(title LIKE ? OR course LIKE ? OR semester LIKE ? OR subject LIKE ? OR description LIKE ? OR assistant_text LIKE ?)"); params.extend([like]*6)
+            rows=con.execute("SELECT id,title,resource_type,course,semester,subject,description,file_name,original_name,file_data,assistant_text FROM resources WHERE "+" AND ".join(clauses)+" ORDER BY id DESC LIMIT 8",params).fetchall()
         if not rows:
-            rows = con.execute("SELECT id,title,resource_type,course,semester,subject,description,file_name FROM resources ORDER BY id DESC LIMIT 8").fetchall()
+            rows=con.execute("SELECT id,title,resource_type,course,semester,subject,description,file_name,original_name,file_data,assistant_text FROM resources ORDER BY id DESC LIMIT 8").fetchall()
         if not rows:
-            drive = setting(con, "google_drive_url", DRIVE_URL)
+            drive=setting(con,"google_drive_url",DRIVE_URL)
             return f"📚 I couldn't find a VYBE resource yet. Check Academics or the shared Google Drive: {drive}"
-        lines = ["📚 I found these VYBE resources:"]
+        lines=["📚 I found these VYBE files/resources:"]
         for r in rows[:5]:
-            location = f"Open in VYBE: /resource/{r['id']}" if r['file_name'] else "Available through the configured Google Drive / link resource"
-            lines.append(f"• {r['title']} — {r['course']} · {r['semester']} · {r['subject']} — {location}")
-        return "\n".join(lines) + "\n\nYou can also open Academics → Search to find more notes and files."
-
-    if any(x in q for x in ("community", "question", "questions", "solution", "solutions", "problem", "problems", "chat")):
-        like = f"%{question.strip()[:80]}%"
-        rows = con.execute("SELECT id,title,description,status FROM issues WHERE title LIKE ? OR description LIKE ? ORDER BY id DESC LIMIT 5", (like,like)).fetchall()
-        if rows:
-            return "💬 Matching community problems:\n" + "\n".join(f"• {r['title']} — {r['status']} — /community#problem-{r['id']}" for r in rows)
-        count = con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"]
-        return f"💬 VYBE has {count} campus problem(s) in Community. Open Community to view questions and solutions."
+            content=(r["assistant_text"] or "").strip()
+            if not content and r["file_data"]:
+                extracted=_extract_doc_text(bytes(r["file_data"]),Path(r["original_name"] or r["file_name"] or "").suffix.lower(),50000)
+                if extracted:
+                    content=extracted
+                    try: con.execute("UPDATE resources SET assistant_text=? WHERE id=?",(content,r["id"]))
+                    except Exception: pass
+            if content:
+                snippet=content[:1800]; low=content.lower()
+                for t in search_terms[:6]:
+                    pos=low.find(t)
+                    if pos>=0:
+                        snippet=content[max(0,pos-220):min(len(content),pos+1100)]; break
+                lines.append(f"• {r['title']} ({r['resource_type']}) — {snippet}")
+            else:
+                lines.append(f"• {r['title']} ({r['resource_type']}) — uploaded as {r['original_name'] or r['file_name'] or 'resource'}, but no readable text was extracted yet.")
+        return "\n".join(lines)
 
     results = _campus_search(con, question, 8)
     if results:
@@ -1499,11 +1544,34 @@ def assistant():
 @app.route("/dashboard")
 @student_required
 def dashboard():
-    con=db(); s=con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?",(session["student_db_id"],)).fetchone(); resources=con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"]; issues=con.execute("SELECT COUNT(*) AS c FROM issues WHERE student_id=?",(session["student_db_id"],)).fetchone()["c"]; drive=setting(con,"google_drive_url",DRIVE_URL); wa=setting(con,"whatsapp_link",""); anns=_active_announcements(con,2); evs=_upcoming_events(con,2); con.close()
-    ann_title=esc(anns[0]["title"]) if anns else "No new announcement"; ann_text=esc(anns[0]["message"][:95] if anns else "Check announcements for the latest campus updates."); event_title=esc(evs[0]["title"]) if evs else "No upcoming event"; event_text=esc(f'{evs[0]["event_date"]} · {evs[0]["event_time"] or "TBA"}' if evs else "Check events for what's coming up")
-    wa_html=f'<a class="student-link" target="_blank" rel="noopener noreferrer" href="{esc(wa)}"><span>💬 <strong>WhatsApp Community</strong></span><span class="student-arrow">→</span></a>' if valid_url(wa) else '<div class="student-link"><span>💬 <strong>WhatsApp Community</strong></span><span class="small">Not configured</span></div>'
-    body=f'''<section class="student-home"><section class="student-home-head"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s['name'])}! 👋</h1><p class="muted">Your Campus. Your Community. Your Space.</p><div class="stat-row" style="margin-top:14px"><span class="stat-chip">⭐ {s['reputation_points']} VYBE points</span><span class="stat-chip">💡 {s['helpful_answers']} helpful answers</span></div></section><section class="section" style="padding-top:8px"><div class="student-feature-grid"><a class="student-feature primary" href="/assistant"><div class="student-feature-icon">💬</div><div class="student-feature-copy"><h2>Ask VYBE</h2><p>Get quick answers, campus information and guidance.</p></div><div class="student-arrow">›</div></a><a class="student-feature" href="/chat"><div class="student-feature-icon">👥</div><div class="student-feature-copy"><h2>Community Chat</h2><p>Connect, discuss and solve problems together.</p></div><div class="student-arrow">›</div></a><a class="student-feature" href="/academics"><div class="student-feature-icon">🎓</div><div class="student-feature-copy"><h2>Academics</h2><p>{resources} resources · Notes, PYQs, syllabus, study material & timetable.</p></div><div class="student-arrow">›</div></a><a class="student-feature" href="/issues"><div class="student-feature-icon">📄</div><div class="student-feature-copy"><h2>Campus</h2><p>{issues} report(s) from you · Open saved reports and campus issues.</p></div><div class="student-arrow">›</div></a></div></section><section class="student-mini-grid"><a class="student-mini" href="/announcements"><div class="student-feature-icon">📢</div><div><h3>Latest Announcement</h3><p>{ann_title} · {ann_text}</p></div><span class="student-arrow">›</span></a><a class="student-mini" href="/events"><div class="student-feature-icon">🗓️</div><div><h3>Upcoming Events</h3><p>{event_title} · {event_text}</p></div><span class="student-arrow">›</span></a></section><section class="student-link-row"><a class="student-link" target="_blank" rel="noopener noreferrer" href="{esc(drive)}"><span>☁️ <strong>Google Drive</strong></span><span class="student-arrow">→</span></a>{wa_html}</section></section>'''
-    return layout("Student Space",body)
+    con = db()
+    s = con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    counts = {
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "issues": con.execute("SELECT COUNT(*) AS c FROM issues WHERE student_id=?", (session["student_db_id"],)).fetchone()["c"],
+        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
+    }
+    drive = setting(con, "google_drive_url", DRIVE_URL)
+    wa = setting(con, "whatsapp_link", "")
+    anns = _active_announcements(con, 4)
+    evs = _upcoming_events(con, 4)
+    con.close()
+    ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
+    event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
+    body = f'''<section class="student-home">
+<div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p><div class="student-home-stats"><span>⭐ {s["reputation_points"]} VYBE points</span><span>💡 {s["helpful_answers"]} helpful answers</span></div></div>
+<div class="student-feature-list">
+<a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/chat"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community Chat</strong><small>Connect, discuss, solve together.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small><em>Timetable is available inside Campus.</em></span><span class="student-arrow">›</span></a>
+</div>
+<div class="student-mini-grid"><a class="student-mini" href="/announcements"><span class="student-feature-icon">📣</span><strong>Latest Announcement</strong><span>›</span></a><a class="student-mini" href="/events"><span class="student-feature-icon">🗓️</span><strong>Upcoming Events</strong><span>›</span></a></div>
+<a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a>
+<a class="student-wide-link" href="{esc(wa)}" target="_blank" rel="noopener noreferrer" style="{'' if valid_url(wa) else 'opacity:.6;pointer-events:none;'}"><span class="student-feature-icon">◉</span><span><strong>WhatsApp Community</strong><small>{'Join the configured community' if valid_url(wa) else 'Not configured yet'}</small></span><span class="student-arrow">›</span></a>
+</section>'''
+    return layout("Dashboard", body)
+
 
 @app.route("/academics")
 @student_required
@@ -1569,7 +1637,7 @@ def issues():
     rows=con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); saved=con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); con.close()
     cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
     saved_cards="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
-    body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="campus-tools"><a class="campus-tool" href="/timetable"><span class="campus-tool-icon">🗓️</span><span><strong>Timetable</strong><small>Open the latest class schedule</small></span><b>→</b></a><a class="campus-tool" href="/academics"><span class="campus-tool-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs &amp; study material</small></span><b>→</b></a></div><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
     return layout("Campus",body)
 
 
@@ -1811,9 +1879,44 @@ def admin_logout():
 @app.route("/admin/panel")
 @admin_required
 def admin_panel():
-    con=db(); stats={"students":con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],"pending":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],"issues":con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],"resources":con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],"community_messages":con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],"announcements":con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],"events":con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],"timetables":con.execute("SELECT COUNT(*) AS c FROM timetables").fetchone()["c"]}; assistant_enabled=setting(con,"vybe_assistant_enabled","1")=="1"; online=setting(con,"vybe_online","1")=="1"; con.close()
-    body=f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1><p class="muted">Everything is grouped by what you need to manage.</p><div class="section"><div class="admin-section-title">Overview</div><div class="grid"><a class="card admin-card" href="/admin/analytics"><div class="kpi blue-accent">↗</div><h3>Analytics</h3><p class="muted">Campus activity and contributor metrics.</p></a><a class="card admin-card" href="/admin/students"><div class="kpi">{stats['students']}</div><h3>Students</h3><p class="muted">{stats['pending']} pending approvals.</p></a><a class="card admin-card" href="/admin/problems"><div class="kpi">{stats['issues']}</div><h3>Campus problems</h3><p class="muted">Reports and resolution status.</p></a></div></div><div class="section"><div class="admin-section-title">Campus content</div><div class="grid"><a class="card admin-card" href="/admin/resources"><div class="kpi">{stats['resources']}</div><h3>Resources</h3><p class="muted">Notes, PYQs and study material.</p></a><a class="card admin-card" href="/admin/timetable"><div class="kpi">{stats['timetables']}</div><h3>Timetable</h3><p class="muted">Upload PDF/images and feed VYBE Assistant.</p></a><a class="card admin-card" href="/admin/announcements"><div class="kpi">{stats['announcements']}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a><a class="card admin-card" href="/admin/events"><div class="kpi">{stats['events']}</div><h3>Events</h3><p class="muted">Create and manage upcoming events.</p></a></div></div><div class="section"><div class="admin-section-title">Community</div><div class="grid"><a class="card admin-card" href="/admin/community-chat"><div class="kpi">{stats['community_messages']}</div><h3>Community Chat</h3><p class="muted">Moderate student community messages.</p></a><a class="card admin-card" href="/admin/chats"><div class="kpi">{stats['issues']}</div><h3>Problem chats</h3><p class="muted">Review problem and solution history.</p></a><a class="card admin-card" href="/admin/students"><div class="kpi">+</div><h3>Student access</h3><p class="muted">Approve students and manage publisher permissions.</p></a></div></div><div class="section grid2"><div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{'🟢 ON' if assistant_enabled else '🔴 OFF'}</strong></p><p class="muted">Free built-in assistant. It answers from VYBE data and uploaded timetable text. No college website crawler is used.</p><form method="post" action="/admin/assistant"><button class="btn {'danger' if assistant_enabled else 'good'}">{'🔴 Turn Assistant OFF' if assistant_enabled else '🟢 Turn Assistant ON'}</button></form></div><div class="card"><h2>🌐 Public status</h2><p class="{'online' if online else 'offline'}"><strong>{'🟢 ONLINE' if online else '🔴 OFFLINE'}</strong></p><p class="muted">Admin remains accessible when VYBE is offline.</p><form method="post" action="/admin/status"><button class="btn {'danger' if online else 'good'}">{'🔴 Take VYBE Offline' if online else '🟢 Bring VYBE Online'}</button></form></div></div><div class="section"><div class="admin-section-title">Security & configuration</div><div class="grid2"><div class="card"><h2>🔐 Security</h2><p class="muted">Passkey, admin password and login history.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/login-history">Login history →</a></div></div><div class="card"><h2>⚙️ Settings</h2><p class="muted">Drive, WhatsApp, community and public configuration.</p><a class="btn dark" href="/admin/settings">Open settings →</a></div></div></div></section>'''
-    return layout("Admin",body,admin=True)
+    con = db()
+    stats = {
+        "students": con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],
+        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
+        "issues": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
+        "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
+        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
+    }
+    assistant_enabled = setting(con, "vybe_assistant_enabled", "1") == "1"
+    online = setting(con, "vybe_online", "1") == "1"
+    con.close()
+    body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
+    <div class="grid">
+      <a class="card" href="/admin/students"><div class="kpi">{stats["students"]}</div><h3>Students</h3><p class="muted">Manage all student accounts.</p></a>
+      <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
+      <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
+      <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
+      <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
+      <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
+      <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
+      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a><a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
+    </div>
+    <section class="section grid2">
+      <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
+      <div class="card"><h2>🧠 What it can answer</h2><p class="muted">Announcements, updates, events, notes/files, resources, uploaded timetable data, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
+    </section>
+    <section class="section grid2">
+      <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
+      <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
+      <form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div>
+      <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
+    </section></section>'''
+    return layout("Admin", body, admin=True)
+
 
 @app.route("/admin/analytics")
 @admin_required
@@ -2097,7 +2200,7 @@ def delete_timetable(tid):
 def admin_resources():
     con = db(); resources = con.execute("SELECT * FROM resources ORDER BY id DESC").fetchall(); con.close()
     rows = "".join(f'<tr><td>{esc(r["title"])}</td><td>{esc(r["resource_type"])}</td><td>{esc(r["course"])} · {esc(r["semester"])} · {esc(r["subject"])}</td><td>{esc(r["created_at"])}</td><td><a class="btn danger" href="/admin/resource/{r["id"]}/delete" onclick="return confirm(\'Delete this resource?\')">Delete</a></td></tr>' for r in resources)
-    body = f'''<section class="section"><h1>Resources.</h1><div class="two"><div class="card"><h2>Add resource</h2><form class="form" method="post" action="/admin/resource" enctype="multipart/form-data"><input name="title" placeholder="Title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea><input type="file" name="file"><button class="btn accent">Add resource</button></form></div><div class="card"><h2>Academic folder</h2><p class="muted">Students see the live Drive folder inside Academics.</p><a class="btn dark" href="/admin/settings">Configure Drive / WhatsApp →</a></div></div><div class="section card tablewrap"><table><tr><th>Title</th><th>Type</th><th>Course / term / subject</th><th>Created</th><th>Action</th></tr>{rows or '<tr><td colspan="5">No resources.</td></tr>'}</table></div></section>'''
+    body = f'''<section class="section"><h1>Resources.</h1><div class="two"><div class="card"><h2>Add resource</h2><form id="adminResourceFileForm" class="form" method="post" action="/admin/resource" enctype="multipart/form-data"><input name="title" placeholder="Title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea><input id="adminResourceFile" type="file" name="file"><input id="adminResourceText" type="hidden" name="assistant_text"><div id="adminResourceStatus" class="small">PDF / Word / PowerPoint text is indexed automatically. Images are read before upload.</div><button class="btn accent">Add resource</button></form>{_resource_ocr_script("adminResourceFileForm","adminResourceFile","adminResourceText","adminResourceStatus")}</div><div class="card"><h2>Academic folder</h2><p class="muted">Students see the live Drive folder inside Academics.</p><a class="btn dark" href="/admin/settings">Configure Drive / WhatsApp →</a></div></div><div class="section card tablewrap"><table><tr><th>Title</th><th>Type</th><th>Course / term / subject</th><th>Created</th><th>Action</th></tr>{rows or '<tr><td colspan="5">No resources.</td></tr>'}</table></div></section>'''
     return layout("Resources", body, admin=True)
 
 
@@ -2105,7 +2208,7 @@ def admin_resources():
 @admin_required
 def add_resource():
     title=request.form.get("title","").strip()[:150]; typ=request.form.get("resource_type","Study material")[:80]; course=request.form.get("course","").strip()[:100]; sem=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:100]; desc=request.form.get("description","").strip()[:1000]
-    f=request.files.get("file"); filename=None; original_name=None; mime_type=None; file_data=None
+    f=request.files.get("file"); filename=None; original_name=None; mime_type=None; file_data=None; assistant_text=request.form.get("assistant_text","").strip()[:50000]
     if f and f.filename:
         suffix=Path(f.filename).suffix.lower()
         if suffix not in ALLOWED_EXT: flash("That file type is not allowed."); return redirect(url_for("admin_resources"))
@@ -2113,11 +2216,9 @@ def add_resource():
         filename=secrets.token_hex(16)+suffix
         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         file_data=f.read()
-        # Keep a local copy for compatibility, while also storing the bytes in the DB
-        # so uploads survive multi-instance deployments/restarts.
+        if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
         f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,now())); con.commit(); con.close(); flash("Resource added."); return redirect(url_for("admin_resources"))
-
+    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now())); con.commit(); con.close(); flash("Resource added and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
 
 @app.route("/admin/resource/<int:rid>/delete")
 @admin_required
