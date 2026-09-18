@@ -12,6 +12,7 @@ import io
 import mimetypes
 import sqlite3
 import zlib
+import zipfile
 from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from functools import wraps
@@ -864,7 +865,7 @@ def security_headers(response):
 
 
 CSS = r"""
-:root{--bg:#050505;--bg2:#0b0b0d;--panel:rgba(255,255,255,.055);--line:rgba(255,255,255,.11);--line2:rgba(255,255,255,.18);--text:#f5f5f7;--muted:#a1a1a6;--good:#62e6a2;--warn:#ffd166;--bad:#ff6878;--shadow:0 28px 90px rgba(0,0,0,.42)}
+:root{--bg:#020817;--bg2:#061222;--panel:rgba(8,25,43,.78);--line:rgba(58,145,214,.25);--line2:rgba(54,169,255,.55);--text:#f4f8ff;--muted:#9eb3c9;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#1aa7ff;--accent2:#0b63a5;--shadow:0 28px 90px rgba(0,0,0,.55)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
 .notice-card:after{content:"";position:absolute;inset:auto -40px -70px auto;width:170px;height:170px;background:rgba(255,255,255,.045);filter:blur(25px);border-radius:50%}
@@ -879,34 +880,75 @@ CSS = r"""
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
 .student-top-tools{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}.top-stat,.top-tool{min-height:38px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.055);display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 9px;color:#eee;font-size:12px;white-space:nowrap}.top-stat{flex-direction:column;line-height:1;min-width:58px}.top-stat small{font-size:8px;color:var(--muted);text-transform:uppercase}.top-search{display:flex;align-items:center;width:190px}.top-search input{height:38px;border-radius:12px 0 0 12px;padding:8px 10px;font-size:12px}.top-search button{height:38px;width:38px;border:1px solid #2a2a2e;border-left:0;border-radius:0 12px 12px 0;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.page-back,.mobile-back{border:1px solid var(--line);background:rgba(255,255,255,.05);color:#ddd;border-radius:12px;padding:8px 12px;cursor:pointer}.page-back{margin:2px 0 4px}.mobile-back{display:none;width:100%;text-align:left}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.student-home{max-width:900px;margin:0 auto;padding:34px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(0,174,255,.75);border-radius:999px;color:#5fc9ff;background:rgba(0,151,255,.08);font-size:12px;font-weight:800;letter-spacing:.08em}.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#a9b9d0;margin:0}.student-home-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.student-home-stats span{padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid var(--line);color:#cdd7e5;font-size:12px}.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(92,124,157,.28);border-radius:24px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));box-shadow:0 18px 50px rgba(0,0,0,.25);transition:.25s ease;overflow:hidden}.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5);box-shadow:0 22px 60px rgba(0,0,0,.32)}.student-feature.primary{border-color:rgba(0,190,255,.78);background:linear-gradient(135deg,rgba(14,42,61,.96),rgba(9,16,24,.94));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,112,190,.13)}.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(60,96,132,.45),rgba(15,27,40,.8));border:1px solid rgba(130,181,225,.22);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#a7b8cf;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#70caff}.student-arrow{font-size:37px;color:#8ba6c5;line-height:1}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.25s ease}.student-mini:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#829ab7}.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7b8cf}.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(92,124,157,.28);background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(52,91,125,.3);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb0c5}.campus-tool b{font-size:26px;color:#819bb9;font-weight:400}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini{min-height:72px;padding:10px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.page-back{display:inline-flex}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
+
+/* VYBE dark-blue visual system + exact student reference chrome */
+body{background:radial-gradient(900px 560px at 50% -240px,rgba(13,95,160,.24),transparent 64%),radial-gradient(700px 500px at 100% 15%,rgba(6,67,120,.18),transparent 68%),linear-gradient(180deg,#020713 0%,#020a16 48%,#01060e 100%)}
+.nav{background:rgba(2,9,18,.84);border-bottom:1px solid rgba(50,135,205,.18)}
+.brandmark{background:linear-gradient(145deg,#1eaaff,#0a568e);color:#fff;box-shadow:0 0 25px rgba(17,146,230,.2)}
+.brandtext{background:linear-gradient(180deg,#fff,#b7cce0);-webkit-background-clip:text;background-clip:text;color:transparent}
+.navlinks{display:none}.page-back{display:none!important}
+.nav-toggle{display:grid;place-items:center;width:42px;height:42px;border:1px solid rgba(58,145,214,.25);border-radius:14px;background:rgba(8,30,52,.72);color:#fff}
+.mobile-nav{background:rgba(2,10,19,.96);border-top:1px solid rgba(46,130,200,.16)}
+.mobile-nav a:hover{background:rgba(20,93,145,.16);border-color:rgba(58,145,214,.25)}
+.btn{background:linear-gradient(180deg,#168bd0,#075384);color:#fff;border-color:rgba(63,163,230,.3);box-shadow:0 8px 24px rgba(0,67,120,.2)}
+.btn.accent{background:linear-gradient(180deg,#20adff,#0969a7);color:#fff;border-color:rgba(77,183,247,.55)}
+.btn.dark{background:rgba(8,31,51,.8);color:#e9f5ff;border-color:rgba(58,145,214,.25)}
+.card{background:linear-gradient(145deg,rgba(10,31,51,.82),rgba(4,14,25,.9));border-color:rgba(58,145,214,.25)}
+.card:hover{background:linear-gradient(145deg,rgba(12,40,66,.88),rgba(4,16,28,.94));border-color:rgba(54,169,255,.55)}
+input,textarea,select{background:rgba(4,18,31,.82);border-color:rgba(56,127,181,.28)}
+input:focus,textarea:focus,select:focus{border-color:#2d9de0;background:rgba(6,25,43,.9);box-shadow:0 0 0 4px rgba(18,139,214,.1)}
+.authbox{background:linear-gradient(145deg,rgba(8,30,51,.9),rgba(3,12,22,.96))}
+.ai-box{background:linear-gradient(145deg,rgba(9,38,63,.9),rgba(3,15,27,.94));border-color:rgba(54,157,222,.35)}
+.feed-item{background:rgba(6,26,44,.62);border-color:rgba(58,145,214,.25)}
+.student-header-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.student-header-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;border:1px solid rgba(68,145,203,.32);background:linear-gradient(145deg,rgba(22,55,82,.9),rgba(7,24,41,.95));color:#dcefff;font-size:19px;position:relative}
+.student-header-icon.profile{font-size:18px}.student-header-icon .dot{position:absolute;width:8px;height:8px;border-radius:50%;background:#16aaff;margin:-25px 0 0 23px;box-shadow:0 0 9px rgba(22,170,255,.7)}
+.student-control-row{max-width:1180px;margin:0 auto;padding:4px 20px 12px;display:flex;align-items:center;gap:12px}
+.student-control{width:52px;height:52px;display:grid;place-items:center;border-radius:17px;border:1px solid rgba(67,139,193,.32);background:linear-gradient(145deg,rgba(17,47,72,.9),rgba(6,22,38,.96));color:#e5f4ff;font-size:24px;box-shadow:inset 0 1px rgba(255,255,255,.06)}
+.student-control.active{border-color:#23b0ff;box-shadow:0 0 20px rgba(16,153,231,.13),inset 0 1px rgba(255,255,255,.07)}
+.student-control.star{font-size:23px}.student-search{flex:1;display:flex;height:52px;min-width:0}
+.student-search input{height:52px;border-radius:17px;padding:0 18px;background:linear-gradient(145deg,rgba(15,39,61,.92),rgba(6,21,36,.96));border-color:rgba(70,143,196,.32);font-size:16px}
+.student-menu{width:52px;height:52px;border-radius:17px}
+.student-home{max-width:900px;margin:0 auto;padding:22px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}
+.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(24,169,239,.78);border-radius:999px;color:#50c8ff;background:rgba(0,111,180,.1);font-size:12px;font-weight:800;letter-spacing:.08em}
+.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#aac1d7;margin:0}.student-home-stats{display:none}
+.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(61,130,178,.34);border-radius:24px;background:linear-gradient(135deg,rgba(11,34,56,.94),rgba(4,15,27,.96));box-shadow:0 18px 50px rgba(0,0,0,.3);transition:.25s ease;overflow:hidden}
+.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(45,174,242,.62);box-shadow:0 22px 60px rgba(0,67,120,.22)}
+.student-feature.primary{border-color:rgba(24,179,246,.78);background:linear-gradient(135deg,rgba(9,44,70,.98),rgba(4,17,29,.96));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,91,153,.18)}
+.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(37,78,108,.58),rgba(9,27,44,.94));border:1px solid rgba(108,176,220,.26);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}
+.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#abc0d4;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#63caff}.student-arrow{font-size:37px;color:#9bb9d4;line-height:1}
+.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(61,130,178,.34);border-radius:22px;background:linear-gradient(135deg,rgba(11,34,56,.94),rgba(4,15,27,.96));transition:.25s ease}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#8eacc7}
+.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7bfd5}
+.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(61,130,178,.34);background:linear-gradient(135deg,rgba(11,34,56,.94),rgba(4,15,27,.96));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(45,174,242,.62)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(22,75,111,.42);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb8ce}.campus-tool b{font-size:26px;color:#8eacc7;font-weight:400}
+.student-bottom-nav{display:flex;position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:90;width:min(900px,100%);height:78px;background:rgba(2,11,20,.9);border-top:1px solid rgba(53,137,199,.28);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);padding:7px 10px calc(7px + env(safe-area-inset-bottom));box-shadow:0 -15px 45px rgba(0,0,0,.35)}
+.student-bottom-nav a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:15px;color:#91a9c0;font-size:12px}.student-bottom-nav a span{font-size:24px;line-height:1}.student-bottom-nav a.active{color:#1aaeff}.student-bottom-spacer{height:82px}
+@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.brand{font-size:23px}.brandmark{width:32px;height:32px}.student-header-tools{gap:5px}.student-header-icon{width:38px;height:38px}.student-control-row{padding:4px 10px 10px;gap:6px}.student-control{width:42px;height:42px;border-radius:14px;font-size:20px}.student-control.star{font-size:19px}.student-menu{width:42px;height:42px}.student-search{height:42px}.student-search input{height:42px;border-radius:14px;font-size:13px;padding:0 13px}.mobile-nav{padding:10px 12px 16px}.wrap{padding:8px 12px 88px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}.footer{padding-bottom:95px}}
 """
 
 
 def layout(title, body, admin=False):
-    # Always initialize this before branching; admin/guest pages also need it.
-    student_tools = ""
+    student = bool(session.get("student_db_id")) and not admin
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
-    elif session.get("student_db_id"):
-        publisher_link = ""
-        try:
-            _lc = db(); _lr = _lc.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{session.get('student_db_id')}",)).fetchone(); _lc.close()
-            if _lr and _lr["value"] == "1": publisher_link = '<a href="/publisher">Publisher</a>'
-        except Exception:
-            publisher_link = ""
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/logout">Logout</a>'
-        try:
-            _tc=db(); _ts=_tc.execute("SELECT reputation_points,helpful_answers FROM students WHERE id=?",(session.get("student_db_id"),)).fetchone(); _tc.close()
-            points=int(_ts["reputation_points"] if _ts else 0); helpful=int(_ts["helpful_answers"] if _ts else 0)
-        except Exception:
-            points=helpful=0
-        student_tools=f'<div class="student-top-tools"><a class="top-stat" href="/profile#points">⭐ <span>{points}</span><small>VYBE</small></a><a class="top-stat" href="/profile#helpful">💡 <span>{helpful}</span><small>Helpful</small></a><a class="top-tool" href="/assistant">✨ Ask VYBE</a><a class="top-tool" href="/chat">💬 Chat</a><form class="top-search" action="/search" method="get"><input name="q" placeholder="Search campus…" aria-label="Search campus"><button type="submit">⌕</button></form></div>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/timetable">Timetable</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/analytics">Analytics</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
+        header = f'<div class="navin">{brand}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'
+        bottom_nav = ""
+    elif student:
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
+        brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a></div></div>
+<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search" aria-label="Search campus"></form><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'''
+        bottom_nav = '''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="active" href="/dashboard"><span>⌂</span>Home</a><a href="/chat"><span>◯</span>Chat</a><a href="/academics"><span>♢</span>Academics</a><a href="/profile"><span>♙</span>Profile</a></nav><div class="student-bottom-spacer"></div>'''
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
-        student_tools=""
-    mobile_links = links.replace('<a href="/issues">Campus</a>', '<a href="/issues">Campus</a><a class="menu-sub" href="/timetable">↳ Timetable</a><a class="menu-sub" href="/issues#saved-reports">↳ Saved Reports</a>') if student_tools else links
+        brand = '<a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
+        header = f'<div class="navin">{brand}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'
+        bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>{student_tools}<div class="navlinks">{links}</div><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div><div class="mobile-nav" id="vybeMobileNav"><button class="mobile-back" type="button" onclick="history.back()">← Back</button>{mobile_links}</div></div><main class="wrap"><button class="page-back" type="button" onclick="if(history.length>1)history.back();else location.href='/dashboard'">← Back</button>{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
+<div class="nav">{header}</div><div class="mobile-nav" id="vybeMobileNav">{links}</div>
+<main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
+<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
 
 
 @app.route("/offline")
@@ -1172,13 +1214,13 @@ def _extract_pdf_text(file_data,max_chars=50000):
         doc=fitz.open(stream=file_data,filetype="pdf")
         text="\n".join(page.get_text("text") for page in doc)
         doc.close()
-        if text.strip(): return re.sub(r"\s+"," ",text).strip()[:max_chars]
+        if text.strip(): return _clean_extracted_text(text,max_chars)
     except Exception: pass
     try:
         from pypdf import PdfReader
         reader=PdfReader(io.BytesIO(file_data))
         text="\n".join((page.extract_text() or "") for page in reader.pages)
-        if text.strip(): return re.sub(r"\s+"," ",text).strip()[:max_chars]
+        if text.strip(): return _clean_extracted_text(text,max_chars)
     except Exception: pass
     chunks=[]
     try:
@@ -1196,54 +1238,83 @@ def _extract_pdf_text(file_data,max_chars=50000):
                 if sum(map(len,chunks))>=max_chars: break
             if sum(map(len,chunks))>=max_chars: break
     except Exception: return ""
-    return re.sub(r"\s+"," "," ".join(chunks)).strip()[:max_chars]
+    return _clean_extracted_text(" ".join(chunks),max_chars)
+
+
+def _clean_extracted_text(value, max_chars=50000):
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", value or "")
+    value = re.sub(r"\s+", " ", value).strip()
+    return value[:max_chars]
 
 
 def _extract_zip_xml_text(file_data,suffix,max_chars=50000):
-    if suffix not in (".docx",".pptx",".xlsx",".odt",".odp"): return ""
+    """Extract text from modern Office/OpenDocument ZIP containers."""
+    if not file_data or suffix not in (".docx",".pptx",".xlsx",".odt",".odp",".zip"):
+        return ""
     try:
         with zipfile.ZipFile(io.BytesIO(file_data)) as z:
             names=z.namelist()
-            if suffix==".docx": targets=[n for n in names if n.startswith("word/") and n.endswith(".xml")]
-            elif suffix==".pptx": targets=[n for n in names if re.match(r"ppt/slides/slide\d+\.xml$",n)]
-            elif suffix==".xlsx": targets=[n for n in names if n.startswith("xl/sharedStrings") and n.endswith(".xml")] + [n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$",n)]
-            else: targets=[n for n in names if n.endswith(".xml")]
+            if suffix==".docx":
+                targets=[n for n in names if n.startswith("word/") and n.endswith(".xml")]
+            elif suffix==".pptx":
+                targets=[n for n in names if re.match(r"ppt/slides/slide\d+\.xml$",n)]
+            elif suffix==".xlsx":
+                targets=[n for n in names if (n.startswith("xl/sharedStrings") and n.endswith(".xml")) or re.match(r"xl/worksheets/sheet\d+\.xml$",n)]
+            elif suffix in (".odt",".odp"):
+                targets=["content.xml"] if "content.xml" in names else []
+            else:
+                targets=[n for n in names if not n.endswith("/") and n.lower().endswith((".txt",".csv",".md",".html",".htm",".xml",".json"))]
             parts=[]
             for name in targets:
                 try:
-                    root=ET.fromstring(z.read(name))
-                    vals=[t.text for t in root.iter() if t.text and t.text.strip()]
-                    if vals: parts.append(" ".join(vals))
-                except Exception: pass
-            return re.sub(r"\s+"," ","\n".join(parts)).strip()[:max_chars]
-    except Exception: return ""
-
-
-def _extract_image_text(file_data,max_chars=50000):
-    try:
-        from PIL import Image
-        import pytesseract
-        img=Image.open(io.BytesIO(file_data))
-        text=pytesseract.image_to_string(img)
-        return re.sub(r"\s+"," ",text).strip()[:max_chars]
+                    raw=z.read(name)
+                    if name.lower().endswith((".txt",".csv",".md",".html",".htm",".json")):
+                        parts.append(raw.decode("utf-8","ignore"))
+                    else:
+                        root=ET.fromstring(raw)
+                        vals=[t.text for t in root.iter() if t.text and t.text.strip()]
+                        if vals: parts.append(" ".join(vals))
+                except Exception:
+                    pass
+                if sum(len(x) for x in parts)>=max_chars: break
+            return _clean_extracted_text("\n".join(parts),max_chars)
     except Exception:
         return ""
 
 
+def _extract_legacy_binary_text(file_data,max_chars=50000):
+    """Best-effort text extraction for legacy .doc/.ppt files."""
+    chunks=[]
+    try:
+        decoded=file_data.decode("utf-16le","ignore")
+        chunks.extend(re.findall(r'[A-Za-z0-9][A-Za-z0-9 ,.;:!?()/"\'&@#%+\\\-_=]{3,}',decoded))
+    except Exception:
+        pass
+    try:
+        decoded=file_data.decode("latin-1","ignore")
+        chunks.extend(re.findall(r'[A-Za-z][A-Za-z0-9 ,.;:!?()/"\'&@#%+\\\-_=]{4,}',decoded))
+    except Exception:
+        pass
+    out=[]; seen=set()
+    for x in chunks:
+        x=re.sub(r"\s+"," ",x).strip()
+        if len(x)<4 or x.lower() in seen: continue
+        seen.add(x.lower()); out.append(x)
+    return _clean_extracted_text(" ".join(out),max_chars)
+
+
 def _extract_doc_text(file_data,suffix,max_chars=50000):
     if not file_data: return ""
+    suffix=(suffix or "").lower()
     if suffix==".pdf": return _extract_pdf_text(file_data,max_chars)
     if suffix in (".png",".jpg",".jpeg",".webp"): return _extract_image_text(file_data,max_chars)
-    if suffix in (".docx",".pptx",".xlsx",".odt",".odp"): return _extract_zip_xml_text(file_data,suffix,max_chars)
+    if suffix in (".docx",".pptx",".xlsx",".odt",".odp",".zip"): return _extract_zip_xml_text(file_data,suffix,max_chars)
     if suffix in (".txt",".csv",".md",".rtf",".json",".html",".htm"):
-        return re.sub(r"\s+"," ",file_data.decode("utf-8","ignore")).strip()[:max_chars]
-    if suffix==".doc":
-        try:
-            raw=file_data.decode("utf-16le","ignore")+" "+file_data.decode("latin-1","ignore")
-            chunks=re.findall(r"[A-Za-z0-9][A-Za-z0-9 ,.;:!?()/'\"\-]{3,}",raw)
-            return re.sub(r"\s+"," "," ".join(chunks)).strip()[:max_chars]
-        except Exception: return ""
+        return _clean_extracted_text(file_data.decode("utf-8","ignore"),max_chars)
+    if suffix in (".doc",".ppt"):
+        return _extract_legacy_binary_text(file_data,max_chars)
     return ""
+
 
 
 def _timetable_text(file_data,suffix,browser_text=""):
@@ -1559,12 +1630,12 @@ def dashboard():
     ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
     event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
     body = f'''<section class="student-home">
-<div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p><div class="student-home-stats"><span>⭐ {s["reputation_points"]} VYBE points</span><span>💡 {s["helpful_answers"]} helpful answers</span></div></div>
+<div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p></div>
 <div class="student-feature-list">
 <a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/chat"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community Chat</strong><small>Connect, discuss, solve together.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small><em>Timetable is available inside Campus.</em></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small></span><span class="student-arrow">›</span></a>
 </div>
 <div class="student-mini-grid"><a class="student-mini" href="/announcements"><span class="student-feature-icon">📣</span><strong>Latest Announcement</strong><span>›</span></a><a class="student-mini" href="/events"><span class="student-feature-icon">🗓️</span><strong>Upcoming Events</strong><span>›</span></a></div>
 <a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a>
