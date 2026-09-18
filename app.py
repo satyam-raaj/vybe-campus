@@ -954,7 +954,7 @@ def layout(title, body, admin=False):
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav" id="vybeMobileNav">{links}</div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
-<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
+<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});}});}})();</script></body></html>'''
 
 
 @app.route("/offline")
@@ -1938,13 +1938,13 @@ def admin_login_passkey_verify():
 @admin_required
 def admin_login_history():
     con = db()
-    rows = con.execute("SELECT logged_at_ist,success,event,ip_address,user_agent FROM admin_login_logs ORDER BY id DESC LIMIT 100").fetchall()
+    rows = con.execute("SELECT id,logged_at_ist,success,event,ip_address,user_agent FROM admin_login_logs ORDER BY id DESC LIMIT 100").fetchall()
     con.close()
     items = ""
     for r in rows:
         state = '<span class="pill status-good">Success</span>' if r["success"] else '<span class="pill status-bad">Failed</span>'
-        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td><td><form method="post" action="/admin/login-history/delete/{{ row[0] }}" onsubmit="return confirm('Delete this login history entry?');"><button type="submit" class="danger">Delete</button></form></td></tr>'''
-    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table>
+        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td><td><form method="post" action="/admin/login-history/delete/{r["id"]}" onsubmit="return confirm('Delete this login history entry?');"><button type="submit" class="danger">Delete</button></form></td></tr>'''
+    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th><th>Action</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table>
 <div style="display:flex;justify-content:flex-end;margin:10px 0;">
 <form method="post" action="/admin/login-history/delete-all" onsubmit="return confirm('Delete all login history?');">
 <button type="submit" class="danger">Delete All History</button>
@@ -2741,7 +2741,7 @@ init_db()
 def admin_delete_login_history(history_id):
     con = get_db()
     try:
-        con.execute("DELETE FROM login_history WHERE id = ?", (history_id,))
+        con.execute("DELETE FROM admin_login_logs WHERE id = ?", (history_id,))
         con.commit()
         flash("Login history entry deleted.", "success")
     except Exception as exc:
@@ -2759,7 +2759,7 @@ def admin_delete_login_history(history_id):
 def admin_delete_all_login_history():
     con = get_db()
     try:
-        con.execute("DELETE FROM login_history")
+        con.execute("DELETE FROM admin_login_logs")
         con.commit()
         flash("All login history deleted.", "success")
     except Exception:
