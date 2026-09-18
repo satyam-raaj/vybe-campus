@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request as URLRequest, urlopen
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, jsonify, render_template_string
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 try:
