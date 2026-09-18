@@ -929,7 +929,7 @@ input:focus,textarea:focus,select:focus{border-color:#2d9de0;background:rgba(6,2
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/timetable">Timetable</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/analytics">Analytics</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/students">Students</a><a href="/admin/announcements">Announcements</a><a href="/admin/events">Events</a><a href="/admin/timetable">Timetable</a><a href="/admin/resources">Resources</a><a href="/admin/problems">Problems</a><a href="/admin/chats">Chats</a><a href="/admin/community-chat">Community Chat</a><a href="/admin/assistant">Assistant</a><a href="/admin/status">Online / Offline</a><a href="/admin/analytics">Analytics</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         header = f'<div class="navin">{brand}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
