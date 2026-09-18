@@ -1242,29 +1242,66 @@ def chat():
         return layout("Community Chat", body)
     bubbles = ""
     for r in rows:
-        mine = " mine" if r["student_id"] == session["student_db_id"] else ""
-        bubbles += f'''<div class="bubble{mine}"><strong>{esc(r["name"])}</strong><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div></div>'''
-    body = f'''<section class="section"><div class="badge">VYBE COMMUNITY CHAT</div><h1>Talk to the campus.</h1><p class="muted">Everyone can see the conversation. Only your registered name is shown — Student IDs and private account details stay hidden.</p></section><section class="section"><div class="card"><div id="chatMessages" class="chat" style="max-height:58vh;overflow:auto">{bubbles or '<div class="empty">No messages yet. Start the conversation.</div>'}<span id="latest"></span></div><form class="form chat-composer" method="post"><textarea name="message" maxlength="1500" placeholder="Write a message..." required style="min-height:88px"></textarea><button class="btn accent">Send message →</button></form><p class="small" style="margin-top:10px">Logged in as <strong>{esc(me["name"])}</strong></p></div></section><script>
+        mine = r["student_id"] == session["student_db_id"]
+        mine_class = " mine" if mine else ""
+        select = f'<label class="small" style="display:flex;align-items:center;gap:7px;margin-top:8px"><input type="checkbox" name="message_id" value="{r["id"]}" class="chat-select"> Select</label>' if mine else ''
+        bubbles += f'''<div class="bubble{mine_class}"><strong>{esc(r["name"])}</strong><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div>{select}</div>'''
+    body = f'''<section class="section"><div class="badge">VYBE COMMUNITY CHAT</div><h1>Talk to the campus.</h1><p class="muted">Everyone can see the conversation. Only your registered name is shown — Student IDs and private account details stay hidden.</p></section><section class="section"><div class="card"><form method="post" action="/chat/delete" onsubmit="return confirm('Delete the selected message(s)?')"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button type="submit" class="btn" id="deleteSelected" disabled>🗑 Delete selected</button></div><div id="chatMessages" class="chat" style="max-height:58vh;overflow:auto">{bubbles or '<div class="empty">No messages yet. Start the conversation.</div>'}<span id="latest"></span></div></form><form class="form chat-composer" method="post"><textarea name="message" maxlength="1500" placeholder="Write a message..." required style="min-height:88px"></textarea><button class="btn accent">Send message →</button></form><p class="small" style="margin-top:10px">Logged in as <strong>{esc(me["name"])}</strong> · You can delete your own messages.</p></div></section><script>
 const chatBox=document.getElementById('chatMessages');
+const deleteSelected=document.getElementById('deleteSelected');
+let jMyStudentId=null;
+function updateDeleteButton(){{if(deleteSelected)deleteSelected.disabled=document.querySelectorAll('.chat-select:checked').length===0;}}
+document.addEventListener('change',function(e){{if(e.target.classList.contains('chat-select'))updateDeleteButton();}});
 function renderCommunityMessages(messages){{
   if(!chatBox)return;
+  const selectedIds=new Set(Array.from(document.querySelectorAll('.chat-select:checked')).map(x=>String(x.value)));
   chatBox.innerHTML='';
-  if(!messages.length){{chatBox.innerHTML='<div class="empty">No messages yet. Start the conversation.</div>';return;}}
+  if(!messages.length){{chatBox.innerHTML='<div class="empty">No messages yet. Start the conversation.</div>';updateDeleteButton();return;}}
   messages.forEach(m=>{{
-    const b=document.createElement('div'); b.className='bubble';
+    const b=document.createElement('div'); b.className='bubble'+(m.student_id===jMyStudentId?' mine':'');
     const n=document.createElement('strong'); n.textContent=m.name;
     const t=document.createElement('div'); t.style.cssText='margin-top:5px;white-space:pre-wrap;word-break:break-word'; t.textContent=m.message;
     const d=document.createElement('div'); d.className='small'; d.style.marginTop='5px'; d.textContent=m.created_at;
-    b.append(n,t,d); chatBox.appendChild(b);
+    b.append(n,t,d);
+    if(m.student_id===jMyStudentId){{const label=document.createElement('label');label.className='small';label.style.cssText='display:flex;align-items:center;gap:7px;margin-top:8px';const cb=document.createElement('input');cb.type='checkbox';cb.name='message_id';cb.value=m.id;cb.className='chat-select';if(selectedIds.has(String(m.id)))cb.checked=true;label.append(cb,document.createTextNode(' Select'));b.appendChild(label);}}
+    chatBox.appendChild(b);
   }});
-  chatBox.scrollTop=chatBox.scrollHeight;
+  chatBox.scrollTop=chatBox.scrollHeight; updateDeleteButton();
 }}
-async function refreshCommunityChat(){{
-  try{{const r=await fetch('/chat/messages',{{credentials:'same-origin',cache:'no-store'}});if(!r.ok)return;const j=await r.json();if(!j.enabled){{location.reload();return;}}renderCommunityMessages(j.messages);}}catch(e){{}}
-}}
+async function refreshCommunityChat(){{try{{const r=await fetch('/chat/messages',{{credentials:'same-origin',cache:'no-store'}});if(!r.ok)return;const j=await r.json();if(!j.enabled){{location.reload();return;}}jMyStudentId=j.my_student_id;renderCommunityMessages(j.messages);}}catch(e){{}}}}
 if(chatBox){{chatBox.scrollTop=chatBox.scrollHeight;setInterval(refreshCommunityChat,3000);}}
 </script>'''
     return layout("Community Chat", body)
+
+
+@app.route("/chat/delete", methods=["POST"])
+@student_required
+def delete_chat_messages():
+    con = db()
+    try:
+        ids = []
+        for value in request.form.getlist("message_id"):
+            try:
+                mid = int(value)
+                if mid > 0: ids.append(mid)
+            except (TypeError, ValueError):
+                pass
+        ids = list(dict.fromkeys(ids))
+        if not ids:
+            con.close(); flash("Select at least one of your messages to delete."); return redirect(url_for("chat"))
+        placeholders = ",".join(["?"] * len(ids))
+        con.execute(f"DELETE FROM community_messages WHERE student_id=? AND id IN ({placeholders})", [session["student_db_id"], *ids])
+        con.commit(); con.close()
+        flash("Selected message(s) deleted.")
+        return redirect(url_for("chat"))
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        try: con.close()
+        except Exception: pass
+        app.logger.exception("Community chat message deletion failed")
+        flash("We couldn't delete those messages right now. Please try again.")
+        return redirect(url_for("chat"))
 
 
 @app.route("/chat/messages")
@@ -1274,7 +1311,7 @@ def chat_messages():
     enabled = setting(con, "community_chat_enabled", "1") == "1"
     rows = con.execute("SELECT cm.id, cm.student_id, cm.message, cm.created_at, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
     con.close()
-    return jsonify({"enabled": enabled, "messages": [{"id": r["id"], "name": r["name"], "message": r["message"], "created_at": r["created_at"]} for r in rows]})
+    return jsonify({"enabled": enabled, "my_student_id": session["student_db_id"], "messages": [{"id": r["id"], "student_id": r["student_id"], "name": r["name"], "message": r["message"], "created_at": r["created_at"]} for r in rows]})
 
 
 @app.route("/community", methods=["GET", "POST"])
@@ -1329,19 +1366,29 @@ def community():
 @student_required
 def accept_solution(iid):
     con = db()
-    issue = con.execute("SELECT student_id FROM issues WHERE id=?", (iid,)).fetchone()
-    if not issue or issue["student_id"] != session["student_db_id"]:
-        con.close(); abort(403)
-    other = con.execute("SELECT 1 FROM solutions WHERE issue_id=? AND student_id<>? LIMIT 1", (iid, session["student_db_id"])).fetchone()
-    if not other:
-        con.close(); abort(403)
-    accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id LIMIT 1", (iid, session["student_db_id"])).fetchone()
-    if accepted:
+    try:
+        issue = con.execute("SELECT student_id FROM issues WHERE id=?", (iid,)).fetchone()
+        if not issue or issue["student_id"] != session["student_db_id"]:
+            con.close(); abort(403)
+        accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id ASC LIMIT 1", (iid, session["student_db_id"])).fetchone()
+        if not accepted:
+            con.close(); flash("A solution from another student is required first."); return redirect(url_for("community") + f"#problem-{iid}")
         con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+25, helpful_answers=COALESCE(helpful_answers,0)+1, accepted_solutions=COALESCE(accepted_solutions,0)+1 WHERE id=?", (accepted["student_id"],))
-    # CASCADE handles dependent solutions before the issue is removed.
-    con.execute("DELETE FROM issues WHERE id=?", (iid,)); con.commit(); con.close()
-    flash("Problem solved. The problem and its entire community chat were deleted.")
-    return redirect(url_for("community"))
+        # Explicitly remove dependent solutions first so acceptance works on older SQLite databases too.
+        con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
+        con.execute("DELETE FROM issues WHERE id=?", (iid,))
+        con.commit()
+        con.close()
+        flash("Problem solved. The problem and its entire community chat were deleted.")
+        return redirect(url_for("community"))
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        try: con.close()
+        except Exception: pass
+        app.logger.exception("Accept solution failed for issue %s", iid)
+        flash("We couldn't accept that solution right now. Please try again.")
+        return redirect(url_for("community") + f"#problem-{iid}")
 
 
 # ---------------------------------------------------------------------------
