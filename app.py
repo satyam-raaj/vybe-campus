@@ -12,9 +12,10 @@ import io
 import mimetypes
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from html.parser import HTMLParser
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
@@ -254,6 +255,68 @@ def set_setting(con, key, value):
         )
 
 
+class _CampusPageParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True); self.parts=[]; self.links=[]; self.title_parts=[]; self.in_title=False; self.skip_depth=0
+    def handle_starttag(self, tag, attrs):
+        tag=tag.lower()
+        if tag in ('script','style','noscript','svg','canvas'): self.skip_depth += 1
+        if tag=='title': self.in_title=True
+        if tag=='a':
+            href=dict(attrs).get('href')
+            if href: self.links.append(href)
+    def handle_endtag(self, tag):
+        tag=tag.lower()
+        if tag=='title': self.in_title=False
+        if tag in ('script','style','noscript','svg','canvas') and self.skip_depth: self.skip_depth -= 1
+    def handle_data(self, data):
+        if self.skip_depth: return
+        text=re.sub(r'\s+',' ',data or '').strip()
+        if not text: return
+        if self.in_title: self.title_parts.append(text)
+        self.parts.append(text)
+
+def _normalize_public_url(value):
+    value=(value or '').strip()
+    if not value: return ''
+    if not re.match(r'^https?://',value,re.I): value='https://'+value
+    parsed=urlparse(value)
+    return value.rstrip('/') if parsed.scheme in ('http','https') and parsed.netloc else ''
+
+def _crawl_college_website(start_url,max_pages=25):
+    start=_normalize_public_url(start_url)
+    if not start: raise ValueError('Enter a valid http(s) college website URL.')
+    host=urlparse(start).netloc.lower(); queue=[start]; seen=set(); pages=[]
+    blocked={'.jpg','.jpeg','.png','.gif','.webp','.svg','.zip','.mp4','.mp3','.doc','.docx','.xls','.xlsx','.ppt','.pptx'}
+    while queue and len(pages)<max_pages:
+        url=queue.pop(0).split('#',1)[0]; parsed=urlparse(url)
+        if url in seen or parsed.netloc.lower()!=host or Path(parsed.path.lower()).suffix in blocked: continue
+        seen.add(url)
+        try:
+            req=URLRequest(url,headers={'User-Agent':'VYBE-Campus-Assistant/1.0'})
+            with urlopen(req,timeout=7) as resp:
+                if 'text/html' not in (resp.headers.get('Content-Type') or '').lower(): continue
+                raw=resp.read(350000)
+            parser=_CampusPageParser(); parser.feed(raw.decode('utf-8','ignore'))
+            text=re.sub(r'\s+',' ',' '.join(parser.parts)).strip()
+            if len(text)>=40:
+                title=' '.join(parser.title_parts).strip()[:250] or parsed.path.strip('/') or 'College website'
+                pages.append((url,title,text[:18000]))
+            for href in parser.links:
+                nxt=urljoin(url,href).split('#',1)[0]; np=urlparse(nxt)
+                if np.scheme in ('http','https') and np.netloc.lower()==host and nxt not in seen and len(queue)<100: queue.append(nxt)
+        except Exception: continue
+    return pages
+
+def _sync_college_website(con,start_url):
+    pages=_crawl_college_website(start_url)
+    if not pages: raise RuntimeError('No readable public HTML pages were found on that website.')
+    con.execute('DELETE FROM campus_pages')
+    for url,title,text in pages: con.execute('INSERT INTO campus_pages(source_url,title,text,updated_at) VALUES(?,?,?,?)',(url,title,text,now()))
+    set_setting(con,'college_website_url',_normalize_public_url(start_url)); set_setting(con,'college_website_last_sync',now())
+    return len(pages)
+
+
 def init_db():
     con = db()
     if con.is_pg:
@@ -490,6 +553,30 @@ def init_db():
         ]
     con.executescript(statements)
 
+    if con.is_pg:
+        con.executescript([
+            "CREATE TABLE IF NOT EXISTS saved_reports (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, issue_category TEXT NOT NULL, issue_description TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, saved_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS accepted_solutions (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, accepted_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS helpful_votes (id BIGSERIAL PRIMARY KEY, solution_id BIGINT NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
+            "CREATE TABLE IF NOT EXISTS campus_pages (id BIGSERIAL PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        ])
+    else:
+        con.executescript([
+            "CREATE TABLE IF NOT EXISTS saved_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, issue_category TEXT NOT NULL, issue_description TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, saved_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS accepted_solutions (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, accepted_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS helpful_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
+            "CREATE TABLE IF NOT EXISTS campus_pages (id INTEGER PRIMARY KEY AUTOINCREMENT, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        ])
+    if not con.is_pg:
+        cols_now={r['name'] for r in con.execute('PRAGMA table_info(students)').fetchall()}
+        for col,definition in (('admit_card_file_name','TEXT'),('admit_card_original_name','TEXT'),('admit_card_mime_type','TEXT'),('admit_card_file_data','BLOB')):
+            if col not in cols_now: con.execute(f'ALTER TABLE students ADD COLUMN {col} {definition}')
+    else:
+        con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_name TEXT')
+        con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_original_name TEXT')
+        con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_mime_type TEXT')
+        con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_data BYTEA')
+
     # Lightweight migration for the earlier VYBE_V2 SQLite schema.
     if not con.is_pg:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(resources)").fetchall()}
@@ -559,6 +646,8 @@ def init_db():
         "whatsapp_admin_number": "",
         "community_chat_enabled": "1",
         "vybe_assistant_enabled": "1",
+        "college_website_url": "",
+        "college_website_last_sync": "",
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -723,7 +812,8 @@ CSS = r"""
 .profile-avatar{width:74px;height:74px;border-radius:22px;background:#f5f5f7;color:#080808;display:grid;place-items:center;font-size:28px;font-weight:900;box-shadow:0 12px 30px rgba(255,255,255,.08)}
 .stat-row{display:flex;gap:10px;flex-wrap:wrap}
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navin{padding:10px 14px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.wrap{padding:15px}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
+.student-top-tools{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}.top-stat,.top-tool{min-height:38px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.055);display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 9px;color:#eee;font-size:12px;white-space:nowrap}.top-stat{flex-direction:column;line-height:1;min-width:58px}.top-stat small{font-size:8px;color:var(--muted);text-transform:uppercase}.top-search{display:flex;align-items:center;width:190px}.top-search input{height:38px;border-radius:12px 0 0 12px;padding:8px 10px;font-size:12px}.top-search button{height:38px;width:38px;border:1px solid #2a2a2e;border-left:0;border-radius:0 12px 12px 0;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.page-back,.mobile-back{border:1px solid var(--line);background:rgba(255,255,255,.05);color:#ddd;border-radius:12px;padding:8px 12px;cursor:pointer}.page-back{margin:2px 0 4px}.mobile-back{display:none;width:100%;text-align:left}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.grid,.grid2,.two{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.page-back{display:inline-flex}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
 """
 
 
@@ -737,11 +827,19 @@ def layout(title, body, admin=False):
             if _lr and _lr["value"] == "1": publisher_link = '<a href="/publisher">Publisher</a>'
         except Exception:
             publisher_link = ""
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/timetable">Timetable</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/account/password">Password</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">💬 Chat</a><a href="/search">Search</a>' + publisher_link + '<a href="/profile">Profile</a><a href="/logout">Logout</a>'
+        try:
+            _tc=db(); _ts=_tc.execute("SELECT reputation_points,helpful_answers FROM students WHERE id=?",(session.get("student_db_id"),)).fetchone(); _tc.close()
+            points=int(_ts["reputation_points"] if _ts else 0); helpful=int(_ts["helpful_answers"] if _ts else 0)
+        except Exception:
+            points=helpful=0
+        student_tools=f'<div class="student-top-tools"><a class="top-stat" href="/profile#points">⭐ <span>{points}</span><small>VYBE</small></a><a class="top-stat" href="/profile#helpful">💡 <span>{helpful}</span><small>Helpful</small></a><a class="top-tool" href="/assistant">✨ Ask VYBE</a><a class="top-tool" href="/chat">💬 Chat</a><form class="top-search" action="/search" method="get"><input name="q" placeholder="Search campus…" aria-label="Search campus"><button type="submit">⌕</button></form></div>'
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin</a>'
+        student_tools=""
+    mobile_links = links.replace('<a href="/issues">Campus</a>', '<a href="/issues">Campus</a><a class="menu-sub" href="/issues#saved-reports">↳ Saved Reports</a>') if student_tools else links
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span>VYBE</a><div class="navlinks">{links}</div><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div><div class="mobile-nav" id="vybeMobileNav">{links}</div></div><main class="wrap">{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#070809"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body><div class="nav"><div class="navin"><a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>{student_tools}<div class="navlinks">{links}</div><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div><div class="mobile-nav" id="vybeMobileNav"><button class="mobile-back" type="button" onclick="history.back()">← Back</button>{mobile_links}</div></div><main class="wrap"><button class="page-back" type="button" onclick="if(history.length>1)history.back();else location.href='/dashboard'">← Back</button>{flashes}{body}</main><footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer><script>(function(){{document.addEventListener("click",function(e){{const btn=e.target.closest(".toggle-password");if(!btn)return;e.preventDefault();e.stopPropagation();const id=btn.getAttribute("data-target");const el=id?document.getElementById(id):null;if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.textContent=show?"Hide":"View";}});const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}}})();</script></body></html>'''
 
 
 @app.route("/offline")
@@ -1020,7 +1118,9 @@ def _campus_search(con, q, limit=8):
         (like,like,like,like,limit)
     ).fetchall():
         out.append({"type":"Resource","title":r["title"],"text":f'{r["course"]} · {r["semester"]} · {r["subject"]} · {r["description"]}',"url":"/academics?q="+q,"date":""})
-    return out[:limit*3]
+    for r in con.execute("SELECT source_url,title,text,updated_at FROM campus_pages WHERE title LIKE ? OR text LIKE ? ORDER BY id DESC LIMIT ?",(like,like,limit)).fetchall():
+        out.append({"type":"College Website","title":r["title"],"text":r["text"][:500],"url":r["source_url"],"date":r["updated_at"]})
+    return out[:limit*4]
 
 
 def _ai_context(con, question):
@@ -1102,13 +1202,15 @@ def _free_vybe_answer(con, question):
         count = con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"]
         return f"💬 VYBE has {count} campus problem(s) in Community. Open Community to view questions and solutions."
 
-    results = _campus_search(con, question, 6)
+    results = _campus_search(con, question, 8)
     if results:
+        website=[x for x in results if x['type']=='College Website']
+        if website:
+            return "🌐 From the official college website:\n" + "\n".join(f"• {x['title']} — {x['text']}\n  Source: {x['url']}" for x in website[:5])
         return "🔎 I found this in VYBE:\n" + "\n".join(f"• {x['title']} — {x['text']}" for x in results[:5])
-
-    return ("I can help with VYBE campus information — announcements, new updates, events, notes/files, "
-            "resources, community questions/solutions, and the current date or time. "
-            "Try asking something like ‘What are the latest announcements?’ or ‘Where are the notes?’")
+    if setting(con,'college_website_url',''):
+        return "I couldn't find a verified answer in VYBE's campus data or the synced official college website. Please check the official college website or ask the administration."
+    return "I can help with VYBE campus information. The admin can also connect the official college website so I can search its public information."
 
 
 @app.route("/announcements")
@@ -1182,15 +1284,34 @@ def search():
 def profile():
     con=db()
     if request.method=="POST":
-        bio=request.form.get("bio","").strip()[:300]
-        interests=request.form.get("interests","").strip()[:200]
-        con.execute("UPDATE students SET bio=?, interests=? WHERE id=?",(bio,interests,session["student_db_id"]))
-        con.commit(); con.close(); flash("Profile updated."); return redirect(url_for("profile"))
-    s=con.execute("SELECT name,student_id,bio,interests,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?",(session["student_db_id"],)).fetchone()
-    con.close()
-    initials="".join(x[0] for x in s["name"].split()[:2]).upper() or "V"
-    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(s["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip">⭐ {s["reputation_points"]} VYBE points</span><span class="stat-chip">💡 {s["helpful_answers"]} helpful answers</span><span class="stat-chip">✓ {s["accepted_solutions"]} accepted solutions</span></div></div></section><section class="section"><div class="card"><h2>About you.</h2><form class="form" method="post"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(s["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(s["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form><p class="small">Only your name, bio and interests are intended for your campus profile. Student IDs and passwords remain private.</p></div></section>'''
+        action=request.form.get("action","profile")
+        if action=="admit_card":
+            f=request.files.get("admit_card")
+            if not f or not f.filename: con.close(); flash("Choose an admit card file first."); return redirect(url_for("profile"))
+            data=f.read()
+            if not data or len(data)>15*1024*1024: con.close(); flash("Admit card must be a non-empty file up to 15 MB."); return redirect(url_for("profile"))
+            original=Path(f.filename).name[:240]; mime=f.mimetype or "application/octet-stream"; stored=secrets.token_hex(16)+Path(original).suffix.lower()
+            con.execute("UPDATE students SET admit_card_file_name=?,admit_card_original_name=?,admit_card_mime_type=?,admit_card_file_data=? WHERE id=?",(stored,original,mime,data,session["student_db_id"]))
+            con.commit(); con.close(); flash("Admit card saved privately to your VYBE profile."); return redirect(url_for("profile"))
+        bio=request.form.get("bio","").strip()[:300]; interests=request.form.get("interests","").strip()[:200]
+        con.execute("UPDATE students SET bio=?,interests=? WHERE id=?",(bio,interests,session["student_db_id"])); con.commit(); con.close(); flash("Profile updated."); return redirect(url_for("profile"))
+    st=con.execute("SELECT name,student_id,bio,interests,reputation_points,helpful_answers,accepted_solutions,admit_card_original_name FROM students WHERE id=?",(session["student_db_id"],)).fetchone()
+    accepted=con.execute("SELECT issue_title,solution_text,solver_name,accepted_at FROM accepted_solutions WHERE student_id=? ORDER BY id DESC LIMIT 30",(session["student_db_id"],)).fetchall(); con.close()
+    initials="".join(x[0] for x in st["name"].split()[:2]).upper() or "V"
+    accepted_html="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted" style="white-space:pre-wrap">{esc(x["solution_text"])}</p><p class="small">Accepted from {esc(x["solver_name"])} · {esc(x["accepted_at"])}</p></div>' for x in accepted)
+    card_label=esc(st["admit_card_original_name"]) if st["admit_card_original_name"] else "No admit card uploaded yet."
+    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(st["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip" id="points">⭐ {st["reputation_points"]} VYBE points</span><span class="stat-chip" id="helpful">💡 {st["helpful_answers"]} helpful answers</span><span class="stat-chip">✓ {st["accepted_solutions"]} accepted solutions</span></div></div></section>
+<section class="section grid2"><div class="card"><h2>About you.</h2><form class="form" method="post"><input type="hidden" name="action" value="profile"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(st["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(st["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form></div><div class="card"><h2>🔐 Password</h2><p class="muted">Change your student password from your profile area.</p><a class="btn dark" href="/account/password">Open password settings →</a></div></section>
+<section class="section"><div class="card"><h2>🪪 Admit card</h2><p class="muted">Optional and private. Upload your admit card in any file format up to 15 MB.</p><p class="small">Current file: <strong>{card_label}</strong></p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="admit_card"><input type="file" name="admit_card" required><button class="btn accent">Save admit card →</button></form></div></section>
+<section class="section"><div class="card"><h2>✓ Accepted solutions</h2><p class="muted">Solutions you personally accepted stay here even after their community chat is removed.</p><div class="feed-list">{accepted_html or '<div class="empty">No accepted solutions yet.</div>'}</div></div></section>'''
     return layout("Profile",body)
+
+@app.route("/profile/admit-card")
+@student_required
+def profile_admit_card():
+    con=db(); r=con.execute("SELECT admit_card_file_data,admit_card_mime_type,admit_card_original_name FROM students WHERE id=?",(session["student_db_id"],)).fetchone(); con.close()
+    if not r or not r["admit_card_file_data"]: abort(404)
+    return send_file(io.BytesIO(bytes(r["admit_card_file_data"])),mimetype=r["admit_card_mime_type"] or "application/octet-stream",as_attachment=True,download_name=r["admit_card_original_name"] or "admit-card")
 
 
 @app.route("/assistant", methods=["GET","POST"])
@@ -1231,7 +1352,7 @@ def dashboard():
     ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
     event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
     body = f'''<section class="section"><div class="badge">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p class="muted">Your campus, your community, your space — now in one cleaner home.</p><div class="stat-row" style="margin-top:18px"><span class="stat-chip">⭐ {s["reputation_points"]} VYBE points</span><span class="stat-chip">💡 {s["helpful_answers"]} helpful answers</span></div></section>
-    <section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>My campus reports</h3><p class="muted">Track the problems you reported</p></a><a class="card" href="/community"><div class="kpi">{counts["solutions"]}</div><h3>Community</h3><p class="muted">Help solve campus problems</p></a></section>
+    <section class="grid"><a class="card" href="/academics"><div class="kpi">{counts["resources"]}</div><h3>Academics</h3><p class="muted">Notes, PYQs, syllabus & study material</p></a><a class="card" href="/timetable"><div class="kpi">🗓️</div><h3>Timetable</h3><p class="muted">Open the latest class timetable.</p></a><a class="card" href="/issues"><div class="kpi">{counts["issues"]}</div><h3>Campus</h3><p class="muted">Report problems and open Saved Reports.</p></a></section>
     <section class="section grid2"><div class="card"><div class="badge">📢 CAMPUS</div><h2>Latest announcements</h2><div class="feed-list" style="margin-top:12px">{ann_html or '<div class="empty">No active announcements.</div>'}</div><div class="actions"><a class="btn dark" href="/announcements">View all →</a></div></div>
     <div class="card"><div class="badge">🎉 WHAT'S ON</div><h2>Upcoming events</h2><div class="feed-list" style="margin-top:12px">{event_html or '<div class="empty">No upcoming events.</div>'}</div><div class="actions"><a class="btn dark" href="/events">View events →</a></div></div></section>
     <section class="section grid2"><a class="community-launch" href="/chat"><div class="community-icon">💬</div><div class="community-copy"><h3>Community Chat</h3><p>Talk with your campus community · names only, Student IDs stay private.</p></div><div class="community-arrow">→</div></a><a class="community-launch" href="/assistant"><div class="community-icon">✨</div><div class="community-copy"><h3>Ask VYBE</h3><p>Ask questions about your campus information and get a quick answer.</p></div><div class="community-arrow">→</div></a></section>
@@ -1292,124 +1413,25 @@ def resource(rid):
     return send_file(path, mimetype=r["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=r["original_name"] or path.name)
 
 
-@app.route("/issues", methods=["GET", "POST"])
+@app.route("/issues", methods=["GET","POST"])
 @student_required
 def issues():
-    con = db()
-    if request.method == "POST":
-        category = request.form.get("category", "Other")
-        title = request.form.get("title", "").strip()[:120]
-        desc = request.form.get("description", "").strip()[:2000]
-        if category not in CATEGORIES or not title or not desc:
-            con.close(); flash("Please complete the problem report."); return redirect(url_for("issues"))
-        con.execute("INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)", (session["student_db_id"], category, title, desc, "Open", now()))
-        student = con.execute("SELECT id,name,student_id FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-        con.commit(); con.close()
-        flash("Campus problem reported."); return redirect(url_for("issues"))
-    rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall(); con.close()
-    cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
-    body = f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{''.join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No reports yet.</div>'}</div></div></section>'''
-    return layout("Campus", body)
+    con=db()
+    if request.method=="POST":
+        title=request.form.get("title","").strip()[:120]; desc=request.form.get("description","").strip()[:2000]; cat=request.form.get("category","").strip()[:80]
+        if not title or not desc: con.close(); flash("Please enter a title and description."); return redirect(url_for("issues"))
+        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community"))
+    rows=con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); saved=con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); con.close()
+    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
+    saved_cards="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
+    body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
+    return layout("Campus",body)
 
 
-@app.route("/chat", methods=["GET", "POST"])
-@student_required
-def chat():
-    con = db()
-    enabled = setting(con, "community_chat_enabled", "1") == "1"
-    if request.method == "POST":
-        if not enabled:
-            con.close()
-            flash("Community Chat is currently disabled by the admin.")
-            return redirect(url_for("chat"))
-        text = request.form.get("message", "").strip()[:1500]
-        if not text:
-            con.close()
-            flash("Please enter a message.")
-            return redirect(url_for("chat"))
-        con.execute("INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)", (session["student_db_id"], text, now()))
-        con.commit()
-        con.close()
-        return redirect(url_for("chat") + "#latest")
-    rows = con.execute("SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
-    me = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    con.close()
-    if not enabled:
-        body = '''<section class="section"><div class="badge">COMMUNITY CHAT</div><div class="card" style="margin-top:18px;text-align:center;padding:55px 25px"><div class="icon">💬</div><h1>Chat is offline.</h1><p class="muted">The administrator has temporarily disabled the community chat.</p></div></section>'''
-        return layout("Community Chat", body)
-    bubbles = ""
-    for r in rows:
-        mine = r["student_id"] == session["student_db_id"]
-        mine_class = " mine" if mine else ""
-        select = f'<label class="small" style="display:flex;align-items:center;gap:7px;margin-top:8px"><input type="checkbox" name="message_id" value="{r["id"]}" class="chat-select"> Select</label>' if mine else ''
-        bubbles += f'''<div class="bubble{mine_class}"><strong>{esc(r["name"])}</strong><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div>{select}</div>'''
-    body = f'''<section class="section"><div class="badge">VYBE COMMUNITY CHAT</div><h1>Talk to the campus.</h1><p class="muted">Everyone can see the conversation. Only your registered name is shown — Student IDs and private account details stay hidden.</p></section><section class="section"><div class="card"><form method="post" action="/chat/delete" onsubmit="return confirm('Delete the selected message(s)?')"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button type="submit" class="btn" id="deleteSelected" disabled>🗑 Delete selected</button></div><div id="chatMessages" class="chat" style="max-height:58vh;overflow:auto">{bubbles or '<div class="empty">No messages yet. Start the conversation.</div>'}<span id="latest"></span></div></form><form class="form chat-composer" method="post"><textarea name="message" maxlength="1500" placeholder="Write a message..." required style="min-height:88px"></textarea><button class="btn accent">Send message →</button></form><p class="small" style="margin-top:10px">Logged in as <strong>{esc(me["name"])}</strong> · You can delete your own messages.</p></div></section><script>
-const chatBox=document.getElementById('chatMessages');
-const deleteSelected=document.getElementById('deleteSelected');
-let jMyStudentId=null;
-function updateDeleteButton(){{if(deleteSelected)deleteSelected.disabled=document.querySelectorAll('.chat-select:checked').length===0;}}
-document.addEventListener('change',function(e){{if(e.target.classList.contains('chat-select'))updateDeleteButton();}});
-function renderCommunityMessages(messages){{
-  if(!chatBox)return;
-  const selectedIds=new Set(Array.from(document.querySelectorAll('.chat-select:checked')).map(x=>String(x.value)));
-  chatBox.innerHTML='';
-  if(!messages.length){{chatBox.innerHTML='<div class="empty">No messages yet. Start the conversation.</div>';updateDeleteButton();return;}}
-  messages.forEach(m=>{{
-    const b=document.createElement('div'); b.className='bubble'+(m.student_id===jMyStudentId?' mine':'');
-    const n=document.createElement('strong'); n.textContent=m.name;
-    const t=document.createElement('div'); t.style.cssText='margin-top:5px;white-space:pre-wrap;word-break:break-word'; t.textContent=m.message;
-    const d=document.createElement('div'); d.className='small'; d.style.marginTop='5px'; d.textContent=m.created_at;
-    b.append(n,t,d);
-    if(m.student_id===jMyStudentId){{const label=document.createElement('label');label.className='small';label.style.cssText='display:flex;align-items:center;gap:7px;margin-top:8px';const cb=document.createElement('input');cb.type='checkbox';cb.name='message_id';cb.value=m.id;cb.className='chat-select';if(selectedIds.has(String(m.id)))cb.checked=true;label.append(cb,document.createTextNode(' Select'));b.appendChild(label);}}
-    chatBox.appendChild(b);
-  }});
-  chatBox.scrollTop=chatBox.scrollHeight; updateDeleteButton();
-}}
-async function refreshCommunityChat(){{try{{const r=await fetch('/chat/messages',{{credentials:'same-origin',cache:'no-store'}});if(!r.ok)return;const j=await r.json();if(!j.enabled){{location.reload();return;}}jMyStudentId=j.my_student_id;renderCommunityMessages(j.messages);}}catch(e){{}}}}
-if(chatBox){{chatBox.scrollTop=chatBox.scrollHeight;setInterval(refreshCommunityChat,3000);}}
-</script>'''
-    return layout("Community Chat", body)
 
-
-@app.route("/chat/delete", methods=["POST"])
-@student_required
-def delete_chat_messages():
-    con = db()
-    try:
-        ids = []
-        for value in request.form.getlist("message_id"):
-            try:
-                mid = int(value)
-                if mid > 0: ids.append(mid)
-            except (TypeError, ValueError):
-                pass
-        ids = list(dict.fromkeys(ids))
-        if not ids:
-            con.close(); flash("Select at least one of your messages to delete."); return redirect(url_for("chat"))
-        placeholders = ",".join(["?"] * len(ids))
-        con.execute(f"DELETE FROM community_messages WHERE student_id=? AND id IN ({placeholders})", [session["student_db_id"], *ids])
-        con.commit(); con.close()
-        flash("Selected message(s) deleted.")
-        return redirect(url_for("chat"))
-    except Exception:
-        try: con.rollback()
-        except Exception: pass
-        try: con.close()
-        except Exception: pass
-        app.logger.exception("Community chat message deletion failed")
-        flash("We couldn't delete those messages right now. Please try again.")
-        return redirect(url_for("chat"))
-
-
-@app.route("/chat/messages")
-@student_required
-def chat_messages():
-    con = db()
-    enabled = setting(con, "community_chat_enabled", "1") == "1"
-    rows = con.execute("SELECT cm.id, cm.student_id, cm.message, cm.created_at, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
-    con.close()
-    return jsonify({"enabled": enabled, "my_student_id": session["student_db_id"], "messages": [{"id": r["id"], "student_id": r["student_id"], "name": r["name"], "message": r["message"], "created_at": r["created_at"]} for r in rows]})
-
+def _render_solution_card(row,my_student_id):
+    button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\">💡 Helpful answer</button></form>"
+    return f'<div class="bubble"><strong>{esc(row["author_name"])}</strong><div>{esc(row["text"])}</div><div class="small">{esc(row["created_at"])}</div>{button}</div>'
 
 @app.route("/community", methods=["GET", "POST"])
 @student_required
@@ -1448,7 +1470,7 @@ def community():
     blocks = ""
     for i in issues_rows:
         sols = by_issue.get(i["id"], [])
-        sol_html = "".join(f'<div class="bubble"><strong>{esc(s["author_name"])}</strong><div>{esc(s["text"])}</div><div class="small">{esc(s["created_at"])}</div></div>' for s in sols)
+        sol_html = "".join(_render_solution_card(s, session["student_db_id"]) for s in sols)
         other_solution = any(s["student_id"] != session["student_db_id"] for s in sols)
         accept = ""
         if i["student_id"] == session["student_db_id"] and other_solution:
@@ -1457,6 +1479,23 @@ def community():
     con.close()
     body = f'''<section class="section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Solutions are visible immediately. There is no admin moderation. Only the original reporter can accept a solution, and the accept button appears after another student has contributed.</p></section><section class="section" style="display:grid;gap:16px">{blocks or '<div class="empty">No campus problems have been reported yet.</div>'}</section>'''
     return layout("Community", body)
+
+
+@app.route("/community/solution/<int:solution_id>/helpful", methods=["POST"])
+@student_required
+def mark_solution_helpful(solution_id):
+    con=db()
+    try:
+        sol=con.execute("SELECT student_id FROM solutions WHERE id=?",(solution_id,)).fetchone()
+        if not sol: con.close(); flash("That solution is no longer available."); return redirect(url_for("community"))
+        if sol["student_id"]==session["student_db_id"]: con.close(); flash("You cannot mark your own answer helpful."); return redirect(url_for("community"))
+        con.execute("INSERT INTO helpful_votes(solution_id,voter_id,created_at) VALUES(?,?,?)",(solution_id,session["student_db_id"],now()))
+        con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+5,helpful_answers=COALESCE(helpful_answers,0)+1 WHERE id=?",(sol["student_id"],))
+        con.commit(); flash("Marked as helpful. +5 VYBE points to the helper.")
+    except Exception:
+        con.rollback(); flash("You already marked this answer helpful, or it is no longer available.")
+    finally: con.close()
+    return redirect(url_for("community"))
 
 
 @app.route("/community/problem/<int:iid>/accept", methods=["POST"])
@@ -1470,8 +1509,13 @@ def accept_solution(iid):
         accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id ASC LIMIT 1", (iid, session["student_db_id"])).fetchone()
         if not accepted:
             con.close(); flash("A solution from another student is required first."); return redirect(url_for("community") + f"#problem-{iid}")
+        issue=con.execute("SELECT title,category,description FROM issues WHERE id=?",(iid,)).fetchone()
+        accepted_detail=con.execute("SELECT text FROM solutions WHERE issue_id=? AND student_id=? ORDER BY id ASC LIMIT 1",(iid,accepted["student_id"])).fetchone()
+        solver=con.execute("SELECT name FROM students WHERE id=?",(accepted["student_id"] ,)).fetchone()
+        if issue and accepted_detail and solver:
+            con.execute("INSERT INTO saved_reports(student_id,issue_title,issue_category,issue_description,solution_text,solver_name,saved_at) VALUES(?,?,?,?,?,?,?)",(session["student_db_id"],issue["title"],issue["category"],issue["description"],accepted_detail["text"],solver["name"],now()))
+            con.execute("INSERT INTO accepted_solutions(student_id,issue_title,solution_text,solver_name,accepted_at) VALUES(?,?,?,?,?)",(session["student_db_id"],issue["title"],accepted_detail["text"],solver["name"],now()))
         con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+25, helpful_answers=COALESCE(helpful_answers,0)+1, accepted_solutions=COALESCE(accepted_solutions,0)+1 WHERE id=?", (accepted["student_id"],))
-        # Explicitly remove dependent solutions first so acceptance works on older SQLite databases too.
         con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
         con.execute("DELETE FROM issues WHERE id=?", (iid,))
         con.commit()
@@ -1646,7 +1690,7 @@ def admin_panel():
       <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
       <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
-      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
+      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a><a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
     </div>
     <section class="section grid2">
       <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data plus the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
@@ -1659,6 +1703,17 @@ def admin_panel():
       <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
     </section></section>'''
     return layout("Admin", body, admin=True)
+
+
+@app.route("/admin/analytics")
+@admin_required
+def admin_analytics():
+    con=db()
+    stats={"students":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],"pending":con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],"resources":con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],"announcements":con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],"events":con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],"problems":con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],"solutions":con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],"saved":con.execute("SELECT COUNT(*) AS c FROM saved_reports").fetchone()["c"],"helpful":con.execute("SELECT COUNT(*) AS c FROM helpful_votes").fetchone()["c"],"website_pages":con.execute("SELECT COUNT(*) AS c FROM campus_pages").fetchone()["c"]}
+    top=con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE status='approved' ORDER BY reputation_points DESC,helpful_answers DESC LIMIT 10").fetchall(); con.close()
+    rows="".join(f'<tr><td>{esc(x["name"])}</td><td>{x["reputation_points"]}</td><td>{x["helpful_answers"]}</td><td>{x["accepted_solutions"]}</td></tr>' for x in top)
+    body=f'''<section class="section"><div class="badge">ADMIN ANALYTICS</div><h1>Campus analytics.</h1><p class="muted">Operational counts from VYBE's own database. No external analytics service is required.</p><section class="grid"><div class="card"><div class="kpi">{stats["students"]}</div><h3>Approved students</h3></div><div class="card"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3></div><div class="card"><div class="kpi">{stats["problems"]}</div><h3>Campus problems</h3></div><div class="card"><div class="kpi">{stats["solutions"]}</div><h3>Open solutions</h3></div><div class="card"><div class="kpi">{stats["helpful"]}</div><h3>Helpful votes</h3></div><div class="card"><div class="kpi">{stats["saved"]}</div><h3>Saved reports</h3></div><div class="card"><div class="kpi">{stats["website_pages"]}</div><h3>Website pages synced</h3></div><div class="card"><div class="kpi">{stats["pending"]}</div><h3>Pending students</h3></div></section><section class="section"><div class="card tablewrap"><h2>Top VYBE contributors</h2><table><tr><th>Student</th><th>Points</th><th>Helpful answers</th><th>Accepted solutions</th></tr>{rows or '<tr><td colspan="4">No contributor data yet.</td></tr>'}</table></div></section></section>'''
+    return layout("Analytics",body,admin=True)
 
 
 @app.route("/admin/assistant", methods=["POST"])
@@ -1717,6 +1772,9 @@ def student_action(sid, action):
     con = db()
     if action == "delete":
         # Explicit dependent deletes make this safe on legacy schemas without CASCADE.
+        con.execute("DELETE FROM helpful_votes WHERE voter_id=? OR solution_id IN (SELECT id FROM solutions WHERE student_id=?)", (sid,sid))
+        con.execute("DELETE FROM saved_reports WHERE student_id=?", (sid,))
+        con.execute("DELETE FROM accepted_solutions WHERE student_id=?", (sid,))
         con.execute("DELETE FROM solutions WHERE student_id=?", (sid,))
         con.execute("DELETE FROM solutions WHERE issue_id IN (SELECT id FROM issues WHERE student_id=?)", (sid,))
         con.execute("DELETE FROM issues WHERE student_id=?", (sid,))
@@ -1732,6 +1790,9 @@ def student_action(sid, action):
 def delete_all_students():
     con = db()
     # Explicit dependency order; works even where old tables lack ON DELETE CASCADE.
+    con.execute("DELETE FROM helpful_votes")
+    con.execute("DELETE FROM saved_reports")
+    con.execute("DELETE FROM accepted_solutions")
     con.execute("DELETE FROM solutions")
     con.execute("DELETE FROM issues")
     con.execute("DELETE FROM students")
@@ -1974,11 +2035,26 @@ def problem_status(iid):
     con.close(); return redirect(url_for("admin_problems"))
 
 
+@app.route("/admin/assistant/website-sync")
+@admin_required
+def admin_website_sync():
+    con=db(); site=setting(con,'college_website_url','')
+    if not site:
+        con.close(); flash('Save the official college website link first.'); return redirect(url_for('admin_settings'))
+    try:
+        count=_sync_college_website(con,site); con.commit(); flash(f'Official college website synced: {count} public pages indexed.')
+    except Exception:
+        con.rollback(); app.logger.exception('College website sync failed'); flash('Website sync failed. Make sure the site is public and reachable.')
+    finally: con.close()
+    return redirect(url_for('admin_settings'))
+
+
 @app.route("/admin/settings", methods=["GET","POST"])
 @admin_required
 def admin_settings():
     con = db()
     if request.method == "POST":
+        website = _normalize_public_url(request.form.get("college_website_url","").strip()[:500])
         wa = request.form.get("whatsapp_link", "").strip()[:500]
         drive = request.form.get("google_drive_url", "").strip()[:500]
         wa_version = request.form.get("whatsapp_api_version", "v23.0").strip()[:30] or "v23.0"
@@ -1986,11 +2062,14 @@ def admin_settings():
         wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
         wa_admin = request.form.get("whatsapp_admin_number", "").strip()[:30]
         chat_enabled = "1" if request.form.get("community_chat_enabled") == "1" else "0"
-        if wa and not valid_url(wa):
+        if request.form.get("save_website")=="1" and request.form.get("college_website_url","").strip() and not website:
+            flash("Official college website must be a valid http(s) URL.")
+        elif wa and not valid_url(wa):
             flash("WhatsApp community link must be a valid URL.")
         elif drive and not valid_url(drive):
             flash("Google Drive URL must be a valid URL.")
         else:
+            if request.form.get("save_website")=="1": set_setting(con,"college_website_url",website)
             set_setting(con, "whatsapp_link", wa)
             set_setting(con, "google_drive_url", drive or DRIVE_URL)
             set_setting(con, "whatsapp_api_version", wa_version)
@@ -2010,6 +2089,8 @@ def admin_settings():
     wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
     wa_admin = setting(con, "whatsapp_admin_number", "")
     chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+    website_url = setting(con, "college_website_url", "")
+    website_sync = setting(con, "college_website_last_sync", "Never")
     con.close()
     body = f'''<section class="section"><h1>Settings.</h1>
     <div class="grid2">
@@ -2019,7 +2100,7 @@ def admin_settings():
         <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
         <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
         <button class="btn accent">Save configuration</button></form></div>
-      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div>
+      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🌐 Official College Website</h2><p class="muted">Free source for Ask VYBE. VYBE stores a small public-text snapshot in your existing database.</p><form class="form" method="post"><input name="college_website_url" value="{esc(website_url)}" placeholder="https://official-college-website.edu"><input type="hidden" name="save_website" value="1"><button class="btn accent">Save website link</button></form><p class="small">Last sync: {esc(website_sync)}</p><a class="btn dark" href="/admin/assistant/website-sync">Sync website now →</a></div>
       <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
         <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
         <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
