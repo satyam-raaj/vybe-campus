@@ -1437,27 +1437,27 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
       align-items:center!important;
       justify-content:center!important;
       position:relative!important;
-      height:58px!important;
-      max-height:58px!important;
+      height:44px!important;
+      max-height:44px!important;
       margin:0 auto!important;
       padding:0!important;
       border:1px solid rgba(73,126,164,.34)!important;
-      border-radius:18px!important;
+      border-radius:14px!important;
       background:#061522!important;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.025), 0 5px 16px rgba(0,0,0,.18)!important;
       color:#fff!important;
       overflow:hidden!important;
     }
     .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{
-      width:31px!important;
-      height:24px!important;
+      width:24px!important;
+      height:18px!important;
       display:flex!important;
       flex-direction:column!important;
       align-items:center!important;
       justify-content:space-between!important;
-      flex:0 0 24px!important;
+      flex:0 0 18px!important;
       margin:0!important;
-      padding:1px 0!important;
+      padding:0!important;
       background:transparent!important;
       border:0!important;
       border-radius:0!important;
@@ -1467,27 +1467,27 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
     }
     .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines i{
       display:block!important;
-      width:29px!important;
-      height:3px!important;
-      flex:0 0 3px!important;
+      width:21px!important;
+      height:2px!important;
+      flex:0 0 2px!important;
       margin:0!important;
       padding:0!important;
       border:0!important;
-      border-radius:1px!important;
+      border-radius:2px!important;
       background:#f2f7fb!important;
       box-shadow:0 0 1px rgba(255,255,255,.18)!important;
       transform-origin:center!important;
       transition:transform .18s ease, opacity .18s ease, background .18s ease!important;
     }
     .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(1){
-      transform:translateY(10px) rotate(45deg)!important;
+      transform:translateY(8px) rotate(45deg)!important;
       background:#22aef2!important;
     }
     .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(2){
       opacity:0!important;
     }
     .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(3){
-      transform:translateY(-10px) rotate(-45deg)!important;
+      transform:translateY(-8px) rotate(-45deg)!important;
       background:#22aef2!important;
     }
     .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{
