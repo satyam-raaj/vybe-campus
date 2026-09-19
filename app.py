@@ -2268,9 +2268,73 @@ def _assistant_knowledge_context(con, question, limit=5, max_each=5000):
     return "\n\n".join(parts)
 
 def _assistant_knowledge_answer(con, question):
-    context=_assistant_knowledge_context(con,question)
-    if not context: return ""
-    return "🧠 From VYBE Assistant Knowledge:\n\n"+context[:14000]
+    """Answer from stored knowledge instead of dumping the uploaded file.
+
+    This is intentionally extractive: it ranks sentences from the most relevant
+    knowledge items and returns only the useful passages. It never exposes the
+    complete stored document just because a question matched the document.
+    """
+    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
+    if not q:
+        return ""
+
+    stop={"what","when","where","which","who","why","how","does","did","are","the","and","for","from","with","about","please","tell","show","give","can","you","our","this","that","have","has","into","there","their","your","student","students","vybe","assistant"}
+    tokens=[w for w in re.findall(r"[a-z0-9]+", q) if len(w)>=3 and w not in stop][:18]
+    rows=_assistant_knowledge_rows(con, question, limit=8)
+    if not rows:
+        return ""
+
+    candidates=[]
+    for r in rows:
+        content=(r["content"] or "").strip()
+        if not content:
+            continue
+        # Split both normal prose and simple list/template files into useful units.
+        units=re.split(r"(?<=[.!?])\s+|\n+|(?<=:)\s+(?=[A-Z0-9•*-])", content)
+        title=(r["title"] or r["original_name"] or "VYBE knowledge")
+        for unit in units:
+            unit=re.sub(r"\s+", " ", unit).strip(" -•\t")
+            if len(unit)<12:
+                continue
+            low=unit.lower()
+            score=0
+            for token in tokens:
+                if token in low:
+                    score += 3 if re.search(r"\b"+re.escape(token)+r"\b", low) else 1
+            # Prefer a unit that directly contains the key subject from the question.
+            if q in low:
+                score += 10
+            if score:
+                candidates.append((score, int(r["id"]), title, unit))
+
+    if not candidates:
+        return "I found the uploaded knowledge, but I couldn't find a passage that directly answers that question. Try asking with a more specific keyword."
+
+    candidates.sort(key=lambda x:(x[0],x[1]), reverse=True)
+    selected=[]
+    seen=set()
+    total=0
+    for score,kid,title,unit in candidates:
+        key=unit.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # Keep answers compact; never return the whole document.
+        unit=unit[:420]
+        if total+len(unit)>1800:
+            continue
+        selected.append((title,unit))
+        total += len(unit)
+        if len(selected)>=5:
+            break
+
+    if not selected:
+        return "I found the knowledge source, but the matching information is too large to display as an answer. Try a more specific question."
+
+    lines=["🧠 Based on VYBE Assistant Knowledge:"]
+    for title,unit in selected:
+        lines.append(f"• {unit}")
+    return "\n".join(lines)
 
 
 def _campus_search(con, q, limit=8):
