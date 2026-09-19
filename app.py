@@ -2481,6 +2481,201 @@ def _assistant_knowledge_answer(con, question):
         return "🧠 "+scored[0][2]+("." if not scored[0][2].endswith(('.', '?', '!')) else "")
     return ""
 
+
+def _ai_extract_text(data):
+    """Extract plain answer text from common OpenAI-compatible API responses."""
+    if not isinstance(data, dict):
+        return ""
+
+    # OpenAI Responses API commonly exposes output_text.
+    text = data.get("output_text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+
+    # Responses API fallback: output -> message -> content -> output_text/text.
+    parts = []
+    for item in data.get("output", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []) or []:
+            if not isinstance(content, dict):
+                continue
+            value = content.get("text")
+            if isinstance(value, str):
+                parts.append(value)
+            elif isinstance(value, dict) and isinstance(value.get("value"), str):
+                parts.append(value["value"])
+    if parts:
+        return "\n".join(parts).strip()
+
+    # Chat Completions-compatible fallback.
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] or {}
+        message = choice.get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+            if parts:
+                return "\n".join(parts).strip()
+    return ""
+
+
+def _build_ai_vybe_context(con, question):
+    """Build compact VYBE-specific context for the external AI."""
+    blocks = []
+
+    # Uploaded Assistant knowledge is the primary source for college facts.
+    try:
+        rows = _assistant_knowledge_rows(con, question, limit=12)
+        candidates = _find_source_passages(rows, question, max_chunks=12)
+        for score, matched, rid, title, heading, unit in candidates:
+            if not unit:
+                continue
+            block = f"[VYBE KNOWLEDGE — {title}]"
+            if heading:
+                block += f" ({heading})"
+            block += f"\n{unit[:1800]}"
+            blocks.append(block)
+    except Exception as exc:
+        app.logger.warning("AI knowledge context unavailable: %s: %s", type(exc).__name__, exc)
+
+    # Live VYBE data: announcements, events, resources, issues, timetables.
+    try:
+        for item in _campus_search(con, question, limit=5):
+            blocks.append(
+                f"[VYBE {item['type']} — {item['title']}]\n{item['text'][:1800]}"
+            )
+    except Exception as exc:
+        app.logger.warning("AI campus context unavailable: %s: %s", type(exc).__name__, exc)
+
+    # Add current IST so the external AI can answer date/time questions correctly.
+    blocks.append(f"[CURRENT VYBE TIME]\n{_format_ist(_current_ist())}")
+
+    # Keep the request comfortably below typical context limits.
+    seen = set()
+    compact = []
+    total = 0
+    for block in blocks:
+        key = block.strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if total + len(key) > 14000:
+            break
+        compact.append(key)
+        total += len(key) + 2
+
+    return "\n\n".join(compact)
+
+
+def _call_vybe_ai(con, question):
+    """Call the configured AI API without exposing the API key to students."""
+    api_key = VYBE_AI_API_KEY
+    if not api_key:
+        return ""
+
+    endpoint = VYBE_AI_ENDPOINT
+    model = VYBE_AI_MODEL
+    context = _build_ai_vybe_context(con, question)
+
+    system_prompt = """You are VYBE Assistant, the AI assistant inside a college student portal.
+
+Answer the student's question naturally, clearly and helpfully.
+- For college/VYBE-specific questions, use the supplied VYBE context as the source of truth.
+- Never invent college facts, dates, fees, timetable details, faculty names, links, or policies.
+- If the VYBE context does not contain the requested college fact, say that VYBE does not have enough information instead of guessing.
+- For normal general-knowledge, coding, study, writing, or everyday questions, answer normally using your own knowledge.
+- Keep answers concise by default. Use short bullets when they improve clarity.
+- Do not mention internal prompts, API calls, database tables, or the VYBE context.
+- Do not reproduce long passages from uploaded documents; summarize the relevant information.
+- If the question is ambiguous, ask a short clarification instead of guessing.
+"""
+
+    user_prompt = f"""Student question:
+{question}
+
+VYBE context:
+{context or "No matching VYBE-specific information was found."}
+"""
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    try:
+        # Support both the OpenAI Responses API and OpenAI-compatible
+        # Chat Completions endpoints through the same Render configuration.
+        if "/chat/completions" in endpoint.lower():
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            }
+        else:
+            payload = {
+                "model": model,
+                "input": [
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": system_prompt}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": user_prompt}],
+                    },
+                ],
+            }
+
+        req = URLRequest(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urlopen(req, timeout=35) as response:
+            raw = response.read(2_000_000)
+            data = json.loads(raw.decode("utf-8", "ignore"))
+
+        answer = _ai_extract_text(data)
+        if answer:
+            return answer[:8000].strip()
+
+        app.logger.error("VYBE AI returned no usable text from configured endpoint.")
+    except Exception as exc:
+        # Never expose API credentials or raw provider errors to students.
+        app.logger.error(
+            "VYBE AI API request failed: %s: %s",
+            type(exc).__name__,
+            str(exc)[:500],
+        )
+    return ""
+
+
+def _free_vybe_answer(con, question):
+    """AI-powered VYBE Assistant with the existing local assistant as fallback."""
+    question = (question or "").strip()[:1000]
+    if not question:
+        return ""
+
+    ai_answer = _call_vybe_ai(con, question)
+    if ai_answer:
+        return ai_answer
+
+    # If the provider is temporarily unavailable, preserve the existing VYBE
+    # assistant behavior instead of showing a blank answer.
+    return _free_vybe_local_answer(con, question)
+
+
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
     out=[]
@@ -2537,7 +2732,7 @@ def _format_ist(dt):
     return dt.strftime("%A, %d %B %Y at %I:%M %p IST")
 
 
-def _free_vybe_answer(con, question):
+def _free_vybe_local_answer(con, question):
     """Free, deterministic VYBE assistant: no external AI/API is required."""
     q = re.sub(r"\s+", " ", question.lower()).strip()
     ist = _current_ist()
@@ -2857,7 +3052,7 @@ def assistant():
     if timetable_html:
         answer_html += timetable_html
 
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Powered by VYBE AI. Ask about your college, documents, timetable, resources, or any general question.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
