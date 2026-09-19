@@ -1039,48 +1039,49 @@ input:focus,textarea:focus,select:focus{border-color:#32aef0;background:rgba(7,2
 .community-arrow{background:rgba(12,43,68,.7);border-color:rgba(74,159,216,.25)}
 .chat-composer{background:rgba(4,17,30,.78);border-color:rgba(72,157,213,.24);box-shadow:0 22px 60px rgba(0,0,0,.42)}
 .online{color:#63e6a2}.offline{color:#ff6f7f}
-/* VYBE VARIANT A — ALMOST BLACK + SUBTLE NAVY */
+/* VYBE VARIANT B — BLACK + RICH MIDNIGHT BLUE */
 :root{
-  --bg:#020508;
-  --bg2:#07101A;
-  --panel:rgba(5,13,22,.90);
-  --line:rgba(72,112,145,.20);
-  --line2:rgba(73,132,177,.42);
-  --text:#E8F0F7;
-  --muted:#8396A8;
-  --accent:#3A7EAF;
-  --accent2:#0A2942;
-  --shadow:0 28px 90px rgba(0,0,0,.72);
+  --bg:#01050A;
+  --bg2:#071525;
+  --panel:rgba(5,18,33,.94);
+  --line:rgba(46,105,157,.28);
+  --line2:rgba(55,133,199,.52);
+  --text:#EAF4FF;
+  --muted:#849BB2;
+  --accent:#4B9BE0;
+  --accent2:#0C3155;
+  --shadow:0 30px 95px rgba(0,0,0,.76);
 }
 body{
   background:
-    radial-gradient(850px 500px at 8% -18%,rgba(16,55,82,.14),transparent 70%),
-    radial-gradient(900px 620px at 92% 4%,rgba(8,38,62,.11),transparent 72%),
-    linear-gradient(180deg,#020508 0%,#03070B 48%,#020508 100%);
+    radial-gradient(900px 560px at 8% -18%,rgba(14,63,105,.24),transparent 70%),
+    radial-gradient(1000px 700px at 94% 5%,rgba(8,52,92,.18),transparent 72%),
+    linear-gradient(180deg,#01050A 0%,#030A13 46%,#02060B 100%);
   color:var(--text);
 }
-.nav{background:rgba(2,6,10,.82);border-bottom-color:rgba(72,112,145,.16)}
+.nav{background:rgba(2,8,15,.86);border-bottom-color:rgba(46,105,157,.22)}
 .card,.panel,.student-feature,.student-mini,.student-link,.feed-item,.stat-chip,.top-stat,.top-tool{
-  background:linear-gradient(145deg,rgba(8,18,29,.90),rgba(3,9,15,.92));
+  background:linear-gradient(145deg,rgba(8,24,42,.94),rgba(3,11,20,.96));
   border-color:var(--line);
-  box-shadow:0 18px 55px rgba(0,0,0,.24);
+  box-shadow:0 20px 60px rgba(0,0,0,.30);
 }
-.card:hover,.student-feature:hover,.student-mini:hover,.student-link:hover{border-color:var(--line2)}
-.ai-box{background:linear-gradient(145deg,rgba(10,25,40,.94),rgba(3,10,17,.96));border-color:rgba(91,139,173,.22)}
+.card:hover,.student-feature:hover,.student-mini:hover,.student-link:hover{border-color:var(--line2);box-shadow:0 22px 68px rgba(0,28,58,.24)}
+.ai-box{background:linear-gradient(145deg,rgba(10,31,53,.96),rgba(3,12,22,.98));border-color:rgba(67,139,197,.28);box-shadow:0 18px 55px rgba(0,30,65,.20)}
 .btn,.button,.student-control.active{
-  background:linear-gradient(180deg,#174667,#0D2C45);
-  border-color:rgba(86,145,184,.38);
+  background:linear-gradient(180deg,#174D79,#0C3155);
+  border-color:rgba(75,155,224,.44);
+  box-shadow:0 8px 28px rgba(0,45,85,.22);
 }
-.btn:hover,.button:hover{background:linear-gradient(180deg,#1D5277,#123954)}
-input,textarea,select{background:rgba(2,8,14,.78)!important;border-color:rgba(72,112,145,.25)!important;color:var(--text)!important}
-input:focus,textarea:focus,select:focus{border-color:rgba(73,132,177,.55)!important;box-shadow:0 0 0 3px rgba(38,96,135,.12)!important}
-.student-space-pill{border-color:rgba(73,132,177,.38);color:#91B4CC;background:rgba(22,65,92,.10)}
-.student-feature-icon,.student-control,.student-header-icon{background:linear-gradient(145deg,rgba(13,39,59,.90),rgba(4,14,23,.96));border-color:rgba(72,112,145,.22)}
-.student-arrow{color:#75A7C5}
-.mobile-nav.open{background:rgba(3,10,16,.97);border-color:rgba(72,112,145,.25)}
-.nav-toggle{background:rgba(5,14,22,.86);border-color:rgba(72,112,145,.24)}
-.footer{border-top-color:rgba(72,112,145,.12)}
-::selection{background:rgba(58,126,175,.28);color:#F4F8FB}
+.btn:hover,.button:hover{background:linear-gradient(180deg,#1B5D91,#104067)}
+input,textarea,select{background:rgba(2,10,18,.84)!important;border-color:rgba(46,105,157,.30)!important;color:var(--text)!important}
+input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!important;box-shadow:0 0 0 3px rgba(45,123,186,.14),0 8px 30px rgba(0,31,63,.16)!important}
+.student-space-pill{border-color:rgba(55,133,199,.46);color:#9BC8EA;background:rgba(17,67,105,.16)}
+.student-feature-icon,.student-control,.student-header-icon{background:linear-gradient(145deg,rgba(14,48,78,.94),rgba(4,16,28,.98));border-color:rgba(46,105,157,.30);box-shadow:0 8px 25px rgba(0,25,50,.18)}
+.student-arrow{color:#82B9E5}
+.mobile-nav.open{background:rgba(3,13,23,.98);border-color:rgba(46,105,157,.34);box-shadow:0 24px 65px rgba(0,0,0,.58)}
+.nav-toggle{background:rgba(6,20,34,.90);border-color:rgba(46,105,157,.30)}
+.footer{border-top-color:rgba(46,105,157,.16)}
+::selection{background:rgba(75,155,224,.30);color:#F5FAFF}
 
 """
 
