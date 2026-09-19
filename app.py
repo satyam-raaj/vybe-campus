@@ -982,6 +982,37 @@ def _safe_500_page():
 }
 
 /* Desktop: no rules changed here. */
+
+/* VYBE: mobile drawer only. Desktop menu keeps the original links/layout. */
+.mobile-only-menu-links{display:none}
+@media (max-width:850px){
+  #vybeMobileNav.student-mobile-menu > a{display:none!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
+    display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    box-sizing:border-box!important;
+    width:100%!important;min-height:54px!important;
+    display:flex!important;align-items:center!important;justify-content:flex-start!important;
+    gap:12px!important;padding:11px 14px!important;margin:0!important;
+    border:1px solid rgba(75,146,195,.30)!important;
+    border-radius:14px!important;
+    background:rgba(8,25,40,.72)!important;
+    color:#d9eaf6!important;font-size:13px!important;font-weight:650!important;
+    text-decoration:none!important;
+    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+    background:rgba(22,91,139,.38)!important;
+    border-color:rgba(73,173,235,.58)!important;
+    color:#fff!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links .student-menu-icon{
+    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
+    flex:0 0 30px!important;font-size:20px!important;line-height:1!important;color:#54b9ee!important;
+  }
+}
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -1263,8 +1294,10 @@ def layout(title, body, admin=False):
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
     elif student:
-        # Mobile menu items: Home stays in the bottom bar, so the drawer contains the main student sections.
-        links = '<a href="/academics"><span class="student-menu-icon">▦</span><span>Academics</span></a><a href="/issues"><span class="student-menu-icon">⌖</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">♧</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">◌</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">⌕</span><span>Search</span></a><a href="/profile"><span class="student-menu-icon">♙</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">↪</span><span>Logout</span></a>'
+        # Keep the desktop student navigation exactly as it was.
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
+        # Mobile gets its own drawer links so desktop navigation is never changed.
+        mobile_links = '<a href="/dashboard"><span class="student-menu-icon">⌂</span><span>Home</span></a><a href="/academics"><span class="student-menu-icon">▦</span><span>Academics</span></a><a href="/issues"><span class="student-menu-icon">⌖</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">♧</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">◌</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">⌕</span><span>Search</span></a><a href="/announcements"><span class="student-menu-icon">🔔</span><span>Announcements</span></a><a href="/profile"><span class="student-menu-icon">♙</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">↪</span><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
@@ -1279,7 +1312,7 @@ def layout(title, body, admin=False):
         bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}</div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
