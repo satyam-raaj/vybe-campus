@@ -399,6 +399,16 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE
             )""",
+            """CREATE TABLE IF NOT EXISTS student_notifications (
+                id BIGSERIAL PRIMARY KEY,
+                recipient_student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                sender_student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
+                reply_message_id BIGINT REFERENCES community_messages(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                read_at TEXT
+            )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id BIGSERIAL PRIMARY KEY,
                 logged_at_ist TEXT NOT NULL,
@@ -522,6 +532,19 @@ def init_db():
                 whatsapp_sent INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS student_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient_student_id INTEGER NOT NULL,
+                sender_student_id INTEGER,
+                reply_message_id INTEGER,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                read_at TEXT,
+                FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
+                FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
+            )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 logged_at_ist TEXT NOT NULL,
@@ -581,6 +604,33 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS helpful_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
             "CREATE TABLE IF NOT EXISTS campus_pages (id INTEGER PRIMARY KEY AUTOINCREMENT, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
         ])
+    # Student-to-student notification storage for chat replies.
+    if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_notifications (
+            id BIGSERIAL PRIMARY KEY,
+            recipient_student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            sender_student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
+            reply_message_id BIGINT REFERENCES community_messages(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            read_at TEXT
+        )""")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipient_student_id INTEGER NOT NULL,
+            sender_student_id INTEGER,
+            reply_message_id INTEGER,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            read_at TEXT,
+            FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
+            FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
+            FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
+        )""")
+
     if not con.is_pg:
         cols_now={r['name'] for r in con.execute('PRAGMA table_info(students)').fetchall()}
         for col,definition in (('admit_card_file_name','TEXT'),('admit_card_original_name','TEXT'),('admit_card_mime_type','TEXT'),('admit_card_file_data','BLOB')):
@@ -1316,6 +1366,8 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .password-wrap.password-error .password-toggle{border-color:rgba(239,75,95,.42)!important;color:#ff8290!important;background:rgba(70,10,20,.72)!important}
 .password-error-note{color:#ff8290;font-size:12px;margin-top:6px}
 
+.student-notification-wrap{position:relative;display:inline-flex}.student-notification-bell{position:relative;cursor:pointer}.student-notification-badge{position:absolute;right:-3px;top:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;display:grid;place-items:center;background:#ef4b5f;color:#fff;font-size:9px;font-weight:800;line-height:1;border:2px solid #020817}.student-notification-panel{position:absolute;right:0;top:50px;width:320px;max-width:calc(100vw - 24px);z-index:9000;background:rgba(3,12,22,.98);border:1px solid rgba(75,155,224,.30);border-radius:16px;box-shadow:0 22px 70px rgba(0,0,0,.55);overflow:hidden;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.student-notification-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 13px;border-bottom:1px solid rgba(75,155,224,.16)}.student-notification-panel-head strong{font-size:13px}.student-notification-panel-head button{border:0;background:none;color:#78c9f5;font-size:11px;font-weight:700;cursor:pointer}.student-notification-list{max-height:330px;overflow:auto}.student-notification-item{display:block;width:100%;padding:12px 13px;text-align:left;border:0;border-bottom:1px solid rgba(75,155,224,.10);background:transparent;color:inherit;cursor:pointer}.student-notification-item:hover{background:rgba(34,174,242,.08)}.student-notification-item strong{display:block;font-size:12px;color:#8fd8ff;margin-bottom:4px}.student-notification-item span{display:block;font-size:11px;color:#9bb1c5;line-height:1.4}.student-notification-empty{padding:18px 13px;color:#8197aa;font-size:12px;text-align:center}@media(max-width:850px){.student-notification-panel{position:fixed;right:10px;top:58px;width:310px}.student-notification-badge{right:-4px;top:-4px}}
+
 /* =========================================================
    FINAL MOBILE-ONLY STUDENT NAVIGATION
    Desktop CSS/layout is intentionally not changed.
@@ -1606,7 +1658,7 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false">🔔<span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><div class="student-notification-panel" id="vybeNotificationPanel" hidden><div class="student-notification-panel-head"><strong>Notifications</strong><button type="button" id="vybeNotificationsReadAll">Mark all read</button></div><div id="vybeNotificationList"><div class="student-notification-empty">No new notifications.</div></div></div></div><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
@@ -1637,6 +1689,77 @@ function setMenu(open){{
     const icon=bottomMenu.querySelector(".mobile-menu-icon-lines");
     if(icon) icon.classList.toggle("is-open",isOpen);
   }}
+}}
+
+const notificationBell=document.getElementById("vybeNotificationBell");
+const notificationBadge=document.getElementById("vybeNotificationBadge");
+const notificationPanel=document.getElementById("vybeNotificationPanel");
+const notificationList=document.getElementById("vybeNotificationList");
+const notificationReadAll=document.getElementById("vybeNotificationsReadAll");
+let notificationTimer=null;
+let notificationFirstLoad=true;
+
+function escNotif(value){{
+  return String(value||"").replace(/[&<>"]/g,function(ch){{return {{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}}[ch]}});
+}}
+function renderStudentNotifications(data){{
+  if(!notificationList)return;
+  const items=data.notifications||[];
+  notificationList.innerHTML=items.length?items.map(function(n){{
+    return '<button type="button" class="student-notification-item" data-notification-id="'+n.id+'" data-reply-message-id="'+(n.reply_message_id||"")+'">'
+      +'<strong>'+escNotif(n.sender_name)+ ' · '+escNotif(n.title)+'</strong>'
+      +'<span>'+escNotif(n.message)+'</span></button>';
+  }}).join(''):'<div class="student-notification-empty">No new notifications.</div>';
+  if(notificationBadge){{
+    const count=Number(data.unread||0);
+    notificationBadge.textContent=count>99?'99+':String(count);
+    notificationBadge.hidden=count===0;
+  }}
+}}
+function refreshStudentNotifications(){{
+  fetch('/student/notifications',{credentials:'same-origin',cache:'no-store'})
+    .then(function(r){{return r.ok?r.json():null;}})
+    .then(function(data){{if(data)renderStudentNotifications(data);}})
+    .catch(function(){{}});
+}}
+if(notificationBell){{
+  notificationBell.addEventListener('click',function(e){{
+    e.stopPropagation();
+    const open=!notificationPanel.hidden;
+    notificationPanel.hidden=open;
+    notificationBell.setAttribute('aria-expanded',open?'false':'true');
+    if(!open){{ refreshStudentNotifications(); }}
+  }});
+}}
+if(notificationList){{
+  notificationList.addEventListener('click',function(e){{
+    const item=e.target.closest('.student-notification-item');
+    if(!item)return;
+    const nid=item.getAttribute('data-notification-id');
+    const mid=item.getAttribute('data-reply-message-id');
+    const fd=new FormData(); fd.append('notification_id',nid);
+    fetch('/student/notifications/read',{method:'POST',body:fd,credentials:'same-origin'})
+      .finally(function(){{
+        if(mid) window.location.href='/community/chat#community-msg-'+mid;
+        else refreshStudentNotifications();
+      }});
+  }});
+}}
+if(notificationReadAll){{
+  notificationReadAll.addEventListener('click',function(){{
+    fetch('/student/notifications/read',{method:'POST',body:new URLSearchParams(),credentials:'same-origin'})
+      .then(function(){{refreshStudentNotifications();}}).catch(function(){{}});
+  }});
+}}
+if(notificationBell){{
+  document.addEventListener('click',function(e){{
+    if(notificationPanel && !notificationPanel.hidden && !e.target.closest('.student-notification-wrap')){{
+      notificationPanel.hidden=true;
+      notificationBell.setAttribute('aria-expanded','false');
+    }}
+  }});
+  refreshStudentNotifications();
+  notificationTimer=setInterval(refreshStudentNotifications,1000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -2243,6 +2366,52 @@ def chat_alias():
     return redirect(url_for("community"))
 
 
+@app.route("/student/notifications", methods=["GET"])
+@student_required
+def student_notifications():
+    con = db()
+    try:
+        my_id = session["student_db_id"]
+        rows = con.execute(
+            "SELECT sn.id, sn.reply_message_id, sn.title, sn.message, sn.created_at, sn.read_at, s.name AS sender_name "
+            "FROM student_notifications sn LEFT JOIN students s ON s.id=sn.sender_student_id "
+            "WHERE sn.recipient_student_id=? ORDER BY sn.id DESC LIMIT 20",
+            (my_id,),
+        ).fetchall()
+        unread = sum(1 for r in rows if not r["read_at"])
+        return jsonify({"unread": unread, "notifications": [{
+            "id": int(r["id"]),
+            "reply_message_id": int(r["reply_message_id"]) if r["reply_message_id"] else None,
+            "title": r["title"],
+            "message": r["message"],
+            "created_at": r["created_at"],
+            "read": bool(r["read_at"]),
+            "sender_name": r["sender_name"] or "Student",
+        } for r in rows]})
+    finally:
+        con.close()
+
+
+@app.route("/student/notifications/read", methods=["POST"])
+@student_required
+def student_notifications_read():
+    con = db()
+    try:
+        my_id = session["student_db_id"]
+        nid = request.form.get("notification_id", "").strip()
+        if nid:
+            try:
+                con.execute("UPDATE student_notifications SET read_at=? WHERE id=? AND recipient_student_id=?", (now(), int(nid), my_id))
+            except (TypeError, ValueError):
+                pass
+        else:
+            con.execute("UPDATE student_notifications SET read_at=? WHERE recipient_student_id=? AND read_at IS NULL", (now(), my_id))
+        con.commit()
+        return jsonify({"ok": True})
+    finally:
+        con.close()
+
+
 @app.route("/announcements")
 @student_required
 def announcements():
@@ -2555,10 +2724,33 @@ def community_chat():
                         reply_id = candidate
                 except (TypeError, ValueError):
                     reply_id = None
+            reply_recipient_id = None
+            if reply_id:
+                original = con.execute("SELECT student_id FROM community_messages WHERE id=?", (reply_id,)).fetchone()
+                if original and int(original["student_id"]) != int(my_id):
+                    reply_recipient_id = int(original["student_id"])
+
+            created_at = now()
             con.execute(
                 "INSERT INTO community_messages(student_id,message,created_at,reply_to_id) VALUES(?,?,?,?)",
-                (my_id, text, now(), reply_id),
+                (my_id, text, created_at, reply_id),
             )
+
+            # If this is a reply to another student, create a personal notification
+            # for the original sender. This does not notify the person who replied.
+            if reply_recipient_id:
+                sent_row = con.execute(
+                    "SELECT id FROM community_messages WHERE student_id=? AND created_at=? ORDER BY id DESC LIMIT 1",
+                    (my_id, created_at),
+                ).fetchone()
+                reply_message_id = int(sent_row["id"]) if sent_row else None
+                sender_row = con.execute("SELECT name FROM students WHERE id=?", (my_id,)).fetchone()
+                sender_name = sender_row["name"] if sender_row else "A student"
+                con.execute(
+                    "INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at) VALUES(?,?,?,?,?,?,NULL)",
+                    (reply_recipient_id, my_id, reply_message_id, "New reply in Community Chat", f"{sender_name} replied to your message: {text[:180]}", created_at),
+                )
+
             con.commit()
             con.close()
             return redirect(url_for("community_chat"))
