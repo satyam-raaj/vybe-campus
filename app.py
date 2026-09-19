@@ -848,20 +848,43 @@ def _safe_500_page():
   .student-bottom-spacer{height:82px!important}
   #vybeMobileNav.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
-    position:fixed!important;right:0!important;top:0!important;bottom:68px!important;
+    position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
     width:min(82vw,330px)!important;min-width:0!important;
-    z-index:190!important;margin:0!important;padding:22px 14px 18px!important;
-    border:1px solid rgba(58,126,175,.28)!important;border-right:0!important;
-    border-radius:24px 0 0 24px!important;
+    z-index:190!important;margin:0!important;padding:18px 14px 18px!important;
+    border:1px solid rgba(58,126,175,.28)!important;border-left:0!important;
+    border-radius:0 24px 24px 0!important;
     background:rgba(3,10,18,.985)!important;
-    box-shadow:-22px 0 70px rgba(0,0,0,.58),-8px 0 35px rgba(10,41,66,.22)!important;
+    box-shadow:22px 0 70px rgba(0,0,0,.58),8px 0 35px rgba(10,41,66,.22)!important;
     backdrop-filter:blur(28px)!important;-webkit-backdrop-filter:blur(28px)!important;
     overflow-y:auto!important;
   }
+  #vybeMobileNav .mobile-menu-head{
+    display:flex!important;align-items:center!important;justify-content:space-between!important;
+    padding:4px 4px 14px!important;margin-bottom:4px!important;
+    border-bottom:1px solid rgba(58,126,175,.18)!important;
+  }
+  #vybeMobileNav .mobile-menu-title{
+    color:#f4f8fb!important;font-size:20px!important;font-weight:750!important;
+    letter-spacing:-.02em!important;
+  }
+  #vybeMobileNav .mobile-menu-close{
+    width:38px!important;height:38px!important;display:flex!important;align-items:center!important;
+    justify-content:center!important;border:1px solid rgba(255,255,255,.10)!important;
+    border-radius:12px!important;background:rgba(255,255,255,.055)!important;
+    color:#dbe8f2!important;font-size:20px!important;cursor:pointer!important;
+  }
+  #vybeMobileNav .mobile-menu-close:active{transform:scale(.95)!important}
   #vybeMobileNav.mobile-nav.open a{
     display:flex!important;align-items:center!important;min-height:50px!important;
-    padding:13px 15px!important;border-radius:14px!important;
+    padding:13px 15px!important;margin-top:4px!important;border-radius:14px!important;
     color:#dbe8f2!important;font-size:15px!important;
+  }
+  #vybeMobileNav.mobile-nav.open a:hover{background:rgba(255,255,255,.07)!important}
+  @media(max-width:850px){
+    #vybeMobileNav.mobile-nav.open::after{
+      content:"";position:fixed;left:0;right:0;top:0;bottom:68px;
+      z-index:-1;background:rgba(0,0,0,.18);pointer-events:none;
+    }
   }
 }
 
@@ -1183,9 +1206,9 @@ def layout(title, body, admin=False):
         bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav" id="vybeMobileNav">{links}</div>
+<div class="nav">{header}</div><div class="mobile-nav" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}</div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
-<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.classList.toggle("is-visible",show);btn.setAttribute("aria-label",show?"Hide password":"Show password");btn.setAttribute("title",show?"Hide password":"Show password");}});}});document.querySelectorAll(".password-error input").forEach(function(el){{el.addEventListener("input",function(){{const wrap=el.closest(".password-wrap");if(wrap)wrap.classList.remove("password-error");}});}});}})();</script></body></html>'''
+<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.classList.toggle("is-visible",show);btn.setAttribute("aria-label",show?"Hide password":"Show password");btn.setAttribute("title",show?"Hide password":"Show password");}});}});document.querySelectorAll(".password-error input").forEach(function(el){{el.addEventListener("input",function(){{const wrap=el.closest(".password-wrap");if(wrap)wrap.classList.remove("password-error");}});}});}})();</script></body></html>'''
 
 
 @app.route("/offline")
