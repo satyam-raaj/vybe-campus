@@ -954,11 +954,11 @@ def _safe_500_page():
   #vybeMobileNav.student-mobile-menu.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
     position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(58vw,205px)!important;min-width:0!important;
+    width:min(48vw,180px)!important;min-width:0!important;
     z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
     border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
     border-radius:0!important;
-    background:rgba(2,9,17,.985)!important;
+    background:rgba(2,9,17,.30)!important;
     box-shadow:12px 0 35px rgba(0,0,0,.42)!important;
     backdrop-filter:blur(25px)!important;-webkit-backdrop-filter:blur(25px)!important;
     overflow-y:auto!important;
@@ -1058,7 +1058,7 @@ def _safe_500_page():
     right:auto!important;
     top:0!important;
     bottom:68px!important;
-    width:min(58vw,205px)!important;
+    width:min(48vw,180px)!important;
     z-index:1000!important;
   }
 }
