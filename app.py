@@ -509,6 +509,7 @@ def init_db():
                 student_id INTEGER NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                reply_to_id INTEGER REFERENCES community_messages(id) ON DELETE SET NULL,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",
             """CREATE TABLE IF NOT EXISTS notifications (
@@ -588,6 +589,12 @@ def init_db():
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_name TEXT')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_original_name TEXT')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_mime_type TEXT')
+        con.execute('ALTER TABLE community_messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES community_messages(id) ON DELETE SET NULL')
+    # Backward-compatible reply column for existing local databases.
+    if not con.is_pg:
+        cols_chat={r['name'] for r in con.execute('PRAGMA table_info(community_messages)').fetchall()}
+        if 'reply_to_id' not in cols_chat:
+            con.execute('ALTER TABLE community_messages ADD COLUMN reply_to_id INTEGER REFERENCES community_messages(id) ON DELETE SET NULL')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_data BYTEA')
 
     # Lightweight migration for the earlier VYBE_V2 SQLite schema.
@@ -1541,7 +1548,7 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .community-chat-window{display:flex;flex-direction:column;gap:9px;max-height:520px;min-height:180px;overflow-y:auto;padding:4px;scroll-behavior:smooth}
 .community-message{max-width:min(78%,720px);align-self:flex-start;padding:11px 14px;border-radius:17px 17px 17px 5px;background:rgba(255,255,255,.045);border:1px solid rgba(55,133,199,.20);word-break:break-word}.community-message.mine{align-self:flex-end;border-radius:17px 17px 5px 17px;background:rgba(15,67,103,.34);border-color:rgba(75,155,224,.28)}
 .community-message-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}.community-message-head strong{font-size:13px;color:#dceeff}.community-message-head span{font-size:10px;color:#718ba3}.community-message-text{font-size:14px;line-height:1.5;color:#edf6ff;white-space:pre-wrap}
-.community-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:12px}.community-chat-form textarea{min-height:48px;height:48px;resize:none;padding:13px 14px}.community-chat-form .btn{height:48px;white-space:nowrap}
+.community-reply-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:9px 11px;border-left:3px solid #22aef2;border-radius:10px;background:rgba(34,174,242,.09)}.community-reply-bar>div{min-width:0;display:flex;flex-direction:column;gap:2px}.community-reply-bar strong{font-size:11px;color:#8fd8ff}.community-reply-bar span{font-size:11px;color:#9bb1c5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-reply-bar button{border:0;background:transparent;color:#a9bed0;font-size:22px;line-height:1;cursor:pointer;padding:2px 5px}.community-reply-reference{display:flex;flex-direction:column;gap:2px;width:100%;margin:0 0 7px;padding:7px 9px;text-align:left;border:0;border-left:3px solid #2aaef2;border-radius:8px;background:rgba(34,174,242,.08);color:inherit;cursor:pointer}.community-reply-reference strong{font-size:10px;color:#8fd8ff}.community-reply-reference span{font-size:11px;color:#8fa6bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reply-target-flash{box-shadow:0 0 0 2px rgba(34,174,242,.55),0 0 22px rgba(34,174,242,.18)!important}.community-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:12px}.community-chat-form textarea{min-height:48px;height:48px;resize:none;padding:13px 14px}.community-chat-form .btn{height:48px;white-space:nowrap}
 .community-chat-locked{min-height:190px;display:grid;place-items:center;text-align:center;padding:28px 18px}.community-lock-icon{font-size:28px;margin-bottom:6px}.community-chat-locked h3{margin:0 0 7px;font-size:20px}.community-chat-locked p{max-width:520px;margin:0;color:#8fa6bd;line-height:1.55;font-size:13px}
 .community-problem-list{display:grid;gap:16px}.community-problem-card{scroll-margin-top:90px}
 @media(max-width:850px){
@@ -2538,9 +2545,18 @@ def community_chat():
             con.close()
             return redirect(url_for("community_chat"))
         try:
+            reply_to = request.form.get("reply_to_id", "").strip()
+            reply_id = None
+            if reply_to:
+                try:
+                    candidate = int(reply_to)
+                    if candidate > 0 and con.execute("SELECT id FROM community_messages WHERE id=?", (candidate,)).fetchone():
+                        reply_id = candidate
+                except (TypeError, ValueError):
+                    reply_id = None
             con.execute(
-                "INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)",
-                (my_id, text, now()),
+                "INSERT INTO community_messages(student_id,message,created_at,reply_to_id) VALUES(?,?,?,?)",
+                (my_id, text, now(), reply_id),
             )
             con.commit()
             con.close()
@@ -2554,7 +2570,7 @@ def community_chat():
 
     chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
     chat_rows = con.execute(
-        "SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300"
+        "SELECT cm.*, s.name, r.message AS reply_message, rs.name AS reply_name FROM community_messages cm JOIN students s ON s.id=cm.student_id LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id ORDER BY cm.id ASC LIMIT 300"
     ).fetchall()
     con.close()
 
@@ -2563,10 +2579,18 @@ def community_chat():
         mine = r["student_id"] == my_id
         mine_class = " mine" if mine else ""
         mine_flag = "1" if mine else "0"
+        reply_html = ""
+        if r["reply_to_id"] and r["reply_message"]:
+            reply_html = (
+                f'<button type="button" class="community-reply-reference" data-reply-target="{r["reply_to_id"]}">'
+                f'<strong>Replying to {esc(r["reply_name"] or "Student")}</strong>'
+                f'<span>{esc(r["reply_message"][:120])}</span></button>'
+            )
         bubbles.append(
-            f'<div class="community-message{mine_class}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
+            f'<div class="community-message{mine_class}" id="community-msg-{r["id"]}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
             f'<div class="community-message-content">'
             f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
+            f'{reply_html}'
             f'<div class="community-message-text">{esc(r["message"])}</div>'
             f'</div></div>'
         )
@@ -2593,7 +2617,9 @@ def community_chat():
         <div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still select and delete your own messages.</div>'''
     else:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
+        <div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div>
         <form class="community-chat-form" method="post" action="/community/chat" id="community-send-form">
+            <input type="hidden" name="reply_to_id" id="community-reply-to" value="">
             <textarea name="message" maxlength="1500" rows="1" placeholder="Message..." required autocomplete="off" aria-label="Message"></textarea>
         </form>
         <div class="community-chat-keyboard-hint">Enter sends · Shift + Enter makes a new line</div>'''
@@ -2645,6 +2671,49 @@ def community_chat():
           if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
         }});
       }});
+
+      const replyBar = document.getElementById('community-reply-bar');
+      const replyTo = document.getElementById('community-reply-to');
+      const replyTitle = document.getElementById('community-reply-title');
+      const replyPreview = document.getElementById('community-reply-preview');
+      const replyCancel = document.getElementById('community-reply-cancel');
+      function clearReply() {{
+        if (replyTo) replyTo.value = '';
+        if (replyBar) replyBar.hidden = true;
+        if (replyTitle) replyTitle.textContent = 'Replying';
+        if (replyPreview) replyPreview.textContent = '';
+      }}
+      function startReply(msg) {{
+        if (!msg || !replyTo) return;
+        const id = msg.getAttribute('data-message-id');
+        const name = msg.querySelector('.community-message-head strong');
+        const text = msg.querySelector('.community-message-text');
+        if (!id || !text) return;
+        replyTo.value = id;
+        if (replyTitle) replyTitle.textContent = 'Replying to ' + (name ? name.textContent : 'Student');
+        if (replyPreview) replyPreview.textContent = text.textContent.slice(0, 120);
+        if (replyBar) replyBar.hidden = false;
+        if (sendBox) sendBox.focus();
+      }}
+      document.querySelectorAll('.community-message').forEach(function(msg) {{
+        if (msg.getAttribute('data-mine') !== '1') {{
+          msg.addEventListener('click', function(e) {{
+            if (e.target.closest('.community-reply-reference')) return;
+            startReply(msg);
+          }});
+          msg.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
+          }});
+        }}
+      }});
+      document.querySelectorAll('.community-reply-reference').forEach(function(ref) {{
+        ref.addEventListener('click', function(e) {{
+          e.preventDefault(); e.stopPropagation();
+          const target = document.getElementById('community-msg-' + ref.getAttribute('data-reply-target'));
+          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
+        }});
+      }});
+      if (replyCancel) replyCancel.addEventListener('click', clearReply);
 
       if (doneBtn) doneBtn.addEventListener('click', function() {{ selected.clear(); updateSelectionUI(); }});
 
