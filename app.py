@@ -69,7 +69,7 @@ DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXW
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
 VYBE_AI_ENDPOINT = os.environ.get("VYBE_AI_ENDPOINT", "https://api.openai.com/v1/responses").strip()
-ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xlsx", ".odt", ".odp", ".txt", ".csv", ".md", ".rtf", ".json", ".xml", ".html", ".htm", ".log", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
+ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
 
@@ -399,29 +399,6 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE
             )""",
-            """CREATE TABLE IF NOT EXISTS student_notifications (
-                id BIGSERIAL PRIMARY KEY,
-                recipient_student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-                sender_student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
-                reply_message_id BIGINT REFERENCES community_messages(id) ON DELETE CASCADE,
-                title TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                read_at TEXT
-            )""",
-            """CREATE TABLE IF NOT EXISTS assistant_knowledge (
-                id BIGSERIAL PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                original_name TEXT,
-                file_name TEXT,
-                mime_type TEXT,
-                file_data BYTEA,
-                content TEXT NOT NULL DEFAULT '',
-                source_type TEXT NOT NULL DEFAULT 'file',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id BIGSERIAL PRIMARY KEY,
                 logged_at_ist TEXT NOT NULL,
@@ -532,7 +509,6 @@ def init_db():
                 student_id INTEGER NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                reply_to_id INTEGER REFERENCES community_messages(id) ON DELETE SET NULL,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
             )""",
             """CREATE TABLE IF NOT EXISTS notifications (
@@ -544,32 +520,6 @@ def init_db():
                 created_at TEXT NOT NULL,
                 whatsapp_sent INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS student_notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                recipient_student_id INTEGER NOT NULL,
-                sender_student_id INTEGER,
-                reply_message_id INTEGER,
-                title TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                read_at TEXT,
-                FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
-                FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
-                FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
-            )""",
-            """CREATE TABLE IF NOT EXISTS assistant_knowledge (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                original_name TEXT,
-                file_name TEXT,
-                mime_type TEXT,
-                file_data BLOB,
-                content TEXT NOT NULL DEFAULT '',
-                source_type TEXT NOT NULL DEFAULT 'file',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -630,33 +580,6 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS helpful_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
             "CREATE TABLE IF NOT EXISTS campus_pages (id INTEGER PRIMARY KEY AUTOINCREMENT, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
         ])
-    # Student-to-student notification storage for chat replies.
-    if con.is_pg:
-        con.execute("""CREATE TABLE IF NOT EXISTS student_notifications (
-            id BIGSERIAL PRIMARY KEY,
-            recipient_student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-            sender_student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
-            reply_message_id BIGINT REFERENCES community_messages(id) ON DELETE CASCADE,
-            title TEXT NOT NULL,
-            message TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            read_at TEXT
-        )""")
-    else:
-        con.execute("""CREATE TABLE IF NOT EXISTS student_notifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            recipient_student_id INTEGER NOT NULL,
-            sender_student_id INTEGER,
-            reply_message_id INTEGER,
-            title TEXT NOT NULL,
-            message TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            read_at TEXT,
-            FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
-            FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
-            FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
-        )""")
-
     if not con.is_pg:
         cols_now={r['name'] for r in con.execute('PRAGMA table_info(students)').fetchall()}
         for col,definition in (('admit_card_file_name','TEXT'),('admit_card_original_name','TEXT'),('admit_card_mime_type','TEXT'),('admit_card_file_data','BLOB')):
@@ -665,12 +588,6 @@ def init_db():
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_name TEXT')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_original_name TEXT')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_mime_type TEXT')
-        con.execute('ALTER TABLE community_messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES community_messages(id) ON DELETE SET NULL')
-    # Backward-compatible reply column for existing local databases.
-    if not con.is_pg:
-        cols_chat={r['name'] for r in con.execute('PRAGMA table_info(community_messages)').fetchall()}
-        if 'reply_to_id' not in cols_chat:
-            con.execute('ALTER TABLE community_messages ADD COLUMN reply_to_id INTEGER REFERENCES community_messages(id) ON DELETE SET NULL')
         con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_data BYTEA')
 
     # Lightweight migration for the earlier VYBE_V2 SQLite schema.
@@ -940,7 +857,8 @@ def _safe_500_page():
   .student-bottom-nav button.mobile-menu-nav{
     border:0!important;background:transparent!important;color:#91a9c0!important;
     font:inherit!important;cursor:pointer!important;padding:0!important;
-  }\n  /* Mobile-only Menu icon: use the exact same hamburger glyph treatment as desktop. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:auto!important;height:auto!important;display:block!important;\n    border:0!important;border-radius:0!important;background:transparent!important;\n    box-shadow:none!important;\n    font-family:Arial,Helvetica,sans-serif!important;\n    font-size:24px!important;line-height:1!important;letter-spacing:normal!important;\n    font-weight:400!important;color:#e5f4ff!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:transparent!important;border:0!important;color:#22aef2!important;\n  }\n  .student-bottom-nav a.active,
+  }\n  /* Mobile-only Menu icon: compact VYBE-style control. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:34px!important;height:34px!important;display:grid!important;place-items:center!important;\n    border:1px solid rgba(73,173,235,.28)!important;\n    border-radius:11px!important;\n    background:rgba(8,25,40,.72)!important;\n    box-shadow:0 5px 16px rgba(0,0,0,.18)!important;\n    font-size:20px!important;line-height:1!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:rgba(22,91,139,.38)!important;\n    border-color:rgba(73,173,235,.58)!important;\n  }
+  .student-bottom-nav a.active,
   .student-bottom-nav a:active,
   .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
   .student-bottom-nav .mobile-menu-nav{order:1}
@@ -1140,33 +1058,6 @@ def security_headers(response):
 
 
 CSS = r"""
-/* Student community chat controls */
-.community-chat-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 10px;min-height:38px}
-.community-select-help{font-size:11px;color:#718ba3;margin-right:auto}.community-select-help.is-hidden{display:none}.community-selection-actions{display:none;align-items:center;gap:7px;margin-left:auto}
-.community-selection-actions.is-visible{display:flex}
-.community-selection-count{font-size:11px;color:#8fa6bd;white-space:nowrap}
-.community-delete-toolbar{display:flex;align-items:center;gap:7px}
-.community-delete-toolbar button{border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:8px 11px;background:rgba(255,255,255,.045);color:#c7d5e2;cursor:pointer;font:inherit;font-size:11px;font-weight:700}
-.community-delete-toolbar .community-delete-selected{color:#ffb7bf;border-color:rgba(255,100,120,.22)}
-.community-delete-toolbar .community-delete-selected:hover{background:rgba(255,70,70,.09);border-color:rgba(255,100,120,.40)}
-.community-delete-toolbar .community-delete-all{color:#ff9c9c;border-color:rgba(255,100,100,.18)}
-.community-delete-toolbar .community-selection-done{color:#c7d5e2}
-.community-delete-toolbar button:disabled{opacity:.45;cursor:not-allowed}
-.community-delete-toolbar .community-delete-all:hover{background:rgba(255,70,70,.08);color:#ffb4b4}
-.community-message{display:flex;align-items:flex-start;gap:8px;transition:background .15s ease,border-color .15s ease,transform .12s ease;user-select:none}.community-message:active{transform:scale(.995)}
-.community-message.is-selectable{cursor:pointer}
-.community-message.is-selected{border-color:rgba(37,170,242,.48);background:rgba(37,170,242,.075)}
-.community-message-content{min-width:0;flex:1}
-.community-chat-disabled-note{margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.07);border-radius:12px;color:#91a9c0;font-size:12px}
-.community-chat-keyboard-hint{margin-top:6px;color:#6f879d;font-size:11px;text-align:right}
-.community-chat-form textarea{overflow:hidden;line-height:1.45;min-height:46px;max-height:140px;resize:none}
-@media(max-width:850px){
-  .community-chat-tools{margin-bottom:8px}
-  .community-chat-tools{padding:2px 0 7px;min-height:36px}.community-selection-actions{gap:5px}.community-selection-count{font-size:10px}.community-delete-toolbar{gap:5px}.community-delete-toolbar button{min-height:34px;padding:7px 8px;font-size:10px}.community-select-help{font-size:10px}
-  .community-chat-keyboard-hint{text-align:center;font-size:10px}
-  .community-message-select{flex-basis:20px}
-}
-
 :root{--bg:#01040a;--bg2:#020914;--panel:rgba(3,14,27,.86);--line:rgba(28,91,145,.24);--line2:rgba(37,116,181,.48);--text:#eef6ff;--muted:#8fa6bd;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#268fd0;--accent2:#073f6b;--shadow:0 28px 90px rgba(0,0,0,.68)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
@@ -1392,8 +1283,6 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .password-wrap.password-error .password-toggle{border-color:rgba(239,75,95,.42)!important;color:#ff8290!important;background:rgba(70,10,20,.72)!important}
 .password-error-note{color:#ff8290;font-size:12px;margin-top:6px}
 
-.student-notification-wrap{position:relative;display:inline-flex}.student-notification-bell{position:relative;cursor:pointer}.student-notification-badge{position:absolute;right:-3px;top:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;display:grid;place-items:center;background:#ef4b5f;color:#fff;font-size:9px;font-weight:800;line-height:1;border:2px solid #020817}.student-notification-panel{position:absolute;right:0;top:50px;width:320px;max-width:calc(100vw - 24px);z-index:9000;background:rgba(3,12,22,.98);border:1px solid rgba(75,155,224,.30);border-radius:16px;box-shadow:0 22px 70px rgba(0,0,0,.55);overflow:hidden;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.student-notification-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 13px;border-bottom:1px solid rgba(75,155,224,.16)}.student-notification-panel-head strong{font-size:13px}.student-notification-panel-head button{border:0;background:none;color:#78c9f5;font-size:11px;font-weight:700;cursor:pointer}.student-notification-list{max-height:330px;overflow:auto}.student-notification-item{display:block;width:100%;padding:12px 13px;text-align:left;border:0;border-bottom:1px solid rgba(75,155,224,.10);background:transparent;color:inherit;cursor:pointer}.student-notification-item:hover{background:rgba(34,174,242,.08)}.student-notification-item strong{display:block;font-size:12px;color:#8fd8ff;margin-bottom:4px}.student-notification-item span{display:block;font-size:11px;color:#9bb1c5;line-height:1.4}.student-notification-empty{padding:18px 13px;color:#8197aa;font-size:12px;text-align:center}@media(max-width:850px){.student-notification-panel{position:fixed;right:10px;top:58px;width:310px}.student-notification-badge{right:-4px;top:-4px}}
-
 /* =========================================================
    FINAL MOBILE-ONLY STUDENT NAVIGATION
    Desktop CSS/layout is intentionally not changed.
@@ -1472,7 +1361,7 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
     border:0!important;
     border-right:1px solid rgba(70,150,205,.35)!important;
     border-radius:0 18px 0 0!important;
-    background:rgba(3,12,22,.98)!important;
+    background:rgba(3,12,22,.70)!important;
     box-shadow:18px 0 45px rgba(0,0,0,.48)!important;
     backdrop-filter:blur(26px)!important;
     -webkit-backdrop-filter:blur(26px)!important;
@@ -1541,131 +1430,6 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 }
 
 
-  /* FINAL MOBILE-ONLY MENU ICON — matched to the supplied reference image.
-     Desktop navigation is intentionally untouched. */
-  @media (max-width:850px){
-    .student-bottom-nav button.mobile-menu-nav{
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      position:relative!important;
-      height:44px!important;
-      max-height:44px!important;
-      margin:0 auto!important;
-      padding:0!important;
-      border:1px solid rgba(73,126,164,.34)!important;
-      border-radius:14px!important;
-      background:#061522!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.025), 0 5px 16px rgba(0,0,0,.18)!important;
-      color:#fff!important;
-      overflow:hidden!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{
-      width:24px!important;
-      height:18px!important;
-      display:flex!important;
-      flex-direction:column!important;
-      align-items:center!important;
-      justify-content:space-between!important;
-      flex:0 0 18px!important;
-      margin:0!important;
-      padding:0!important;
-      background:transparent!important;
-      border:0!important;
-      border-radius:0!important;
-      box-shadow:none!important;
-      font-size:0!important;
-      line-height:0!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines i{
-      display:block!important;
-      width:21px!important;
-      height:2px!important;
-      flex:0 0 2px!important;
-      margin:0!important;
-      padding:0!important;
-      border:0!important;
-      border-radius:2px!important;
-      background:#f2f7fb!important;
-      box-shadow:0 0 1px rgba(255,255,255,.18)!important;
-      transform-origin:center!important;
-      transition:transform .18s ease, opacity .18s ease, background .18s ease!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(1){
-      transform:translateY(8px) rotate(45deg)!important;
-      background:#22aef2!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(2){
-      opacity:0!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(3){
-      transform:translateY(-8px) rotate(-45deg)!important;
-      background:#22aef2!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{
-      display:none!important;
-    }
-    .student-bottom-nav button.mobile-menu-nav:active{
-      transform:scale(.97)!important;
-    }
-  }
-
-
-/* =========================================================
-   COMMUNITY PAGE — TWO STUDENT OPTIONS + LIVE CHAT
-   Responsive on desktop and mobile without changing desktop nav.
-   ========================================================= */
-.community-choice-section{padding-top:0}
-.community-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1000px;margin:0 auto}
-.community-choice-card{position:relative;display:flex;align-items:center;gap:16px;min-width:0;padding:20px 22px;border:1px solid rgba(55,133,199,.30);border-radius:24px;background:linear-gradient(145deg,rgba(8,30,51,.96),rgba(3,12,22,.98));box-shadow:0 18px 55px rgba(0,0,0,.30);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
-.community-choice-card:hover{transform:translateY(-3px);border-color:rgba(75,155,224,.58);box-shadow:0 24px 65px rgba(0,30,65,.30)}
-.community-choice-icon{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;border-radius:16px;background:linear-gradient(145deg,rgba(27,91,139,.65),rgba(5,25,43,.98));border:1px solid rgba(75,155,224,.24);font-size:24px}
-.community-choice-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.community-choice-copy strong{font-size:18px;letter-spacing:-.025em}.community-choice-copy small{font-size:12px;line-height:1.45;color:#9db6cc}.community-choice-arrow{font-size:34px;line-height:1;color:#82b9e5}
-.community-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}.community-section-head h2{margin:9px 0 5px;font-size:clamp(25px,4vw,34px);letter-spacing:-.045em}.community-section-head p{margin:0}
-.community-chat-card{border:1px solid rgba(55,133,199,.30);border-radius:26px;background:linear-gradient(145deg,rgba(7,24,42,.96),rgba(2,10,18,.98));padding:16px;box-shadow:0 22px 65px rgba(0,0,0,.34)}
-.community-chat-window{display:flex;flex-direction:column;gap:9px;max-height:520px;min-height:180px;overflow-y:auto;padding:4px;scroll-behavior:smooth}
-.community-message{max-width:min(78%,720px);align-self:flex-start;padding:11px 14px;border-radius:17px 17px 17px 5px;background:rgba(255,255,255,.045);border:1px solid rgba(55,133,199,.20);word-break:break-word}.community-message.mine{align-self:flex-end;border-radius:17px 17px 5px 17px;background:rgba(15,67,103,.34);border-color:rgba(75,155,224,.28)}
-.community-message-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}.community-message-head strong{font-size:13px;color:#dceeff}.community-message-head span{font-size:10px;color:#718ba3}.community-message-text{font-size:14px;line-height:1.5;color:#edf6ff;white-space:pre-wrap}
-.community-reply-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:9px 11px;border-left:3px solid #22aef2;border-radius:10px;background:rgba(34,174,242,.09)}.community-reply-bar>div{min-width:0;display:flex;flex-direction:column;gap:2px}.community-reply-bar strong{font-size:11px;color:#8fd8ff}.community-reply-bar span{font-size:11px;color:#9bb1c5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-reply-bar button{border:0;background:transparent;color:#a9bed0;font-size:22px;line-height:1;cursor:pointer;padding:2px 5px}.community-reply-reference{display:flex;flex-direction:column;gap:2px;width:100%;margin:0 0 7px;padding:7px 9px;text-align:left;border:0;border-left:3px solid #2aaef2;border-radius:8px;background:rgba(34,174,242,.08);color:inherit;cursor:pointer}.community-reply-reference strong{font-size:10px;color:#8fd8ff}.community-reply-reference span{font-size:11px;color:#8fa6bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reply-target-flash{box-shadow:0 0 0 2px rgba(34,174,242,.55),0 0 22px rgba(34,174,242,.18)!important}.community-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:12px}.community-chat-form textarea{min-height:48px;height:48px;resize:none;padding:13px 14px}.community-chat-form .btn{height:48px;white-space:nowrap}
-.community-chat-locked{min-height:190px;display:grid;place-items:center;text-align:center;padding:28px 18px}.community-lock-icon{font-size:28px;margin-bottom:6px}.community-chat-locked h3{margin:0 0 7px;font-size:20px}.community-chat-locked p{max-width:520px;margin:0;color:#8fa6bd;line-height:1.55;font-size:13px}
-.community-problem-list{display:grid;gap:16px}.community-problem-card{scroll-margin-top:90px}
-@media(max-width:850px){
-  .community-choice-grid{grid-template-columns:1fr;gap:11px}
-  .community-choice-card{padding:15px 16px;border-radius:20px;gap:12px}
-  .community-choice-icon{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}
-  .community-choice-copy strong{font-size:16px}.community-choice-copy small{font-size:11px}
-  .community-choice-arrow{font-size:29px}
-  .community-section-head{align-items:stretch;flex-direction:column;gap:11px}.community-section-head .btn{width:100%}
-  .community-chat-card{padding:10px;border-radius:21px}.community-chat-window{min-height:150px;max-height:430px;padding:3px}
-  .community-message{max-width:88%;padding:10px 12px}.community-message-text{font-size:13px}
-  .community-chat-form{grid-template-columns:1fr;gap:8px}.community-chat-form textarea{height:48px;min-height:48px}.community-chat-form .btn{width:100%;height:44px}
-  .community-chat-locked{min-height:160px;padding:22px 14px}
-  .community-problem-card{scroll-margin-top:75px}
-}
-
-/* Dedicated community pages */
-.community-page-section{padding-top:18px}
-.community-page-top{max-width:900px;margin:0 auto 20px}.community-page-top h1{margin:12px 0 8px;font-size:clamp(38px,7vw,64px);letter-spacing:-.065em;line-height:.98}.community-page-top p{margin:0}.community-back-link{display:inline-flex;align-items:center;gap:5px;margin-bottom:18px;color:#9fc8e8;font-size:13px;font-weight:700}.community-back-link:hover{color:#fff}.community-chat-page-card{max-width:1000px;margin:0 auto}.community-page-section>.community-problem-list{max-width:1000px;margin:0 auto}.community-page-section .community-problem-card{border-color:rgba(55,133,199,.30);background:linear-gradient(145deg,rgba(7,24,42,.96),rgba(2,10,18,.98))}.community-page-section .community-problem-card h2{font-size:clamp(21px,3vw,30px)}
-@media(max-width:850px){.community-page-section{padding-top:8px}.community-page-top{margin-bottom:14px}.community-page-top h1{font-size:clamp(34px,11vw,48px)}.community-back-link{margin-bottom:14px}.community-chat-page-card{width:100%;margin-left:0;margin-right:0}.community-page-section .community-problem-list{width:100%}}
-@media(max-width:600px){
-  .community-chat-page-section{padding-left:10px;padding-right:10px;padding-bottom:18px}
-  .community-chat-page-section .community-page-top{padding:0;margin-bottom:10px}.community-chat-page-section .community-page-top h1{font-size:28px;margin:5px 0}.community-chat-page-section .community-page-top p{font-size:11px}.community-chat-page-section .community-back-link{margin-bottom:8px}
-  .community-chat-page-section .community-chat-page-card{width:100%;max-width:none;margin:0;border-radius:18px;padding:10px;min-height:0;height:calc(100dvh - 245px);max-height:620px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(4,15,27,.99),rgba(1,6,12,.99));border:1px solid rgba(55,133,199,.28);overflow:hidden}
-  .community-chat-page-section .community-chat-window{flex:1;min-height:0;height:auto;max-height:none;overflow-y:auto;overflow-x:hidden;padding:6px 2px 12px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
-  .community-chat-page-section .community-chat-form{position:relative;bottom:auto;z-index:4;padding-top:7px;background:linear-gradient(180deg,transparent,rgba(1,4,10,.98) 25%);flex:0 0 auto}
-  .community-chat-page-section .community-chat-form textarea{border-radius:18px;padding:13px 15px;min-height:48px;background:rgba(6,18,31,.96)}
-  .community-chat-page-section .community-chat-keyboard-hint{padding-bottom:2px}
-  .community-chat-page-section .community-message{padding:11px 10px;border-radius:15px;margin:0 1px}.community-chat-page-section .community-message-head strong{font-size:12px}.community-chat-page-section .community-message-text{font-size:14px;line-height:1.48}
-  .community-chat-page-section .community-selection-actions{flex-wrap:wrap;justify-content:flex-end}
-  .community-chat-page-section .community-chat-tools{position:relative;top:auto;z-index:5;padding:3px 0 8px;background:rgba(1,4,10,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);flex:0 0 auto}
-}
-/* Hide the mobile student bottom buttons while the keyboard/composer is active. */
-@media(max-width:850px){
-  body.vybe-chat-composing .student-bottom-nav,
-  body.vybe-chat-composing .student-bottom-spacer{display:none!important}
-}
-
-
 """
 
 
@@ -1684,9 +1448,9 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false">🔔<span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><div class="student-notification-panel" id="vybeNotificationPanel" hidden><div class="student-notification-panel-head"><strong>Notifications</strong><button type="button" id="vybeNotificationsReadAll">Mark all read</button></div><div id="vybeNotificationList"><div class="student-notification-empty">No new notifications.</div></div></div></div><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☷</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -1712,80 +1476,9 @@ function setMenu(open){{
   }}
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
-    const icon=bottomMenu.querySelector(".mobile-menu-icon-lines");
-    if(icon) icon.classList.toggle("is-open",isOpen);
+    const icon=bottomMenu.querySelector("span");
+    if(icon) icon.textContent=isOpen?"✕":"☷";
   }}
-}}
-
-const notificationBell=document.getElementById("vybeNotificationBell");
-const notificationBadge=document.getElementById("vybeNotificationBadge");
-const notificationPanel=document.getElementById("vybeNotificationPanel");
-const notificationList=document.getElementById("vybeNotificationList");
-const notificationReadAll=document.getElementById("vybeNotificationsReadAll");
-let notificationTimer=null;
-let notificationFirstLoad=true;
-
-function escNotif(value){{
-  return String(value||"").replace(/[&<>"]/g,function(ch){{return {{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}}[ch]}});
-}}
-function renderStudentNotifications(data){{
-  if(!notificationList)return;
-  const items=data.notifications||[];
-  notificationList.innerHTML=items.length?items.map(function(n){{
-    return '<button type="button" class="student-notification-item" data-notification-id="'+n.id+'" data-reply-message-id="'+(n.reply_message_id||"")+'">'
-      +'<strong>'+escNotif(n.sender_name)+ ' · '+escNotif(n.title)+'</strong>'
-      +'<span>'+escNotif(n.message)+'</span></button>';
-  }}).join(''):'<div class="student-notification-empty">No new notifications.</div>';
-  if(notificationBadge){{
-    const count=Number(data.unread||0);
-    notificationBadge.textContent=count>99?'99+':String(count);
-    notificationBadge.hidden=count===0;
-  }}
-}}
-function refreshStudentNotifications(){{
-  fetch('/student/notifications',{{credentials:'same-origin',cache:'no-store'}})
-    .then(function(r){{return r.ok?r.json():null;}})
-    .then(function(data){{if(data)renderStudentNotifications(data);}})
-    .catch(function(){{}});
-}}
-if(notificationBell){{
-  notificationBell.addEventListener('click',function(e){{
-    e.stopPropagation();
-    const open=!notificationPanel.hidden;
-    notificationPanel.hidden=open;
-    notificationBell.setAttribute('aria-expanded',open?'false':'true');
-    if(!open){{ refreshStudentNotifications(); }}
-  }});
-}}
-if(notificationList){{
-  notificationList.addEventListener('click',function(e){{
-    const item=e.target.closest('.student-notification-item');
-    if(!item)return;
-    const nid=item.getAttribute('data-notification-id');
-    const mid=item.getAttribute('data-reply-message-id');
-    const fd=new FormData(); fd.append('notification_id',nid);
-    fetch('/student/notifications/read',{{method:'POST',body:fd,credentials:'same-origin'}})
-      .finally(function(){{
-        if(mid) window.location.href='/community/chat#community-msg-'+mid;
-        else refreshStudentNotifications();
-      }});
-  }});
-}}
-if(notificationReadAll){{
-  notificationReadAll.addEventListener('click',function(){{
-    fetch('/student/notifications/read',{{method:'POST',body:new URLSearchParams(),credentials:'same-origin'}})
-      .then(function(){{refreshStudentNotifications();}}).catch(function(){{}});
-  }});
-}}
-if(notificationBell){{
-  document.addEventListener('click',function(e){{
-    if(notificationPanel && !notificationPanel.hidden && !e.target.closest('.student-notification-wrap')){{
-      notificationPanel.hidden=true;
-      notificationBell.setAttribute('aria-expanded','false');
-    }}
-  }});
-  refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,1000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -2212,7 +1905,7 @@ def _extract_doc_text(file_data,suffix,max_chars=50000):
     if suffix==".pdf": return _extract_pdf_text(file_data,max_chars)
     if suffix in (".png",".jpg",".jpeg",".webp"): return _extract_image_text(file_data,max_chars)
     if suffix in (".docx",".pptx",".xlsx",".odt",".odp",".zip"): return _extract_zip_xml_text(file_data,suffix,max_chars)
-    if suffix in (".txt",".csv",".md",".rtf",".json",".xml",".html",".htm",".log",".yaml",".yml"):
+    if suffix in (".txt",".csv",".md",".rtf",".json",".html",".htm"):
         return _clean_extracted_text(file_data.decode("utf-8","ignore"),max_chars)
     if suffix in (".doc",".ppt"):
         return _extract_legacy_binary_text(file_data,max_chars)
@@ -2232,254 +1925,6 @@ def _resource_ocr_script(form_id,file_id,text_id,status_id):
 
 def _timetable_ocr_script(form_id,file_id,text_id,status_id):
     return _resource_ocr_script(form_id,file_id,text_id,status_id)
-
-def _assistant_query_tokens(question):
-    q = re.sub(r"\s+", " ", (question or "").lower()).strip()
-    # Common words which do not help locate a fact in a college document.
-    stop = {
-        "what","when","where","which","who","why","how","does","did","are","the",
-        "and","for","from","with","about","please","tell","show","give","can","you",
-        "our","this","that","have","has","into","there","their","your","student","students",
-        "vybe","assistant","tell","me","is","of","to","in","on","a","an","do","i","my"
-    }
-    aliases = {
-        "bsc":"b.sc", "bachelor":"b.sc", "computer":"computer", "cs":"computer science",
-        "sem":"semester", "sem1":"semester 1", "semester1":"semester 1", "sem2":"semester 2", "semester2":"semester 2",
-        "eligibility":"eligibility", "eligible":"eligibility", "qualification":"eligibility",
-        "fee":"fees", "fees":"fees", "admission":"admission", "apply":"admission",
-        "teacher":"faculty", "teachers":"faculty", "professor":"faculty", "prof":"faculty",
-        "sir":"faculty", "mam":"faculty", "maam":"faculty", "instructor":"faculty",
-    }
-    raw = re.findall(r"[a-z0-9.]+", q)
-    expanded=[]
-    for w in raw:
-        if w in stop: continue
-        w=aliases.get(w,w)
-        for part in re.findall(r"[a-z0-9]+", w):
-            if len(part)>=2 and part not in stop:
-                expanded.append(part)
-    # Preserve useful multi-word phrases as well as individual terms.
-    phrases=[]
-    for phrase in ("semester 1","semester 2","semester 3","semester 4","semester 5","semester 6","semester 7","semester 8",
-                   "computer science","minor in entrepreneurship","object oriented programming using python",
-                   "admission link","online admission","class 12","class xii"):
-        if phrase in q: phrases.append(phrase)
-    return q, list(dict.fromkeys(expanded))[:24], phrases
-
-
-def _assistant_knowledge_rows(con, question, limit=8):
-    """Rank knowledge by exact phrases, title/heading matches and term coverage."""
-    q,tokens,phrases = _assistant_query_tokens(question)
-    rows=con.execute("SELECT id,title,description,original_name,content,source_type,created_at,updated_at FROM assistant_knowledge ORDER BY id DESC LIMIT 100").fetchall()
-    scored=[]
-    for r in rows:
-        title=(r["title"] or "").lower()
-        desc=(r["description"] or "").lower()
-        name=(r["original_name"] or "").lower()
-        content=(r["content"] or "").lower()
-        hay=title+" "+desc+" "+name+" "+content
-        score=0
-        for phrase in phrases:
-            if phrase in hay: score += 18
-        for t in tokens:
-            if re.search(r"\b"+re.escape(t)+r"\b", title): score += 10
-            elif re.search(r"\b"+re.escape(t)+r"\b", desc): score += 5
-            elif re.search(r"\b"+re.escape(t)+r"\b", hay): score += 2
-        if not tokens and r["source_type"]=="note": score=1
-        if score: scored.append((score,int(r["id"]),r))
-    scored.sort(key=lambda x:(x[0],x[1]), reverse=True)
-    return [x[2] for x in scored[:limit]]
-
-
-def _assistant_make_chunks(content):
-    """Split a source into heading-aware chunks instead of isolated sentences."""
-    text=re.sub(r"\r\n?", "\n", content or "").strip()
-    if not text: return []
-    lines=text.split("\n")
-    chunks=[]; heading=[]; buf=[]
-    heading_re=re.compile(r"^(?:#{1,6}\s+|(?:I|II|III|IV)\s+Year\b|Semester\s+[1-8]\b|[A-Z][A-Za-z0-9 &(),.'’:/\-]{2,80}:\s*$)", re.I)
-    def flush():
-        nonlocal buf
-        if buf:
-            body="\n".join(buf).strip()
-            if len(body)>=25: chunks.append((" > ".join(heading[-3:]),body))
-            buf=[]
-    for line in lines:
-        clean=line.strip()
-        if not clean:
-            if buf: flush()
-            continue
-        if heading_re.match(clean) and len(clean)<130:
-            flush()
-            h=re.sub(r"^#+\s*", "", clean).strip()
-            if h.endswith(":"): h=h[:-1]
-            heading.append(h)
-            heading=heading[-4:]
-            continue
-        buf.append(clean)
-        if len(" ".join(buf))>=1200: flush()
-    flush()
-    # Also make short line-level units available for timetable/OCR style sources.
-    if len(chunks)<4:
-        units=[]
-        for line in lines:
-            line=re.sub(r"\s+"," ",line).strip(" -•\t")
-            if len(line)>=20: units.append(("",line))
-        chunks.extend(units[:300])
-    return chunks
-
-
-def _clean_answer_text(text, limit=500):
-    text=re.sub(r"\[[^\]]*\]", "", text or "")
-    text=re.sub(r"\s+", " ", text).strip(" -•\t")
-    return text[:limit].rstrip(" .")
-
-
-def _question_intent(q):
-    q=re.sub(r"\s+", " ", (q or "").lower()).strip()
-    if any(x in q for x in ("eligibility", "eligible", "qualification", "qualify", "criteria", "requirements to apply")):
-        return "eligibility"
-    if any(x in q for x in ("admission link", "apply link", "application link", "where do i apply", "how do i apply", "admission website")):
-        return "admission"
-    m=re.search(r"(?:semester|sem)\s*[- ]?([1-8])\b", q)
-    if m and any(x in q for x in ("subject", "subjects", "course", "courses", "paper", "papers", "study", "syllabus")):
-        return "semester_subjects_"+m.group(1)
-    if any(x in q for x in ("subjects in semester", "courses in semester", "what do i study in semester", "semester subjects")):
-        return "semester_subjects"
-    if any(x in q for x in ("who teaches", "teacher", "teachers", "faculty", "professor", "instructor")):
-        return "faculty"
-    if any(x in q for x in ("fee", "fees", "tuition", "cost of admission")):
-        return "fees"
-    if any(x in q for x in ("duration", "how many years", "years is", "course length")):
-        return "duration"
-    if any(x in q for x in ("degree", "course name", "program name", "programme name")):
-        return "course_name"
-    return "general"
-
-
-def _find_source_passages(rows, question, max_chunks=30):
-    q,tokens,phrases=_assistant_query_tokens(question)
-    candidates=[]
-    for r in rows:
-        content=(r["content"] or "").strip()
-        if not content: continue
-        title=(r["title"] or r["original_name"] or "VYBE knowledge")
-        for heading,unit in _assistant_make_chunks(content):
-            low=(heading+" "+unit).lower()
-            score=0
-            matched=0
-            for phrase in phrases:
-                if phrase in low: score += 24
-            for t in tokens:
-                if re.search(r"\b"+re.escape(t)+r"\b", low):
-                    matched += 1; score += 5
-            if q and q in low: score += 40
-            if tokens and matched:
-                score += int(30*matched/max(1,len(tokens)))
-            if score:
-                candidates.append((score,matched,int(r["id"]),title,heading,unit))
-    candidates.sort(key=lambda x:(x[0],x[1],x[2]), reverse=True)
-    return candidates[:max_chunks]
-
-
-def _assistant_knowledge_answer(con, question):
-    """Answer the question, not the document.
-
-    The assistant intentionally returns a tiny fact/list extracted from the
-    strongest source section. It does not echo long source passages.
-    """
-    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
-    if not q: return ""
-
-    # Do not guess when the question depends on missing conversation context.
-    # For example, "what is his name?" has no identifiable person in the
-    # question/source, so returning the first name found in a document is wrong.
-    vague_referent = re.search(r"\b(his|her|their|this|that|he|she|they)\b", q)
-    bare_name_question = bool(re.search(r"\b(what is|what's|tell me)\s+(his|her|their)\s+name\b", q))
-    if bare_name_question or (vague_referent and len(re.findall(r"[a-z0-9]+", q)) <= 8):
-        return "I need the person or subject you mean. Please mention their name, role, or the message you are referring to."
-
-    rows=_assistant_knowledge_rows(con, question, limit=20)
-    if not rows: return ""
-    intent=_question_intent(q)
-    candidates=_find_source_passages(rows, question, 60)
-    if not candidates: return ""
-
-    # Semester subject questions: collect the actual course rows from the
-    # requested semester instead of returning prospectus prose.
-    if intent.startswith("semester_subjects"):
-        sem=intent.split("_")[-1] if intent[-1].isdigit() else None
-        hits=[]
-        for _,_,_,_,heading,unit in candidates:
-            low=(heading+" "+unit).lower()
-            if sem and not re.search(r"(?:semester|sem)\s*[- ]?"+sem+r"\b", low):
-                continue
-            for line in re.split(r"\n|(?<=\.)\s+(?=[A-Z])", unit):
-                line=_clean_answer_text(line, 260)
-                if not line: continue
-                if re.search(r"\b(?:DSC|GE|AEC|SEC|VAC|DSE)\b", line, re.I) or "credits" in line.lower():
-                    if line not in hits: hits.append(line)
-        if hits:
-            return "📚 Semester "+sem+" subjects:\n"+"\n".join("• "+x for x in hits[:10])
-
-    if intent=="eligibility":
-        hits=[]
-        for score,_,_,_,heading,unit in candidates:
-            if "eligib" not in (heading+" "+unit).lower(): continue
-            # Prefer the sentence(s) containing eligibility/subject requirements.
-            for sent in re.split(r"(?<=[.!?])\s+|\n", unit):
-                sent=_clean_answer_text(sent, 420)
-                if sent and ("eligib" in sent.lower() or "mathematics" in sent.lower() or "recognized board" in sent.lower()):
-                    if sent not in hits: hits.append(sent)
-        if hits:
-            return "🎓 Eligibility:\n"+"\n".join("• "+x for x in hits[:2])
-
-    if intent=="admission":
-        for _,_,_,_,_,unit in candidates:
-            urls=re.findall(r"https?://[^\s)]+", unit)
-            if urls:
-                return "🔗 Admission link: "+urls[0].rstrip(".,")
-        for _,_,_,_,_,unit in candidates:
-            if "admission" in unit.lower():
-                sent=next((_clean_answer_text(x,350) for x in re.split(r"\n|(?<=[.!?])\s+",unit) if "admission" in x.lower()),"")
-                if sent: return "🎓 Admission: "+sent
-
-    if intent=="faculty":
-        hits=[]
-        for _,_,_,_,_,unit in candidates:
-            for line in unit.splitlines():
-                line=_clean_answer_text(line,220)
-                if line and re.search(r"\b(?:Ms|Mr|Dr|Prof|Professor)\.?\s+[A-Z]", line):
-                    if line not in hits: hits.append(line)
-        if hits:
-            return "👨‍🏫 Faculty:\n"+"\n".join("• "+x for x in hits[:8])
-
-    if intent=="duration":
-        for _,_,_,_,_,unit in candidates:
-            for sent in re.split(r"\n|(?<=[.!?])\s+",unit):
-                if re.search(r"\b(?:four|4)\s*(?:years|year)\b",sent,re.I):
-                    return "⏳ Duration: "+_clean_answer_text(sent,250)+"."
-
-    # General questions: only answer when there is strong evidence that the
-    # selected passage actually addresses the question. Otherwise say that the
-    # source does not contain a supported answer instead of returning an
-    # unrelated sentence.
-    best=candidates[0]
-    if best[0] < 12 or best[1] < 1:
-        return "I couldn't find a specific answer to that in the VYBE knowledge."
-    unit=best[5]
-    sentences=[_clean_answer_text(x,360) for x in re.split(r"\n|(?<=[.!?])\s+",unit)]
-    sentences=[x for x in sentences if x]
-    if sentences:
-        # Choose the sentence with the most question-term coverage.
-        _,tokens,_=_assistant_query_tokens(question)
-        scored=[]
-        for sent in sentences:
-            low=sent.lower(); cov=sum(bool(re.search(r"\b"+re.escape(t)+r"\b",low)) for t in tokens)
-            scored.append((cov,-len(sent),sent))
-        scored.sort(reverse=True)
-        return "🧠 "+scored[0][2]+("." if not scored[0][2].endswith(('.', '?', '!')) else "")
-    return ""
 
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
@@ -2558,7 +2003,7 @@ def _free_vybe_answer(con, question):
             if not terms or all(t in hay for t in terms[:4]): matches.append(r)
         matches=matches or rows[:3]
         teacher_intent=any(x in q for x in ("teacher","teachers","faculty","professor","prof","instructor","who teaches","teacher name","faculty name","sir","mam","ma'am"))
-        lines=["🗓️ Timetable information from VYBE:", "[[TIMETABLE_IDS:" + ",".join(str(int(r["id"])) for r in matches[:3]) + "]]" ]
+        lines=["🗓️ Timetable information from VYBE:"]
         for r in matches[:3]:
             text=(r["assistant_text"] or "").strip()
             if teacher_intent and text:
@@ -2593,10 +2038,6 @@ def _free_vybe_answer(con, question):
         for r in rows[:5]:
             lines.append(f"• {r['title']} — {r['event_date']} · {r['event_time'] or 'Time TBA'} · {r['location'] or 'Location TBA'}")
         return "\n".join(lines)
-
-    knowledge_answer=_assistant_knowledge_answer(con,question)
-    if knowledge_answer:
-        return knowledge_answer
 
     resource_words = ("note", "notes", "pyq", "pyqs", "assignment", "assignments", "study material", "syllabus", "file", "files", "resource", "resources", "document", "documents", "pdf", "word", "ppt", "slide", "where is", "where are", "find", "read", "contains", "written")
     if any(x in q for x in resource_words):
@@ -2640,69 +2081,10 @@ def _free_vybe_answer(con, question):
 @app.route("/chat")
 @student_required
 def chat_alias():
-    # Keep the legacy /chat URL, but open the Community chooser first.
+    # The header's Chat button previously pointed to an endpoint that was not
+    # registered in this build. Keep Chat as a stable entry point without
+    # creating a second chat system.
     return redirect(url_for("community"))
-
-
-@app.route("/student/notifications", methods=["GET"])
-@student_required
-def student_notifications():
-    con = db()
-    try:
-        my_id = session["student_db_id"]
-        try:
-            rows = con.execute(
-                "SELECT sn.id, sn.reply_message_id, sn.title, sn.message, sn.created_at, sn.read_at, s.name AS sender_name "
-                "FROM student_notifications sn LEFT JOIN students s ON s.id=sn.sender_student_id "
-                "WHERE sn.recipient_student_id=? ORDER BY sn.id DESC LIMIT 20",
-                (my_id,),
-            ).fetchall()
-        except Exception:
-            # Notification storage is optional. Keep the bell empty if an older
-            # deployment has not completed the migration yet.
-            try: con.rollback()
-            except Exception: pass
-            return jsonify({"unread": 0, "notifications": []})
-        unread = sum(1 for r in rows if not r["read_at"])
-        return jsonify({"unread": unread, "notifications": [{
-            "id": int(r["id"]),
-            "reply_message_id": int(r["reply_message_id"]) if r["reply_message_id"] else None,
-            "title": r["title"],
-            "message": r["message"],
-            "created_at": r["created_at"],
-            "read": bool(r["read_at"]),
-            "sender_name": r["sender_name"] or "Student",
-        } for r in rows]})
-    finally:
-        con.close()
-
-
-@app.route("/student/notifications/read", methods=["POST"])
-@student_required
-def student_notifications_read():
-    con = db()
-    try:
-        my_id = session["student_db_id"]
-        nid = request.form.get("notification_id", "").strip()
-        if nid:
-            try:
-                con.execute("UPDATE student_notifications SET read_at=? WHERE id=? AND recipient_student_id=?", (now(), int(nid), my_id))
-            except (TypeError, ValueError):
-                pass
-        else:
-            con.execute("UPDATE student_notifications SET read_at=? WHERE recipient_student_id=? AND read_at IS NULL", (now(), my_id))
-        con.commit()
-        return jsonify({"ok": True})
-    except Exception:
-        try:
-            con.rollback()
-        except Exception:
-            pass
-        # Notifications are optional; a missing/older notification table must
-        # never break the student's chat or navigation.
-        return jsonify({"ok": False})
-    finally:
-        con.close()
 
 
 @app.route("/announcements")
@@ -2817,47 +2199,12 @@ def assistant():
     if question and enabled:
         answer = _free_vybe_answer(con, question)
         sources = _campus_search(con, question, 6)
+    con.close()
     if not enabled:
-        con.close()
         body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
         return layout("Ask VYBE", body)
     source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
-
-    # Timetable questions show the actual uploaded timetable in the answer.
-    timetable_html = ""
-    marker = re.search(r"\[\[TIMETABLE_IDS:([0-9,]+)\]\]", answer or "")
-    if marker:
-        ids = []
-        for raw_id in marker.group(1).split(","):
-            try:
-                ids.append(int(raw_id))
-            except ValueError:
-                pass
-        answer = re.sub(r"\n?\[\[TIMETABLE_IDS:[0-9,]+\]\]", "", answer or "").strip()
-        tt_cards = []
-        for tid in ids[:3]:
-            tt = con.execute("SELECT id,title,original_name,created_at FROM timetables WHERE id=?", (tid,)).fetchone()
-            if not tt:
-                continue
-            title = esc(tt["title"] or tt["original_name"] or "Timetable")
-            tt_cards.append(
-                f'<div style="margin-top:16px;padding:14px;border:1px solid rgba(58,145,214,.22);border-radius:18px;background:rgba(4,12,20,.65)">'
-                f'<strong style="display:block;margin-bottom:10px">🗓️ {title}</strong>'
-                f'<iframe src="/timetable-file/{int(tt["id"])}" title="{title}" style="width:100%;height:680px;border:0;border-radius:14px;background:#08080a"></iframe>'
-                f'<a class="btn dark" style="margin-top:10px" href="/timetable-file/{int(tt["id"])}" target="_blank" rel="noopener">Open full timetable →</a>'
-                f'</div>'
-            )
-        timetable_html = "".join(tt_cards)
-
-    # The timetable cards above still use the DB connection, so close it only
-    # after all timetable data has been fetched.
-    con.close()
-
-    answer_html = esc(answer).replace("\n", "<br>")
-    if timetable_html:
-        answer_html += timetable_html
-
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{esc(answer)}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
@@ -2882,7 +2229,7 @@ def dashboard():
 <div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p></div>
 <div class="student-feature-list">
 <a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/community"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community</strong><small>Chat with students or solve campus problems.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/chat"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community Chat</strong><small>Connect, discuss, solve together.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small></span><span class="student-arrow">›</span></a>
 </div>
@@ -2953,9 +2300,9 @@ def issues():
     if request.method=="POST":
         title=request.form.get("title","").strip()[:120]; desc=request.form.get("description","").strip()[:2000]; cat=request.form.get("category","").strip()[:80]
         if not title or not desc: con.close(); flash("Please enter a title and description."); return redirect(url_for("issues"))
-        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community_problems"))
+        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community"))
     rows=con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); saved=con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); con.close()
-    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
+    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
     saved_cards="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
     body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="campus-tools"><a class="campus-tool" href="/timetable"><span class="campus-tool-icon">🗓️</span><span><strong>Timetable</strong><small>Open the latest class schedule</small></span><b>→</b></a><a class="campus-tool" href="/academics"><span class="campus-tool-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs &amp; study material</small></span><b>→</b></a></div><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
     return layout("Campus",body)
@@ -2966,524 +2313,40 @@ def _render_solution_card(row,my_student_id):
     button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\">💡 Helpful answer</button></form>"
     return f'<div class="bubble"><strong>{esc(row["author_name"])}</strong><div>{esc(row["text"])}</div><div class="small">{esc(row["created_at"])}</div>{button}</div>'
 
-@app.route("/community", methods=["GET"])
+@app.route("/community", methods=["GET", "POST"])
 @student_required
 def community():
-    # Community is a clean launcher page. Chat and campus problems are separate pages.
-    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
-<section class="section community-choice-section">
-  <div class="community-choice-grid">
-    <a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-    <a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-  </div>
-</section>'''
-    return layout("Community", body)
-
-
-@app.route("/community/chat", methods=["GET", "POST"])
-@student_required
-def community_chat():
     con = db()
-    my_id = session["student_db_id"]
-
     if request.method == "POST":
-        action = (request.form.get("action") or "send").strip().lower()
-
-        # A student can delete only their own messages. Deleting remains
-        # available even when the admin temporarily turns chat sending off.
-        if action == "delete_selected":
-            raw_ids = request.form.getlist("message_ids")
-            ids = []
-            for raw in raw_ids:
-                try:
-                    mid = int(raw)
-                    if mid > 0:
-                        ids.append(mid)
-                except (TypeError, ValueError):
-                    continue
-            ids = list(dict.fromkeys(ids))
-            if ids:
-                placeholders = ",".join("?" for _ in ids)
-                try:
-                    con.execute(
-                        f"DELETE FROM community_messages WHERE student_id=? AND id IN ({placeholders})",
-                        [my_id] + ids,
-                    )
-                    con.commit()
-                    flash("Selected messages deleted.")
-                except Exception:
-                    con.rollback()
-                    app.logger.exception("Selected community messages delete failed")
-                    flash("We couldn't delete those messages right now. Please try again.")
-            else:
-                flash("Select at least one of your messages to delete.")
-            con.close()
-            return redirect(url_for("community_chat"))
-
-        if action == "delete_all":
-            try:
-                con.execute("DELETE FROM community_messages WHERE student_id=?", (my_id,))
-                con.commit()
-                flash("All of your community messages were deleted.")
-            except Exception:
-                con.rollback()
-                app.logger.exception("All community messages delete failed")
-                flash("We couldn't delete your messages right now. Please try again.")
-            con.close()
-            return redirect(url_for("community_chat"))
-
-        # Normal message sending is controlled by the admin switch.
-        chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-        text = request.form.get("message", "").strip()[:1500]
-        if not chat_enabled:
-            con.close()
-            flash("Community Chat is currently turned off by the admin.")
-            return redirect(url_for("community_chat"))
-        if not text:
-            con.close()
-            return redirect(url_for("community_chat"))
         try:
-            reply_to = request.form.get("reply_to_id", "").strip()
-            reply_id = None
-            if reply_to:
-                try:
-                    candidate = int(reply_to)
-                    if candidate > 0 and con.execute("SELECT id FROM community_messages WHERE id=?", (candidate,)).fetchone():
-                        reply_id = candidate
-                except (TypeError, ValueError):
-                    reply_id = None
-            reply_recipient_id = None
-            if reply_id:
-                original = con.execute("SELECT student_id FROM community_messages WHERE id=?", (reply_id,)).fetchone()
-                if original and int(original["student_id"]) != int(my_id):
-                    reply_recipient_id = int(original["student_id"])
-
-            created_at = now()
-            con.execute(
-                "INSERT INTO community_messages(student_id,message,created_at,reply_to_id) VALUES(?,?,?,?)",
-                (my_id, text, created_at, reply_id),
-            )
-
-            # Commit the chat message FIRST. Notification storage is deliberately
-            # isolated so a notification/database issue can NEVER make the actual
-            # student message fail.
-            con.commit()
-
-            # If this is a reply to another student, create a personal notification
-            # for the original sender. This does not notify the person who replied.
-            if reply_recipient_id:
-                try:
-                    sent_row = con.execute(
-                        "SELECT id FROM community_messages WHERE student_id=? AND created_at=? ORDER BY id DESC LIMIT 1",
-                        (my_id, created_at),
-                    ).fetchone()
-                    reply_message_id = int(sent_row["id"]) if sent_row else None
-                    sender_row = con.execute("SELECT name FROM students WHERE id=?", (my_id,)).fetchone()
-                    sender_name = sender_row["name"] if sender_row else "A student"
-                    con.execute(
-                        "INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at) VALUES(?,?,?,?,?,?,NULL)",
-                        (reply_recipient_id, my_id, reply_message_id, "New reply in Community Chat", f"{sender_name} replied to your message: {text[:180]}", created_at),
-                    )
-                    con.commit()
-                except Exception:
-                    # Notifications are optional; never break Community Chat.
-                    try: con.rollback()
-                    except Exception: pass
-                    app.logger.exception("Student reply notification failed; chat message was preserved")
-
-            con.close()
-            return redirect(url_for("community_chat"))
-        except Exception:
-            try: con.rollback()
-            except Exception: pass
-            con.close()
-            app.logger.exception("Community chat message post failed")
-            flash("We couldn't send that message right now. Please try again.")
-            return redirect(url_for("community_chat"))
-
-    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-    chat_rows = con.execute(
-        "SELECT cm.*, s.name, r.message AS reply_message, rs.name AS reply_name FROM community_messages cm JOIN students s ON s.id=cm.student_id LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id ORDER BY cm.id ASC LIMIT 300"
-    ).fetchall()
-    con.close()
-
-    bubbles = []
-    for r in chat_rows:
-        mine = r["student_id"] == my_id
-        mine_class = " mine" if mine else ""
-        mine_flag = "1" if mine else "0"
-        reply_html = ""
-        if r["reply_to_id"] and r["reply_message"]:
-            reply_html = (
-                f'<button type="button" class="community-reply-reference" data-reply-target="{r["reply_to_id"]}">'
-                f'<strong>Replying to {esc(r["reply_name"] or "Student")}</strong>'
-                f'<span>{esc(r["reply_message"][:120])}</span></button>'
-            )
-        bubbles.append(
-            f'<div class="community-message{mine_class}" id="community-msg-{r["id"]}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
-            f'<div class="community-message-content">'
-            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
-            f'{reply_html}'
-            f'<div class="community-message-text">{esc(r["message"])}</div>'
-            f'</div></div>'
-        )
-    chat_bubbles = "".join(bubbles)
-
-    status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
-    empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
-
-    select_controls = f'''<div class="community-chat-tools">
-      <div class="community-selection-actions" id="community-selection-actions">
-        <span class="community-selection-count" id="community-selection-count">0 selected</span>
-        <form id="community-delete-form" class="community-delete-toolbar" method="post" action="/community/chat">
-          <input type="hidden" name="action" value="delete_selected" id="community-delete-action">
-          <button class="community-delete-selected" type="submit" id="community-delete-selected">Delete selected</button>
-          <button class="community-delete-all" type="button" id="community-delete-all">Delete all</button>
-          <button class="community-selection-done" type="button" id="community-selection-done">Done</button>
-        </form>
-      </div>
-      <div class="community-select-help" id="community-select-help">Tap your message to select it</div>
-    </div>'''
-
-    if not chat_enabled:
-        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
-        <div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still select and delete your own messages.</div>'''
-    else:
-        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
-        <div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div>
-        <form class="community-chat-form" method="post" action="/community/chat" id="community-send-form">
-            <input type="hidden" name="reply_to_id" id="community-reply-to" value="">
-            <textarea name="message" maxlength="1500" rows="1" placeholder="Message..." required autocomplete="off" aria-label="Message"></textarea>
-        </form>
-        <div class="community-chat-keyboard-hint">Enter sends · Shift + Enter makes a new line</div>'''
-
-    body = f'''<section class="section community-page-section community-chat-page-section">
-      <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
-      <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
-    </section>
-    <script>
-    (function() {{
-      const selected = new Set();
-      const actionBar = document.getElementById('community-selection-actions');
-      const countEl = document.getElementById('community-selection-count');
-      const helpEl = document.getElementById('community-select-help');
-      const deleteForm = document.getElementById('community-delete-form');
-      const deleteAction = document.getElementById('community-delete-action');
-      const doneBtn = document.getElementById('community-selection-done');
-      const deleteSelectedBtn = document.getElementById('community-delete-selected');
-      const deleteAllBtn = document.getElementById('community-delete-all');
-
-      const chatWindow = document.querySelector('.community-chat-window');
-      const liveMessagesUrl = '/community/chat/messages';
-      let liveTimer = null;
-      let liveBusy = false;
-      let liveStarted = false;
-
-      function escClient(value) {{
-        const div = document.createElement('div');
-        div.textContent = value == null ? '' : String(value);
-        return div.innerHTML;
-      }}
-
-      function buildLiveMessage(m) {{
-        const mine = String(m.student_id) === String({my_id});
-        const wrap = document.createElement('div');
-        wrap.className = 'community-message' + (mine ? ' mine' : '');
-        wrap.id = 'community-msg-' + m.id;
-        wrap.dataset.messageId = m.id;
-        wrap.dataset.mine = mine ? '1' : '0';
-        wrap.setAttribute('role', 'button');
-        wrap.tabIndex = 0;
-        wrap.setAttribute('aria-pressed', selected.has(String(m.id)) ? 'true' : 'false');
-
-        const content = document.createElement('div');
-        content.className = 'community-message-content';
-        const head = document.createElement('div');
-        head.className = 'community-message-head';
-        const strong = document.createElement('strong');
-        strong.textContent = m.name || 'Student';
-        head.appendChild(strong);
-        content.appendChild(head);
-
-        if (m.reply_to_id && m.reply_message) {{
-          const ref = document.createElement('button');
-          ref.type = 'button';
-          ref.className = 'community-reply-reference';
-          ref.dataset.replyTarget = m.reply_to_id;
-          const rt = document.createElement('strong');
-          rt.textContent = 'Replying to ' + (m.reply_name || 'Student');
-          const rp = document.createElement('span');
-          rp.textContent = String(m.reply_message).slice(0, 120);
-          ref.appendChild(rt); ref.appendChild(rp);
-          content.appendChild(ref);
-        }}
-        const text = document.createElement('div');
-        text.className = 'community-message-text';
-        text.textContent = m.message || '';
-        content.appendChild(text);
-        wrap.appendChild(content);
-        return wrap;
-      }}
-
-      function bindLiveMessage(msg) {{
-        if (!msg || msg.dataset.liveBound === '1') return;
-        msg.dataset.liveBound = '1';
-        if (msg.dataset.mine === '1') {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('a,button,textarea,input,form')) return;
-            toggleMessage(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
-          }});
-        }} else {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('.community-reply-reference')) return;
-            startReply(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
-          }});
-        }}
-        const ref = msg.querySelector('.community-reply-reference');
-        if (ref) ref.addEventListener('click', function(e) {{
-          e.preventDefault(); e.stopPropagation();
-          const target = document.getElementById('community-msg-' + ref.dataset.replyTarget);
-          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
-        }});
-      }}
-
-      async function refreshLiveChat(forceBottom) {{
-        if (!chatWindow || liveBusy) return;
-        liveBusy = true;
-        try {{
-          const wasNearBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 90;
-          const response = await fetch(liveMessagesUrl + '?t=' + Date.now(), {{credentials:'same-origin', cache:'no-store', headers:{{'Accept':'application/json'}}}});
-          if (!response.ok) return;
-          const data = await response.json();
-          const messages = Array.isArray(data.messages) ? data.messages : [];
-          const currentIds = new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x => x.dataset.messageId));
-          const incomingIds = new Set(messages.map(m => String(m.id)));
-          messages.forEach(function(m) {{
-            const id = String(m.id);
-            if (!currentIds.has(id)) chatWindow.appendChild(buildLiveMessage(m));
-          }});
-          Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(el) {{
-            if (!incomingIds.has(el.dataset.messageId)) {{
-              selected.delete(el.dataset.messageId);
-              el.remove();
-            }}
-          }});
-          chatWindow.querySelectorAll('.community-message').forEach(bindLiveMessage);
-          updateSelectionUI();
-          if (messages.length && (forceBottom || wasNearBottom)) chatWindow.scrollTo({{top:chatWindow.scrollHeight, behavior: forceBottom ? 'smooth' : 'auto'}});
-          if (!liveStarted && messages.length) {{ liveStarted = true; chatWindow.scrollTop = chatWindow.scrollHeight; }}
-        }} catch (_) {{
-          // Temporary network errors are ignored; the next poll retries automatically.
-        }} finally {{ liveBusy = false; }}
-      }}
-
-      function startLiveChat() {{
-        if (!chatWindow || liveTimer) return;
-        refreshLiveChat(false);
-        liveTimer = setInterval(function() {{ refreshLiveChat(false); }}, 500);
-      }}
-
-      function updateSelectionUI() {{
-        document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
-          const id = msg.getAttribute('data-message-id');
-          const on = selected.has(id);
-          msg.classList.toggle('is-selected', on);
-          msg.setAttribute('aria-pressed', on ? 'true' : 'false');
-        }});
-        const has = selected.size > 0;
-        if (actionBar) actionBar.classList.toggle('is-visible', has);
-        if (helpEl) helpEl.classList.toggle('is-hidden', has);
-        if (countEl) countEl.textContent = selected.size + ' selected';
-        if (deleteSelectedBtn) deleteSelectedBtn.disabled = !has;
-      }}
-
-      function toggleMessage(msg) {{
-        if (msg.getAttribute('data-mine') !== '1') return;
-        const id = msg.getAttribute('data-message-id');
-        if (!id) return;
-        if (selected.has(id)) selected.delete(id); else selected.add(id);
-        updateSelectionUI();
-      }}
-
-      document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
-        msg.addEventListener('click', function(e) {{
-          if (e.target.closest('a,button,textarea,input,form')) return;
-          toggleMessage(msg);
-        }});
-        msg.addEventListener('keydown', function(e) {{
-          if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
-        }});
-      }});
-
-      const replyBar = document.getElementById('community-reply-bar');
-      const replyTo = document.getElementById('community-reply-to');
-      const replyTitle = document.getElementById('community-reply-title');
-      const replyPreview = document.getElementById('community-reply-preview');
-      const replyCancel = document.getElementById('community-reply-cancel');
-      function clearReply() {{
-        if (replyTo) replyTo.value = '';
-        if (replyBar) replyBar.hidden = true;
-        if (replyTitle) replyTitle.textContent = 'Replying';
-        if (replyPreview) replyPreview.textContent = '';
-      }}
-      function startReply(msg) {{
-        if (!msg || !replyTo) return;
-        const id = msg.getAttribute('data-message-id');
-        const name = msg.querySelector('.community-message-head strong');
-        const text = msg.querySelector('.community-message-text');
-        if (!id || !text) return;
-        replyTo.value = id;
-        if (replyTitle) replyTitle.textContent = 'Replying to ' + (name ? name.textContent : 'Student');
-        if (replyPreview) replyPreview.textContent = text.textContent.slice(0, 120);
-        if (replyBar) replyBar.hidden = false;
-        if (sendBox) sendBox.focus();
-      }}
-      document.querySelectorAll('.community-message').forEach(function(msg) {{
-        if (msg.getAttribute('data-mine') !== '1') {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('.community-reply-reference')) return;
-            startReply(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
-          }});
-        }}
-      }});
-      document.querySelectorAll('.community-reply-reference').forEach(function(ref) {{
-        ref.addEventListener('click', function(e) {{
-          e.preventDefault(); e.stopPropagation();
-          const target = document.getElementById('community-msg-' + ref.getAttribute('data-reply-target'));
-          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
-        }});
-      }});
-      if (replyCancel) replyCancel.addEventListener('click', clearReply);
-
-      if (doneBtn) doneBtn.addEventListener('click', function() {{ selected.clear(); updateSelectionUI(); }});
-
-      if (deleteForm) deleteForm.addEventListener('submit', function(e) {{
-        if (!selected.size) {{ e.preventDefault(); alert('Tap one or more of your messages first.'); return; }}
-        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
-        selected.forEach(function(id) {{
-          const input = document.createElement('input');
-          input.type = 'hidden'; input.name = 'message_ids'; input.value = id; input.setAttribute('data-dynamic-message-id','1');
-          deleteForm.appendChild(input);
-        }});
-        if (!confirm('Delete ' + selected.size + ' selected message' + (selected.size > 1 ? 's' : '') + '?')) e.preventDefault();
-      }});
-
-      if (deleteAllBtn) deleteAllBtn.addEventListener('click', function() {{
-        if (!confirm('Delete all of your community messages? This cannot be undone.')) return;
-        if (!deleteForm || !deleteAction) return;
-        deleteAction.value = 'delete_all';
-        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
-        deleteForm.submit();
-      }});
-
-      const sendBox = document.querySelector('#community-send-form textarea[name="message"]');
-      if (sendBox) {{
-        const resize = function() {{ this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 140) + 'px'; }};
-        sendBox.addEventListener('input', resize);
-        sendBox.addEventListener('focus', function() {{
-          if (window.matchMedia('(max-width: 850px)').matches) document.body.classList.add('vybe-chat-composing');
-        }});
-        sendBox.addEventListener('blur', function() {{
-          setTimeout(function() {{
-            if (document.activeElement !== sendBox) document.body.classList.remove('vybe-chat-composing');
-          }}, 80);
-        }});
-        sendBox.addEventListener('keydown', function(e) {{
-          if (e.key === 'Escape') {{ this.blur(); return; }}
-          if (e.key === 'Enter' && !e.shiftKey) {{
-            e.preventDefault();
-            const form = document.getElementById('community-send-form');
-            if (this.value.trim() && form) {{
-              const messageText = this.value.trim();
-              const formData = new FormData(form);
-              this.value = '';
-              this.style.height = 'auto';
-              clearReply();
-              this.disabled = true;
-              fetch(form.action, {{method:'POST', body:formData, credentials:'same-origin', headers:{{'X-VYBE-Live-Chat':'1'}}}})
-                .then(function() {{ return refreshLiveChat(true); }})
-                .catch(function() {{ sendBox.value = messageText; resize.call(sendBox); }})
-                .finally(function() {{ sendBox.disabled = false; sendBox.focus(); }});
-            }}
-          }}
-        }});
-      }}
-      window.addEventListener('resize', function() {{
-        if (!window.matchMedia('(max-width: 850px)').matches) document.body.classList.remove('vybe-chat-composing');
-      }});
-      updateSelectionUI();
-      startLiveChat();
-    }})();
-    </script>'''
-    return layout("Chat with Students", body)
-
-
-
-@app.route("/community/chat/messages", methods=["GET"])
-@student_required
-def community_chat_messages():
-    """Lightweight live-chat endpoint used by the chat page polling loop."""
-    con = db()
-    try:
-        rows = con.execute(
-            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-            "s.name, r.message AS reply_message, rs.name AS reply_name "
-            "FROM community_messages cm "
-            "JOIN students s ON s.id=cm.student_id "
-            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-            "LEFT JOIN students rs ON rs.id=r.student_id "
-            "ORDER BY cm.id ASC LIMIT 300"
-        ).fetchall()
-        return jsonify({"messages": [
-            {
-                "id": int(r["id"]),
-                "student_id": int(r["student_id"]),
-                "name": r["name"],
-                "message": r["message"],
-                "created_at": r["created_at"],
-                "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
-                "reply_message": r["reply_message"],
-                "reply_name": r["reply_name"],
-            } for r in rows
-        ]})
-    finally:
-        con.close()
-
-
-@app.route("/community/problems", methods=["GET", "POST"])
-@student_required
-def community_problems():
-    con = db()
-    if request.method == "POST":
-        try: iid = int(request.form.get("issue_id", "0"))
-        except (TypeError, ValueError): iid = 0
+            iid = int(request.form.get("issue_id", "0"))
+        except (TypeError, ValueError):
+            iid = 0
         text = request.form.get("text", "").strip()[:1500]
         if iid <= 0 or not text:
-            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community_problems"))
+            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community"))
         try:
+            # Any approved student may solve any other student's problem.
             issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
             if not issue:
-                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community_problems"))
+                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community"))
             if issue["student_id"] == session["student_db_id"]:
-                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community_problems"))
+                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community"))
             con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
-            con.commit(); con.close(); flash("Solution posted successfully."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+            con.commit()
+            con.close()
+            flash("Solution posted successfully.")
+            return redirect(url_for("community") + f"#problem-{iid}")
         except Exception:
-            con.rollback(); con.close(); app.logger.exception("Community solution post failed")
-            flash("We couldn't post that solution right now. Please try again."); return redirect(url_for("community_problems"))
+            con.rollback()
+            con.close()
+            app.logger.exception("Community solution post failed")
+            flash("We couldn't post that solution right now. Please try again.")
+            return redirect(url_for("community"))
     issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
     solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
     by_issue = {}
-    for sol in solutions: by_issue.setdefault(sol["issue_id"], []).append(sol)
+    for s in solutions: by_issue.setdefault(s["issue_id"], []).append(s)
     blocks = ""
     for i in issues_rows:
         sols = by_issue.get(i["id"], [])
@@ -3491,13 +2354,11 @@ def community_problems():
         other_solution = any(s["student_id"] != session["student_db_id"] for s in sols)
         accept = ""
         if i["student_id"] == session["student_db_id"] and other_solution:
-            accept = f'''<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm('Accept a solution? This deletes the problem and its entire chat.')"><button class="btn good">&#10003; Accept solution &amp; delete chat</button></form>'''
-        empty_solutions = '<div class="empty">No solutions yet. Be the first to help.</div>'
-        blocks += f'''<div class="card community-problem-card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or empty_solutions}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark" type="submit">Post solution</button></form>{accept}</div>'''
+            accept = f'<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm(\'Accept a solution? This deletes the problem and its entire chat.\')"><button class="btn good">✓ Accept solution &amp; delete chat</button></form>'
+        blocks += f'''<div class="card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or '<div class="empty">No solutions yet. Be the first to help.</div>'}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark">Post solution</button></form>{accept}</div>'''
     con.close()
-    empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
-    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Share practical solutions for problems reported by students.</p><div class="actions"><a class="btn accent" href="/issues">＋ Report a problem</a></div></div><div class="community-problem-list">{blocks or empty_problems}</div></section>'''
-    return layout("Solve Campus Problem", body)
+    body = f'''<section class="section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Solutions are visible immediately. There is no admin moderation. Only the original reporter can accept a solution, and the accept button appears after another student has contributed.</p></section><section class="section" style="display:grid;gap:16px">{blocks or '<div class="empty">No campus problems have been reported yet.</div>'}</section>'''
+    return layout("Community", body)
 
 
 @app.route("/community/solution/<int:solution_id>/helpful", methods=["POST"])
@@ -3506,15 +2367,15 @@ def mark_solution_helpful(solution_id):
     con=db()
     try:
         sol=con.execute("SELECT student_id FROM solutions WHERE id=?",(solution_id,)).fetchone()
-        if not sol: con.close(); flash("That solution is no longer available."); return redirect(url_for("community_problems"))
-        if sol["student_id"]==session["student_db_id"]: con.close(); flash("You cannot mark your own answer helpful."); return redirect(url_for("community_problems"))
+        if not sol: con.close(); flash("That solution is no longer available."); return redirect(url_for("community"))
+        if sol["student_id"]==session["student_db_id"]: con.close(); flash("You cannot mark your own answer helpful."); return redirect(url_for("community"))
         con.execute("INSERT INTO helpful_votes(solution_id,voter_id,created_at) VALUES(?,?,?)",(solution_id,session["student_db_id"],now()))
         con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+5,helpful_answers=COALESCE(helpful_answers,0)+1 WHERE id=?",(sol["student_id"],))
         con.commit(); flash("Marked as helpful. +5 VYBE points to the helper.")
     except Exception:
         con.rollback(); flash("You already marked this answer helpful, or it is no longer available.")
     finally: con.close()
-    return redirect(url_for("community_problems"))
+    return redirect(url_for("community"))
 
 
 @app.route("/community/problem/<int:iid>/accept", methods=["POST"])
@@ -3527,7 +2388,7 @@ def accept_solution(iid):
             con.close(); abort(403)
         accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id ASC LIMIT 1", (iid, session["student_db_id"])).fetchone()
         if not accepted:
-            con.close(); flash("A solution from another student is required first."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+            con.close(); flash("A solution from another student is required first."); return redirect(url_for("community") + f"#problem-{iid}")
         issue=con.execute("SELECT title,category,description FROM issues WHERE id=?",(iid,)).fetchone()
         accepted_detail=con.execute("SELECT text FROM solutions WHERE issue_id=? AND student_id=? ORDER BY id ASC LIMIT 1",(iid,accepted["student_id"])).fetchone()
         solver=con.execute("SELECT name FROM students WHERE id=?",(accepted["student_id"] ,)).fetchone()
@@ -3540,7 +2401,7 @@ def accept_solution(iid):
         con.commit()
         con.close()
         flash("Problem solved. The problem and its entire community chat were deleted.")
-        return redirect(url_for("community_problems"))
+        return redirect(url_for("community"))
     except Exception:
         try: con.rollback()
         except Exception: pass
@@ -3548,7 +2409,7 @@ def accept_solution(iid):
         except Exception: pass
         app.logger.exception("Accept solution failed for issue %s", iid)
         flash("We couldn't accept that solution right now. Please try again.")
-        return redirect(url_for("community_problems") + f"#problem-{iid}")
+        return redirect(url_for("community") + f"#problem-{iid}")
 
 
 # ---------------------------------------------------------------------------
@@ -3717,10 +2578,7 @@ def admin_panel():
       <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
       <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
-      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
-      <a class="card" href="/admin/assistant"><div class="kpi">🧠</div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
-      <a class="card" href="/admin/timetable"><div class="kpi">🗓️</div><h3>Timetable</h3><p class="muted">Post and manage student timetables separately.</p></a>
-      <a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
+      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a><a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
     </div>
     <section class="section grid2">
       <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
@@ -3749,59 +2607,20 @@ def admin_analytics():
 @app.route("/admin/assistant", methods=["GET", "POST"])
 @admin_required
 def admin_assistant():
-    con=db()
-    current=setting(con,"vybe_assistant_enabled","1")=="1"
-    if request.method=="POST":
-        action=request.form.get("action","").strip()
-        if action=="toggle":
-            set_setting(con,"vybe_assistant_enabled","0" if current else "1"); con.commit(); con.close()
-            flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
-            return redirect(url_for("admin_assistant"))
-        if action=="note":
-            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; content=request.form.get("content","").strip()[:50000]
-            if not title or not content: flash("Enter a title and information for assistant memory.")
-            else:
-                stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,None,None,None,None,content,"note",stamp,stamp)); con.commit(); flash("Assistant memory saved.")
-            con.close(); return redirect(url_for("admin_assistant"))
-        if action=="file":
-            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; f=request.files.get("file")
-            if not f or not f.filename:
-                flash("Choose a file first."); con.close(); return redirect(url_for("admin_assistant"))
-            original_name=Path(f.filename).name[:240]; suffix=Path(original_name).suffix.lower(); file_data=f.read()
-            if not file_data:
-                flash("The selected file is empty."); con.close(); return redirect(url_for("admin_assistant"))
-            content=request.form.get("assistant_text","").strip()[:50000] or _extract_doc_text(file_data,suffix,50000)
-            if not title: title=Path(original_name).stem[:150] or "VYBE Assistant file"
-            stored_name=secrets.token_hex(16)+(suffix if suffix else ""); mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
-            try: f.stream.seek(0); f.save(UPLOAD_DIR/stored_name)
-            except Exception: pass
-            readable=bool(content)
-            if not content: content=f"File uploaded as {original_name}. VYBE currently has no text extractor for this file type."
-            stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,original_name,stored_name,mime_type,file_data,content,"file",stamp,stamp)); con.commit(); con.close()
-            flash("File added to VYBE Assistant Knowledge. "+("Its text was indexed." if readable else "The file was saved, but its format could not be read automatically."))
-            return redirect(url_for("admin_assistant"))
-    rows=con.execute("SELECT id,title,description,original_name,source_type,content,created_at FROM assistant_knowledge ORDER BY id DESC").fetchall(); con.close()
-    state="🟢 ON" if current else "🔴 OFF"; action_label="🔴 Turn Assistant OFF" if current else "🟢 Turn Assistant ON"; tone="danger" if current else "good"
-    cards=[]
-    for r in rows:
-        title_html=esc(r["title"]); rid=int(r["id"]); date_html=esc(r["created_at"]); desc_html=esc(r["description"] or "No description"); preview=esc((r["content"] or "")[:280]); source=esc("Permanent note" if r["source_type"]=="note" else (r["original_name"] or "Uploaded file"))
-        cards.append('<div class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h3 style="margin:0 0 5px">'+title_html+'</h3><p class="small">'+source+' · added '+date_html+'</p></div><a class="btn danger" href="/admin/assistant/knowledge/'+str(rid)+'/delete" onclick="return confirm(\'Delete this assistant knowledge item?\')">Delete</a></div><p class="muted">'+desc_html+'</p><div class="small" style="white-space:pre-wrap;max-height:150px;overflow:auto">'+preview+'</div></div>')
-    body='<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1>'
-    body+='<div class="card"><h2>'+state+'</h2><p class="muted">The assistant answers from VYBE campus data plus its own persistent Knowledge Space. Anything added here stays in the database for future questions until the admin updates or deletes it.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn '+tone+'">'+action_label+'</button></form></div>'
-    body+='<section class="section grid2"><div class="card"><h2>📚 Upload Assistant Knowledge</h2><p class="muted">Upload PDF, images, Word, PowerPoint, Excel, text, CSV, JSON, HTML and other files. Readable formats are indexed automatically; image uploads can be OCR-read before saving.</p><form id="assistantKnowledgeFileForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="file"><input name="title" placeholder="Knowledge title (optional)"><input name="description" placeholder="What is this file about? (optional)"><input id="assistantKnowledgeFile" type="file" name="file" required><input id="assistantKnowledgeText" type="hidden" name="assistant_text"><div id="assistantKnowledgeStatus" class="small">Maximum upload follows VYBE 25 MB limit.</div><button class="btn accent">Add to Assistant Knowledge →</button></form>'+_resource_ocr_script("assistantKnowledgeFileForm","assistantKnowledgeFile","assistantKnowledgeText","assistantKnowledgeStatus")+'</div>'
-    body+='<div class="card"><h2>🧠 Save Assistant Memory</h2><p class="muted">Use this for permanent facts, rules, procedures or updates that the assistant should remember for future students.</p><form class="form" method="post"><input type="hidden" name="action" value="note"><input name="title" placeholder="Memory title" required><input name="description" placeholder="Short description"><textarea name="content" rows="9" maxlength="50000" placeholder="Example: From 1 October, the library closes at 7 PM on weekdays..." required></textarea><button class="btn accent">Save Memory →</button></form></div></section>'
-    body+='<section class="section"><div class="badge">ASSISTANT KNOWLEDGE SPACE · '+str(len(rows))+' ITEMS</div><h2>Stored knowledge.</h2><div class="grid2">'+(''.join(cards) if cards else '<div class="card"><p class="muted">No assistant knowledge has been added yet.</p></div>')+'</div></section></section>'
-    return layout("Assistant",body,admin=True)
+    con = db()
+    current = setting(con, "vybe_assistant_enabled", "1") == "1"
+    if request.method == "POST":
+        set_setting(con, "vybe_assistant_enabled", "0" if current else "1")
+        con.commit(); con.close()
+        flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
+        return redirect(url_for("admin_assistant"))
+    con.close()
+    state = "🟢 ON" if current else "🔴 OFF"
+    action = "🔴 Turn Assistant OFF" if current else "🟢 Turn Assistant ON"
+    tone = "danger" if current else "good"
+    body = f'<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1><div class="card"><h2>{state}</h2><p class="muted">The free built-in assistant answers from VYBE campus data and uploaded files and timetables.</p><form method="post"><button class="btn {tone}">{action}</button></form></div></section>'
+    return layout("Assistant", body, admin=True)
 
-
-@app.route("/admin/assistant/knowledge/<int:kid>/delete")
-@admin_required
-def delete_assistant_knowledge(kid):
-    con=db(); row=con.execute("SELECT file_name FROM assistant_knowledge WHERE id=?",(kid,)).fetchone(); con.execute("DELETE FROM assistant_knowledge WHERE id=?",(kid,)); con.commit(); con.close()
-    if row and row["file_name"]:
-        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
-        except OSError: pass
-    flash("Assistant knowledge item deleted."); return redirect(url_for("admin_assistant"))
 
 @app.route("/admin/status", methods=["GET", "POST"])
 @admin_required
@@ -4167,8 +2986,7 @@ def admin_settings():
         <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
         <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
         <button class="btn accent">Save configuration</button></form></div>
-      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🧠 VYBE Assistant</h2><p class="muted">Assistant data is managed separately. Upload PDFs, images, Word, PowerPoint, Excel, text and other knowledge files, save permanent memories, or remove outdated knowledge.</p><a class="btn accent" href="/admin/assistant">Open Assistant Control →</a></div>
-      <div class="card"><h2>🗓️ Timetable</h2><p class="muted">Timetable uploads are only for student class schedules. They are kept separate from the Assistant Knowledge Space.</p><a class="btn dark" href="/admin/timetable">Manage timetable →</a></div>
+      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🗓️ Timetable → VYBE Assistant</h2><p class="muted">Upload a timetable PDF or image from the Timetable page. VYBE extracts the timetable text so the free Assistant can answer timetable questions.</p><a class="btn dark" href="/admin/timetable">Upload timetable →</a></div>
       <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
         <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
         <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
