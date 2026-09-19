@@ -69,7 +69,7 @@ DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXW
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
 VYBE_AI_ENDPOINT = os.environ.get("VYBE_AI_ENDPOINT", "https://api.openai.com/v1/responses").strip()
-ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
+ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xlsx", ".odt", ".odp", ".txt", ".csv", ".md", ".rtf", ".json", ".xml", ".html", ".htm", ".log", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
 
@@ -409,6 +409,19 @@ def init_db():
                 created_at TEXT NOT NULL,
                 read_at TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS assistant_knowledge (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                original_name TEXT,
+                file_name TEXT,
+                mime_type TEXT,
+                file_data BYTEA,
+                content TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'file',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id BIGSERIAL PRIMARY KEY,
                 logged_at_ist TEXT NOT NULL,
@@ -544,6 +557,19 @@ def init_db():
                 FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
                 FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
                 FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS assistant_knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                original_name TEXT,
+                file_name TEXT,
+                mime_type TEXT,
+                file_data BLOB,
+                content TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'file',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS admin_login_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2186,7 +2212,7 @@ def _extract_doc_text(file_data,suffix,max_chars=50000):
     if suffix==".pdf": return _extract_pdf_text(file_data,max_chars)
     if suffix in (".png",".jpg",".jpeg",".webp"): return _extract_image_text(file_data,max_chars)
     if suffix in (".docx",".pptx",".xlsx",".odt",".odp",".zip"): return _extract_zip_xml_text(file_data,suffix,max_chars)
-    if suffix in (".txt",".csv",".md",".rtf",".json",".html",".htm"):
+    if suffix in (".txt",".csv",".md",".rtf",".json",".xml",".html",".htm",".log",".yaml",".yml"):
         return _clean_extracted_text(file_data.decode("utf-8","ignore"),max_chars)
     if suffix in (".doc",".ppt"):
         return _extract_legacy_binary_text(file_data,max_chars)
@@ -2206,6 +2232,46 @@ def _resource_ocr_script(form_id,file_id,text_id,status_id):
 
 def _timetable_ocr_script(form_id,file_id,text_id,status_id):
     return _resource_ocr_script(form_id,file_id,text_id,status_id)
+
+def _assistant_knowledge_rows(con, question, limit=6):
+    """Rank persistent admin-managed assistant knowledge for a question."""
+    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
+    tokens=[w for w in re.findall(r"[a-z0-9]+", q) if len(w)>=3]
+    stop={"what","when","where","which","who","why","how","does","did","are","the","and","for","from","with","about","please","tell","show","give","can","you","our","this","that","have","has","into","there","their","your","student","students","vybe"}
+    tokens=[t for t in tokens if t not in stop][:12]
+    rows=con.execute("SELECT id,title,description,original_name,content,source_type,created_at,updated_at FROM assistant_knowledge ORDER BY id DESC LIMIT 80").fetchall()
+    scored=[]
+    for r in rows:
+        title=(r["title"] or "").lower(); desc=(r["description"] or "").lower(); hay=(title+" "+desc+" "+(r["original_name"] or "")+" "+(r["content"] or "")).lower()
+        score=0
+        for t in tokens:
+            if t in title: score+=8
+            if t in desc: score+=4
+            if t in hay: score+=min(4,hay.count(t))
+        if not tokens and r["source_type"]=="note": score=1
+        if score: scored.append((score,int(r["id"]),r))
+    scored.sort(key=lambda x:(x[0],x[1]),reverse=True)
+    return [x[2] for x in scored[:limit]]
+
+def _assistant_knowledge_context(con, question, limit=5, max_each=5000):
+    rows=_assistant_knowledge_rows(con,question,limit)
+    parts=[]
+    for r in rows:
+        content=(r["content"] or "").strip()
+        if not content: continue
+        low=content.lower(); start=0
+        for token in re.findall(r"[a-z0-9]+",(question or "").lower())[:10]:
+            if len(token)>=3:
+                pos=low.find(token)
+                if pos>=0: start=max(0,pos-700); break
+        parts.append(f"[{r['title'] or r['original_name'] or 'VYBE knowledge'}]\n{content[start:start+max_each]}")
+    return "\n\n".join(parts)
+
+def _assistant_knowledge_answer(con, question):
+    context=_assistant_knowledge_context(con,question)
+    if not context: return ""
+    return "🧠 From VYBE Assistant Knowledge:\n\n"+context[:14000]
+
 
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
@@ -2319,6 +2385,10 @@ def _free_vybe_answer(con, question):
         for r in rows[:5]:
             lines.append(f"• {r['title']} — {r['event_date']} · {r['event_time'] or 'Time TBA'} · {r['location'] or 'Location TBA'}")
         return "\n".join(lines)
+
+    knowledge_answer=_assistant_knowledge_answer(con,question)
+    if knowledge_answer:
+        return knowledge_answer
 
     resource_words = ("note", "notes", "pyq", "pyqs", "assignment", "assignments", "study material", "syllabus", "file", "files", "resource", "resources", "document", "documents", "pdf", "word", "ppt", "slide", "where is", "where are", "find", "read", "contains", "written")
     if any(x in q for x in resource_words):
@@ -3433,20 +3503,59 @@ def admin_analytics():
 @app.route("/admin/assistant", methods=["GET", "POST"])
 @admin_required
 def admin_assistant():
-    con = db()
-    current = setting(con, "vybe_assistant_enabled", "1") == "1"
-    if request.method == "POST":
-        set_setting(con, "vybe_assistant_enabled", "0" if current else "1")
-        con.commit(); con.close()
-        flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
-        return redirect(url_for("admin_assistant"))
-    con.close()
-    state = "🟢 ON" if current else "🔴 OFF"
-    action = "🔴 Turn Assistant OFF" if current else "🟢 Turn Assistant ON"
-    tone = "danger" if current else "good"
-    body = f'<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1><div class="card"><h2>{state}</h2><p class="muted">The free built-in assistant answers from VYBE campus data and uploaded files and timetables.</p><form method="post"><button class="btn {tone}">{action}</button></form></div></section>'
-    return layout("Assistant", body, admin=True)
+    con=db()
+    current=setting(con,"vybe_assistant_enabled","1")=="1"
+    if request.method=="POST":
+        action=request.form.get("action","").strip()
+        if action=="toggle":
+            set_setting(con,"vybe_assistant_enabled","0" if current else "1"); con.commit(); con.close()
+            flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
+            return redirect(url_for("admin_assistant"))
+        if action=="note":
+            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; content=request.form.get("content","").strip()[:50000]
+            if not title or not content: flash("Enter a title and information for assistant memory.")
+            else:
+                stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,None,None,None,None,content,"note",stamp,stamp)); con.commit(); flash("Assistant memory saved.")
+            con.close(); return redirect(url_for("admin_assistant"))
+        if action=="file":
+            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; f=request.files.get("file")
+            if not f or not f.filename:
+                flash("Choose a file first."); con.close(); return redirect(url_for("admin_assistant"))
+            original_name=Path(f.filename).name[:240]; suffix=Path(original_name).suffix.lower(); file_data=f.read()
+            if not file_data:
+                flash("The selected file is empty."); con.close(); return redirect(url_for("admin_assistant"))
+            content=request.form.get("assistant_text","").strip()[:50000] or _extract_doc_text(file_data,suffix,50000)
+            if not title: title=Path(original_name).stem[:150] or "VYBE Assistant file"
+            stored_name=secrets.token_hex(16)+(suffix if suffix else ""); mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+            try: f.stream.seek(0); f.save(UPLOAD_DIR/stored_name)
+            except Exception: pass
+            readable=bool(content)
+            if not content: content=f"File uploaded as {original_name}. VYBE currently has no text extractor for this file type."
+            stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,original_name,stored_name,mime_type,file_data,content,"file",stamp,stamp)); con.commit(); con.close()
+            flash("File added to VYBE Assistant Knowledge. "+("Its text was indexed." if readable else "The file was saved, but its format could not be read automatically."))
+            return redirect(url_for("admin_assistant"))
+    rows=con.execute("SELECT id,title,description,original_name,source_type,content,created_at FROM assistant_knowledge ORDER BY id DESC").fetchall(); con.close()
+    state="🟢 ON" if current else "🔴 OFF"; action_label="🔴 Turn Assistant OFF" if current else "🟢 Turn Assistant ON"; tone="danger" if current else "good"
+    cards=[]
+    for r in rows:
+        title_html=esc(r["title"]); rid=int(r["id"]); date_html=esc(r["created_at"]); desc_html=esc(r["description"] or "No description"); preview=esc((r["content"] or "")[:280]); source=esc("Permanent note" if r["source_type"]=="note" else (r["original_name"] or "Uploaded file"))
+        cards.append('<div class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h3 style="margin:0 0 5px">'+title_html+'</h3><p class="small">'+source+' · added '+date_html+'</p></div><a class="btn danger" href="/admin/assistant/knowledge/'+str(rid)+'/delete" onclick="return confirm(\'Delete this assistant knowledge item?\')">Delete</a></div><p class="muted">'+desc_html+'</p><div class="small" style="white-space:pre-wrap;max-height:150px;overflow:auto">'+preview+'</div></div>')
+    body='<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1>'
+    body+='<div class="card"><h2>'+state+'</h2><p class="muted">The assistant answers from VYBE campus data plus its own persistent Knowledge Space. Anything added here stays in the database for future questions until the admin updates or deletes it.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn '+tone+'">'+action_label+'</button></form></div>'
+    body+='<section class="section grid2"><div class="card"><h2>📚 Upload Assistant Knowledge</h2><p class="muted">Upload PDF, images, Word, PowerPoint, Excel, text, CSV, JSON, HTML and other files. Readable formats are indexed automatically; image uploads can be OCR-read before saving.</p><form id="assistantKnowledgeFileForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="file"><input name="title" placeholder="Knowledge title (optional)"><input name="description" placeholder="What is this file about? (optional)"><input id="assistantKnowledgeFile" type="file" name="file" required><input id="assistantKnowledgeText" type="hidden" name="assistant_text"><div id="assistantKnowledgeStatus" class="small">Maximum upload follows VYBE 25 MB limit.</div><button class="btn accent">Add to Assistant Knowledge →</button></form>'+_resource_ocr_script("assistantKnowledgeFileForm","assistantKnowledgeFile","assistantKnowledgeText","assistantKnowledgeStatus")+'</div>'
+    body+='<div class="card"><h2>🧠 Save Assistant Memory</h2><p class="muted">Use this for permanent facts, rules, procedures or updates that the assistant should remember for future students.</p><form class="form" method="post"><input type="hidden" name="action" value="note"><input name="title" placeholder="Memory title" required><input name="description" placeholder="Short description"><textarea name="content" rows="9" maxlength="50000" placeholder="Example: From 1 October, the library closes at 7 PM on weekdays..." required></textarea><button class="btn accent">Save Memory →</button></form></div></section>'
+    body+='<section class="section"><div class="badge">ASSISTANT KNOWLEDGE SPACE · '+str(len(rows))+' ITEMS</div><h2>Stored knowledge.</h2><div class="grid2">'+(''.join(cards) if cards else '<div class="card"><p class="muted">No assistant knowledge has been added yet.</p></div>')+'</div></section></section>'
+    return layout("Assistant",body,admin=True)
 
+
+@app.route("/admin/assistant/knowledge/<int:kid>/delete")
+@admin_required
+def delete_assistant_knowledge(kid):
+    con=db(); row=con.execute("SELECT file_name FROM assistant_knowledge WHERE id=?",(kid,)).fetchone(); con.execute("DELETE FROM assistant_knowledge WHERE id=?",(kid,)); con.commit(); con.close()
+    if row and row["file_name"]:
+        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
+        except OSError: pass
+    flash("Assistant knowledge item deleted."); return redirect(url_for("admin_assistant"))
 
 @app.route("/admin/status", methods=["GET", "POST"])
 @admin_required
