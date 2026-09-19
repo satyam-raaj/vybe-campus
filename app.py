@@ -930,6 +930,58 @@ def _safe_500_page():
     pointer-events:none!important;
   }
 }
+
+/* ===== VYBE MOBILE-ONLY NAVIGATION OVERRIDE =====
+   Desktop is intentionally untouched. */
+@media (max-width:850px){
+  /* Remove the Profile + Menu controls from the TOP of the mobile student header only. */
+  .student-header-tools .student-header-icon.profile,
+  .student-header-tools .student-menu{
+    display:none!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+  }
+
+  /* Mobile bottom bar: Menu LEFT, Home CENTER, Profile RIGHT. */
+  .student-bottom-nav{
+    display:flex!important;
+    align-items:stretch!important;
+    justify-content:stretch!important;
+    left:0!important;
+    right:0!important;
+    width:100%!important;
+    transform:none!important;
+    padding-left:8px!important;
+    padding-right:8px!important;
+  }
+  .student-bottom-nav .mobile-menu-nav{order:1!important}
+  .student-bottom-nav .mobile-home-nav{order:2!important}
+  .student-bottom-nav .mobile-profile-nav{order:3!important}
+  .student-bottom-nav .mobile-back-nav{order:4!important}
+
+  .student-bottom-nav .mobile-menu-nav,
+  .student-bottom-nav .mobile-home-nav,
+  .student-bottom-nav .mobile-profile-nav,
+  .student-bottom-nav .mobile-back-nav{
+    flex:1 1 0!important;
+    max-width:none!important;
+    min-width:0!important;
+  }
+
+  /* Left-edge menu drawer, mobile only. */
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
+    display:flex!important;
+    position:fixed!important;
+    left:0!important;
+    right:auto!important;
+    top:0!important;
+    bottom:68px!important;
+    width:min(78vw,250px)!important;
+    z-index:1000!important;
+  }
+}
+
+/* Desktop: no rules changed here. */
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
