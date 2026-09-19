@@ -1224,7 +1224,74 @@ def layout(title, body, admin=False):
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}</div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
-<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});document.addEventListener("click",function(e){{if(menu.classList.contains("open")&&!menu.contains(e.target)&&!toggle.contains(e.target)){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.classList.toggle("is-visible",show);btn.setAttribute("aria-label",show?"Hide password":"Show password");btn.setAttribute("title",show?"Hide password":"Show password");}});}});document.querySelectorAll(".password-error input").forEach(function(el){{el.addEventListener("input",function(){{const wrap=el.closest(".password-wrap");if(wrap)wrap.classList.remove("password-error");}});}});}})();</script></body></html>'''
+<script>(function(){{
+const toggle=document.getElementById("vybeNavToggle");
+const menu=document.getElementById("vybeMobileNav");
+const bottomMenu=document.querySelector(".mobile-menu-nav");
+
+function setMenu(open){{
+  if(!menu)return;
+  menu.classList.toggle("open",open);
+  if(toggle){{
+    toggle.setAttribute("aria-expanded",open?"true":"false");
+    toggle.textContent=open?"✕":"☰";
+  }}
+}}
+
+if(toggle&&menu){{
+  toggle.addEventListener("click",function(e){{
+    e.stopPropagation();
+    setMenu(!menu.classList.contains("open"));
+  }});
+}}
+
+if(bottomMenu&&menu){{
+  bottomMenu.addEventListener("click",function(e){{
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu(!menu.classList.contains("open"));
+  }});
+}}
+
+if(menu){{
+  menu.addEventListener("click",function(e){{
+    if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{
+      setMenu(false);
+    }}
+  }});
+}}
+
+document.addEventListener("click",function(e){{
+  if(!menu||!menu.classList.contains("open"))return;
+  if(menu.contains(e.target))return;
+  if(toggle&&toggle.contains(e.target))return;
+  if(bottomMenu&&bottomMenu.contains(e.target))return;
+  setMenu(false);
+}});
+
+document.addEventListener("keydown",function(e){{
+  if(e.key==="Escape")setMenu(false);
+}});
+
+document.querySelectorAll(".toggle-password").forEach(function(btn){{
+  btn.addEventListener("click",function(){{
+    const el=document.getElementById(btn.dataset.target);
+    if(!el)return;
+    const show=el.type==="password";
+    el.type=show?"text":"password";
+    btn.classList.toggle("is-visible",show);
+    btn.setAttribute("aria-label",show?"Hide password":"Show password");
+    btn.setAttribute("title",show?"Hide password":"Show password");
+  }});
+}});
+
+document.querySelectorAll(".password-error input").forEach(function(el){{
+  el.addEventListener("input",function(){{
+    const wrap=el.closest(".password-wrap");
+    if(wrap)wrap.classList.remove("password-error");
+  }});
+}});
+}})();</script></body></html>'''
 
 
 @app.route("/offline")
