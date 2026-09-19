@@ -1283,6 +1283,153 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .password-wrap.password-error .password-toggle{border-color:rgba(239,75,95,.42)!important;color:#ff8290!important;background:rgba(70,10,20,.72)!important}
 .password-error-note{color:#ff8290;font-size:12px;margin-top:6px}
 
+/* =========================================================
+   FINAL MOBILE-ONLY STUDENT NAVIGATION
+   Desktop CSS/layout is intentionally not changed.
+   ========================================================= */
+@media (max-width:850px){
+  /* Remove ONLY Menu + Profile from the mobile TOP header.
+     Leave the desktop rules completely alone. */
+  .nav .student-header-tools .student-header-icon.profile,
+  .nav .student-header-tools .student-menu{
+    display:none!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+  }
+
+  /* Keep the header container itself available for any existing
+     notification icon; do not hide the whole header-tools block. */
+  .nav .student-header-tools{
+    display:flex!important;
+    align-items:center!important;
+    gap:8px!important;
+  }
+
+  /* Bottom bar: Menu | Home | Profile.
+     Back is added as a fourth item only on subpages. */
+  .student-bottom-nav{
+    display:flex!important;
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    width:100%!important;
+    height:70px!important;
+    transform:none!important;
+    z-index:5000!important;
+    box-sizing:border-box!important;
+    align-items:stretch!important;
+    justify-content:stretch!important;
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;
+    gap:4px!important;
+  }
+
+  .student-bottom-nav .mobile-menu-nav,
+  .student-bottom-nav .mobile-home-nav,
+  .student-bottom-nav .mobile-profile-nav,
+  .student-bottom-nav .mobile-back-nav{
+    order:initial!important;
+    flex:1 1 0!important;
+    width:0!important;
+    max-width:none!important;
+    min-width:0!important;
+    margin:0!important;
+  }
+  .student-bottom-nav .mobile-menu-nav{order:1!important}
+  .student-bottom-nav .mobile-home-nav{order:2!important}
+  .student-bottom-nav .mobile-profile-nav{order:3!important}
+  .student-bottom-nav .mobile-back-nav{order:4!important}
+
+  /* The drawer is a real left-edge sidebar, not a floating dialog. */
+  #vybeMobileNav.student-mobile-menu{
+    display:none!important;
+    position:fixed!important;
+    left:0!important;
+    top:0!important;
+    right:auto!important;
+    bottom:70px!important;
+    width:min(78vw,280px)!important;
+    height:auto!important;
+    margin:0!important;
+    padding:14px!important;
+    box-sizing:border-box!important;
+    z-index:4999!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    flex-direction:column!important;
+    gap:10px!important;
+    border:0!important;
+    border-right:1px solid rgba(70,150,205,.35)!important;
+    border-radius:0 18px 0 0!important;
+    background:rgba(3,12,22,.98)!important;
+    box-shadow:18px 0 45px rgba(0,0,0,.48)!important;
+    backdrop-filter:blur(26px)!important;
+    -webkit-backdrop-filter:blur(26px)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu.open{
+    display:flex!important;
+  }
+
+  /* Never show the old desktop/mobile-nav links inside the drawer. */
+  #vybeMobileNav.student-mobile-menu > a{
+    display:none!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{
+    display:none!important;
+  }
+
+  /* Show our actual VYBE mobile links. */
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
+    display:flex!important;
+    flex-direction:column!important;
+    width:100%!important;
+    gap:10px!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-height:52px!important;
+    box-sizing:border-box!important;
+    margin:0!important;
+    padding:10px 13px!important;
+    gap:12px!important;
+    border:1px solid rgba(72,145,192,.28)!important;
+    border-radius:14px!important;
+    background:rgba(10,28,44,.78)!important;
+    color:#d9eaf6!important;
+    text-decoration:none!important;
+    font-size:13px!important;
+    font-weight:650!important;
+    box-shadow:0 6px 18px rgba(0,0,0,.18)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+    background:rgba(26,110,165,.42)!important;
+    border-color:rgba(73,173,235,.65)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{
+    display:grid!important;
+    place-items:center!important;
+    width:30px!important;
+    height:30px!important;
+    flex:0 0 30px!important;
+    font-size:20px!important;
+    line-height:1!important;
+    color:#54b9ee!important;
+  }
+
+  .student-bottom-spacer{
+    height:78px!important;
+  }
+}
+
+
 """
 
 
@@ -1303,7 +1450,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
