@@ -825,66 +825,81 @@ def _safe_500_page():
     # Keep the 500 response independent of the database/layout system so the
     # error handler itself can never cause a second exception.
     return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}
-/* VYBE: mobile student profile + menu live only in bottom navigation */
+/* VYBE: mobile student navigation — sketch-style left menu */
 @media (max-width:850px){
   .student-header-tools{display:none!important}
   .student-menu{display:none!important}
+
   .student-bottom-nav{
     position:fixed!important;left:0!important;right:0!important;bottom:0!important;
     height:68px!important;display:flex!important;align-items:center!important;
-    justify-content:space-around!important;z-index:200!important;padding:8px 14px!important;
-    background:rgba(2,8,14,.97)!important;
-    border-top:1px solid rgba(58,126,175,.22)!important;
+    justify-content:space-around!important;z-index:220!important;padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
+    background:rgba(2,8,14,.98)!important;
+    border-top:1px solid rgba(58,126,175,.28)!important;
     backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;
+    box-shadow:0 -12px 35px rgba(0,0,0,.38)!important;
   }
   .student-bottom-nav a{
-    flex:1!important;display:flex!important;flex-direction:column!important;
+    flex:1!important;min-width:0!important;display:flex!important;flex-direction:column!important;
     align-items:center!important;justify-content:center!important;gap:2px!important;
-    text-decoration:none!important;max-width:110px!important;
+    text-decoration:none!important;max-width:120px!important;color:#91a9c0!important;
+    font-size:11px!important;
   }
+  .student-bottom-nav a span{
+    font-size:23px!important;line-height:1!important;
+  }
+  .student-bottom-nav a.active,
+  .student-bottom-nav a:active{color:#22aef2!important}
   .student-bottom-nav .mobile-menu-nav{order:1}
   .student-bottom-nav .mobile-home-nav{order:2}
   .student-bottom-nav .mobile-profile-nav{order:3}
+  .student-bottom-nav .mobile-back-nav{order:4}
   .student-bottom-spacer{height:82px!important}
-  #vybeMobileNav.mobile-nav.open{
+
+  /* The drawer is a narrow vertical menu attached directly to the left edge,
+     matching the user's hand-drawn mobile layout. */
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
     position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(82vw,330px)!important;min-width:0!important;
-    z-index:190!important;margin:0!important;padding:18px 14px 18px!important;
-    border:1px solid rgba(58,126,175,.28)!important;border-left:0!important;
-    border-radius:0 24px 24px 0!important;
-    background:rgba(3,10,18,.985)!important;
-    box-shadow:22px 0 70px rgba(0,0,0,.58),8px 0 35px rgba(10,41,66,.22)!important;
-    backdrop-filter:blur(28px)!important;-webkit-backdrop-filter:blur(28px)!important;
+    width:min(48vw,220px)!important;min-width:174px!important;
+    z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
+    border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
+    border-radius:0!important;
+    background:rgba(2,9,17,.985)!important;
+    box-shadow:12px 0 35px rgba(0,0,0,.42)!important;
+    backdrop-filter:blur(25px)!important;-webkit-backdrop-filter:blur(25px)!important;
     overflow-y:auto!important;
   }
-  #vybeMobileNav .mobile-menu-head{
-    display:flex!important;align-items:center!important;justify-content:space-between!important;
-    padding:4px 4px 14px!important;margin-bottom:4px!important;
-    border-bottom:1px solid rgba(58,126,175,.18)!important;
+
+  /* Hide the title/close row — the bottom Menu button is the control for this drawer. */
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:none!important}
+
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a{
+    box-sizing:border-box!important;
+    width:100%!important;min-height:72px!important;
+    display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+    gap:5px!important;padding:9px 6px!important;margin:0 0 10px!important;
+    border:1px solid rgba(75,146,195,.30)!important;
+    border-radius:12px!important;
+    background:rgba(8,25,40,.72)!important;
+    color:#d9eaf6!important;font-size:12px!important;font-weight:650!important;
+    text-align:center!important;text-decoration:none!important;
+    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
   }
-  #vybeMobileNav .mobile-menu-title{
-    color:#f4f8fb!important;font-size:20px!important;font-weight:750!important;
-    letter-spacing:-.02em!important;
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:hover,
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:active{
+    background:rgba(22,91,139,.38)!important;
+    border-color:rgba(73,173,235,.58)!important;
+    color:#fff!important;
   }
-  #vybeMobileNav .mobile-menu-close{
-    width:38px!important;height:38px!important;display:flex!important;align-items:center!important;
-    justify-content:center!important;border:1px solid rgba(255,255,255,.10)!important;
-    border-radius:12px!important;background:rgba(255,255,255,.055)!important;
-    color:#dbe8f2!important;font-size:20px!important;cursor:pointer!important;
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{
+    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
+    font-size:21px!important;line-height:1!important;
+    color:#54b9ee!important;
   }
-  #vybeMobileNav .mobile-menu-close:active{transform:scale(.95)!important}
-  #vybeMobileNav.mobile-nav.open a{
-    display:flex!important;align-items:center!important;min-height:50px!important;
-    padding:13px 15px!important;margin-top:4px!important;border-radius:14px!important;
-    color:#dbe8f2!important;font-size:15px!important;
-  }
-  #vybeMobileNav.mobile-nav.open a:hover{background:rgba(255,255,255,.07)!important}
-  @media(max-width:850px){
-    #vybeMobileNav.mobile-nav.open::after{
-      content:"";position:fixed;left:0;right:0;top:0;bottom:68px;
-      z-index:-1;background:rgba(0,0,0,.18);pointer-events:none;
-    }
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:last-child{
+    margin-top:auto!important;
+    margin-bottom:0!important;
   }
 }
 
@@ -1192,7 +1207,8 @@ def layout(title, body, admin=False):
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
     elif student:
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
+        # Mobile menu items: Home stays in the bottom bar, so the drawer contains the main student sections.
+        links = '<a href="/academics"><span class="student-menu-icon">▦</span><span>Academics</span></a><a href="/issues"><span class="student-menu-icon">⌖</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">♧</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">◌</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">⌕</span><span>Search</span></a><a href="/profile"><span class="student-menu-icon">♙</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">↪</span><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
@@ -1206,9 +1222,9 @@ def layout(title, body, admin=False):
         bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}</div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}</div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
-<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.classList.toggle("is-visible",show);btn.setAttribute("aria-label",show?"Hide password":"Show password");btn.setAttribute("title",show?"Hide password":"Show password");}});}});document.querySelectorAll(".password-error input").forEach(function(el){{el.addEventListener("input",function(){{const wrap=el.closest(".password-wrap");if(wrap)wrap.classList.remove("password-error");}});}});}})();</script></body></html>'''
+<script>(function(){{const toggle=document.getElementById("vybeNavToggle"),menu=document.getElementById("vybeMobileNav");if(toggle&&menu){{toggle.addEventListener("click",function(){{const open=menu.classList.toggle("open");toggle.setAttribute("aria-expanded",open?"true":"false");toggle.textContent=open?"✕":"☰";}});menu.addEventListener("click",function(e){{if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});document.addEventListener("click",function(e){{if(menu.classList.contains("open")&&!menu.contains(e.target)&&!toggle.contains(e.target)){{menu.classList.remove("open");toggle.setAttribute("aria-expanded","false");toggle.textContent="☰";}}}});}}document.querySelectorAll(".toggle-password").forEach(function(btn){{btn.addEventListener("click",function(){{const el=document.getElementById(btn.dataset.target);if(!el)return;const show=el.type==="password";el.type=show?"text":"password";btn.classList.toggle("is-visible",show);btn.setAttribute("aria-label",show?"Hide password":"Show password");btn.setAttribute("title",show?"Hide password":"Show password");}});}});document.querySelectorAll(".password-error input").forEach(function(el){{el.addEventListener("input",function(){{const wrap=el.closest(".password-wrap");if(wrap)wrap.classList.remove("password-error");}});}});}})();</script></body></html>'''
 
 
 @app.route("/offline")
