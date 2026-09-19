@@ -1563,17 +1563,23 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .community-page-top{max-width:900px;margin:0 auto 20px}.community-page-top h1{margin:12px 0 8px;font-size:clamp(38px,7vw,64px);letter-spacing:-.065em;line-height:.98}.community-page-top p{margin:0}.community-back-link{display:inline-flex;align-items:center;gap:5px;margin-bottom:18px;color:#9fc8e8;font-size:13px;font-weight:700}.community-back-link:hover{color:#fff}.community-chat-page-card{max-width:1000px;margin:0 auto}.community-page-section>.community-problem-list{max-width:1000px;margin:0 auto}.community-page-section .community-problem-card{border-color:rgba(55,133,199,.30);background:linear-gradient(145deg,rgba(7,24,42,.96),rgba(2,10,18,.98))}.community-page-section .community-problem-card h2{font-size:clamp(21px,3vw,30px)}
 @media(max-width:850px){.community-page-section{padding-top:8px}.community-page-top{margin-bottom:14px}.community-page-top h1{font-size:clamp(34px,11vw,48px)}.community-back-link{margin-bottom:14px}.community-chat-page-card{width:100%;margin-left:0;margin-right:0}.community-page-section .community-problem-list{width:100%}}
 @media(max-width:600px){
-  .community-chat-page-section{padding-left:0;padding-right:0;padding-bottom:0}
-  .community-chat-page-section .community-page-top{padding:0 10px;margin-bottom:8px}.community-chat-page-section .community-page-top h1{font-size:28px;margin:5px 0}.community-chat-page-section .community-page-top p{font-size:11px}.community-chat-page-section .community-back-link{margin-bottom:8px}
-  .community-chat-page-section .community-chat-page-card{width:100vw;max-width:none;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);border-radius:18px 18px 0 0;padding:10px 10px calc(76px + env(safe-area-inset-bottom));min-height:calc(100dvh - 125px);display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(4,15,27,.99),rgba(1,6,12,.99));border-left:0;border-right:0}
-  .community-chat-page-section .community-chat-window{flex:1;min-height:calc(100dvh - 315px);max-height:none;overflow-y:auto;padding:6px 2px 12px;overscroll-behavior:contain}
-  .community-chat-page-section .community-chat-form{position:sticky;bottom:calc(56px + env(safe-area-inset-bottom));z-index:4;padding-top:7px;background:linear-gradient(180deg,transparent,rgba(1,4,10,.98) 25%)}
+  .community-chat-page-section{padding-left:10px;padding-right:10px;padding-bottom:18px}
+  .community-chat-page-section .community-page-top{padding:0;margin-bottom:10px}.community-chat-page-section .community-page-top h1{font-size:28px;margin:5px 0}.community-chat-page-section .community-page-top p{font-size:11px}.community-chat-page-section .community-back-link{margin-bottom:8px}
+  .community-chat-page-section .community-chat-page-card{width:100%;max-width:none;margin:0;border-radius:18px;padding:10px;min-height:0;height:calc(100dvh - 245px);max-height:620px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(4,15,27,.99),rgba(1,6,12,.99));border:1px solid rgba(55,133,199,.28);overflow:hidden}
+  .community-chat-page-section .community-chat-window{flex:1;min-height:0;height:auto;max-height:none;overflow-y:auto;overflow-x:hidden;padding:6px 2px 12px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .community-chat-page-section .community-chat-form{position:relative;bottom:auto;z-index:4;padding-top:7px;background:linear-gradient(180deg,transparent,rgba(1,4,10,.98) 25%);flex:0 0 auto}
   .community-chat-page-section .community-chat-form textarea{border-radius:18px;padding:13px 15px;min-height:48px;background:rgba(6,18,31,.96)}
   .community-chat-page-section .community-chat-keyboard-hint{padding-bottom:2px}
   .community-chat-page-section .community-message{padding:11px 10px;border-radius:15px;margin:0 1px}.community-chat-page-section .community-message-head strong{font-size:12px}.community-chat-page-section .community-message-text{font-size:14px;line-height:1.48}
   .community-chat-page-section .community-selection-actions{flex-wrap:wrap;justify-content:flex-end}
-  .community-chat-page-section .community-chat-tools{position:sticky;top:0;z-index:5;padding:3px 0 8px;background:rgba(1,4,10,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .community-chat-page-section .community-chat-tools{position:relative;top:auto;z-index:5;padding:3px 0 8px;background:rgba(1,4,10,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);flex:0 0 auto}
 }
+/* Hide the mobile student bottom buttons while the keyboard/composer is active. */
+@media(max-width:850px){
+  body.vybe-chat-composing .student-bottom-nav,
+  body.vybe-chat-composing .student-bottom-spacer{display:none!important}
+}
+
 
 """
 
@@ -2665,7 +2671,16 @@ def community_chat():
       if (sendBox) {{
         const resize = function() {{ this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 140) + 'px'; }};
         sendBox.addEventListener('input', resize);
+        sendBox.addEventListener('focus', function() {{
+          if (window.matchMedia('(max-width: 850px)').matches) document.body.classList.add('vybe-chat-composing');
+        }});
+        sendBox.addEventListener('blur', function() {{
+          setTimeout(function() {{
+            if (document.activeElement !== sendBox) document.body.classList.remove('vybe-chat-composing');
+          }}, 80);
+        }});
         sendBox.addEventListener('keydown', function(e) {{
+          if (e.key === 'Escape') {{ this.blur(); return; }}
           if (e.key === 'Enter' && !e.shiftKey) {{
             e.preventDefault();
             const form = document.getElementById('community-send-form');
@@ -2673,6 +2688,9 @@ def community_chat():
           }}
         }});
       }}
+      window.addEventListener('resize', function() {{
+        if (!window.matchMedia('(max-width: 850px)').matches) document.body.classList.remove('vybe-chat-composing');
+      }});
       updateSelectionUI();
     }})();
     </script>'''
