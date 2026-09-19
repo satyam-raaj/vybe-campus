@@ -826,6 +826,10 @@ def _safe_500_page():
     # error handler itself can never cause a second exception.
     return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}
 /* VYBE: mobile student navigation — sketch-style left menu */
+.student-header-tools .student-menu{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;}
+@media (min-width:851px){
+  .student-header-tools .student-menu{display:grid!important;}
+}
 @media (max-width:850px){
   .student-header-tools{display:none!important}
   .student-menu{display:none!important}
@@ -839,17 +843,24 @@ def _safe_500_page():
     backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;
     box-shadow:0 -12px 35px rgba(0,0,0,.38)!important;
   }
-  .student-bottom-nav a{
+  .student-bottom-nav a,
+  .student-bottom-nav button.mobile-menu-nav{
     flex:1!important;min-width:0!important;display:flex!important;flex-direction:column!important;
     align-items:center!important;justify-content:center!important;gap:2px!important;
     text-decoration:none!important;max-width:120px!important;color:#91a9c0!important;
     font-size:11px!important;
   }
-  .student-bottom-nav a span{
+  .student-bottom-nav a span,
+  .student-bottom-nav button.mobile-menu-nav span{
     font-size:23px!important;line-height:1!important;
   }
+  .student-bottom-nav button.mobile-menu-nav{
+    border:0!important;background:transparent!important;color:#91a9c0!important;
+    font:inherit!important;cursor:pointer!important;padding:0!important;
+  }
   .student-bottom-nav a.active,
-  .student-bottom-nav a:active{color:#22aef2!important}
+  .student-bottom-nav a:active,
+  .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
   .student-bottom-nav .mobile-menu-nav{order:1}
   .student-bottom-nav .mobile-home-nav{order:2}
   .student-bottom-nav .mobile-profile-nav{order:3}
@@ -861,7 +872,7 @@ def _safe_500_page():
   #vybeMobileNav.student-mobile-menu.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
     position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(52vw,235px)!important;min-width:180px!important;
+    width:min(72vw,240px)!important;min-width:0!important;
     z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
     border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
     border-radius:0!important;
@@ -1205,9 +1216,9 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a></div></div>
-<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search" aria-label="Search campus"></form><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="mobile-menu-nav" href="javascript:void(0)"><span>☰</span>Menu</a><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
+<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -1225,12 +1236,24 @@ const bottomMenu=document.querySelector(".mobile-menu-nav");
 
 function setMenu(open){{
   if(!menu)return;
-  menu.classList.toggle("open",!!open);
+  const isOpen=!!open;
+  menu.classList.toggle("open",isOpen);
   if(toggle){{
-    toggle.setAttribute("aria-expanded",open?"true":"false");
-    toggle.textContent=open?"✕":"☰";
+    toggle.setAttribute("aria-expanded",isOpen?"true":"false");
+    toggle.textContent=isOpen?"✕":"☰";
+  }}
+  if(bottomMenu){{
+    bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
+    const icon=bottomMenu.querySelector("span");
+    if(icon) icon.textContent=isOpen?"✕":"☰";
   }}
 }}
+
+window.vybeToggleStudentMenu=function(e){{
+  if(e){{e.preventDefault();e.stopPropagation();}}
+  if(!menu)return;
+  setMenu(!menu.classList.contains("open"));
+}};
 
 if(toggle&&menu){{
   toggle.addEventListener("click",function(e){{
@@ -1240,24 +1263,21 @@ if(toggle&&menu){{
   }});
 }}
 
-if(bottomMenu&&menu){{
-  bottomMenu.addEventListener("click",function(e){{
-    e.preventDefault();
-    e.stopPropagation();
-    setMenu(!menu.classList.contains("open"));
-  }});
-}}
-
 if(menu){{
   menu.addEventListener("click",function(e){{
-    if(e.target.closest("a")){{
+    const link=e.target.closest("a");
+    const close=e.target.closest(".mobile-menu-close");
+    if(close){{
+      e.preventDefault();
+      e.stopPropagation();
       setMenu(false);
       return;
     }}
-    if(e.target.closest(".mobile-menu-close")){{
-      e.preventDefault();
+    if(link){{
       setMenu(false);
+      return;
     }}
+    e.stopPropagation();
   }});
 }}
 
