@@ -861,7 +861,7 @@ def _safe_500_page():
   #vybeMobileNav.student-mobile-menu.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
     position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(48vw,220px)!important;min-width:174px!important;
+    width:min(52vw,235px)!important;min-width:180px!important;
     z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
     border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
     border-radius:0!important;
@@ -905,13 +905,8 @@ def _safe_500_page():
 
 
 @media (max-width:850px){
-  /* REMOVE TOP PROFILE + MENU COMPLETELY */
+  /* Mobile only: hide the desktop header controls. Desktop keeps Profile + Menu. */
   .student-header-tools,
-  .student-header-tools .profile,
-  .student-menu,
-  #vybeNavToggle,
-  .navin .profile,
-  .navin .student-menu,
   .student-control-row .student-menu{
     display:none!important;
     visibility:hidden!important;
@@ -924,8 +919,6 @@ def _safe_500_page():
     pointer-events:none!important;
   }
 }
-
-@media (max-width:850px){.mobile-top-tools-hidden{display:none!important}}
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -1212,9 +1205,10 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools mobile-top-tools-hidden"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a></div></div>
-<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search" aria-label="Search campus"></form></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false" style="display:none" tabindex="-1">☰</button>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="mobile-menu-nav" href="javascript:void(0)" onclick="var t=document.getElementById('vybeNavToggle');if(t)t.click()"><span>☰</span>Menu</a><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a></div></div>
+<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search" aria-label="Search campus"></form><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="mobile-menu-nav" href="javascript:void(0)"><span>☰</span>Menu</a><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
         brand = '<a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
@@ -1231,7 +1225,7 @@ const bottomMenu=document.querySelector(".mobile-menu-nav");
 
 function setMenu(open){{
   if(!menu)return;
-  menu.classList.toggle("open",open);
+  menu.classList.toggle("open",!!open);
   if(toggle){{
     toggle.setAttribute("aria-expanded",open?"true":"false");
     toggle.textContent=open?"✕":"☰";
@@ -1240,6 +1234,7 @@ function setMenu(open){{
 
 if(toggle&&menu){{
   toggle.addEventListener("click",function(e){{
+    e.preventDefault();
     e.stopPropagation();
     setMenu(!menu.classList.contains("open"));
   }});
@@ -1255,7 +1250,12 @@ if(bottomMenu&&menu){{
 
 if(menu){{
   menu.addEventListener("click",function(e){{
-    if(e.target.closest("a")||e.target.closest(".mobile-menu-close")){{
+    if(e.target.closest("a")){{
+      setMenu(false);
+      return;
+    }}
+    if(e.target.closest(".mobile-menu-close")){{
+      e.preventDefault();
       setMenu(false);
     }}
   }});
@@ -1291,7 +1291,7 @@ document.querySelectorAll(".password-error input").forEach(function(el){{
     if(wrap)wrap.classList.remove("password-error");
   }});
 }});
-}})();</script></body></html>'''
+}})();</script></script></body></html>'''
 
 
 @app.route("/offline")
