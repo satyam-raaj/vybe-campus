@@ -1531,6 +1531,11 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
   .community-problem-card{scroll-margin-top:75px}
 }
 
+/* Dedicated community pages */
+.community-page-section{padding-top:18px}
+.community-page-top{max-width:900px;margin:0 auto 20px}.community-page-top h1{margin:12px 0 8px;font-size:clamp(38px,7vw,64px);letter-spacing:-.065em;line-height:.98}.community-page-top p{margin:0}.community-back-link{display:inline-flex;align-items:center;gap:5px;margin-bottom:18px;color:#9fc8e8;font-size:13px;font-weight:700}.community-back-link:hover{color:#fff}.community-chat-page-card{max-width:1000px;margin:0 auto}.community-page-section>.community-problem-list{max-width:1000px;margin:0 auto}.community-page-section .community-problem-card{border-color:rgba(55,133,199,.30);background:linear-gradient(145deg,rgba(7,24,42,.96),rgba(2,10,18,.98))}.community-page-section .community-problem-card h2{font-size:clamp(21px,3vw,30px)}
+@media(max-width:850px){.community-page-section{padding-top:8px}.community-page-top{margin-bottom:14px}.community-page-top h1{font-size:clamp(34px,11vw,48px)}.community-back-link{margin-bottom:14px}.community-chat-page-card{width:100%}.community-page-section .community-problem-list{width:100%}}
+
 """
 
 
@@ -2182,10 +2187,7 @@ def _free_vybe_answer(con, question):
 @app.route("/chat")
 @student_required
 def chat_alias():
-    # The header's Chat button previously pointed to an endpoint that was not
-    # registered in this build. Keep Chat as a stable entry point without
-    # creating a second chat system.
-    return redirect(url_for("community"))
+    return redirect(url_for("community_chat"))
 
 
 @app.route("/announcements")
@@ -2401,9 +2403,9 @@ def issues():
     if request.method=="POST":
         title=request.form.get("title","").strip()[:120]; desc=request.form.get("description","").strip()[:2000]; cat=request.form.get("category","").strip()[:80]
         if not title or not desc: con.close(); flash("Please enter a title and description."); return redirect(url_for("issues"))
-        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community"))
+        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community_problems"))
     rows=con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); saved=con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); con.close()
-    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
+    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
     saved_cards="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
     body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="campus-tools"><a class="campus-tool" href="/timetable"><span class="campus-tool-icon">🗓️</span><span><strong>Timetable</strong><small>Open the latest class schedule</small></span><b>→</b></a><a class="campus-tool" href="/academics"><span class="campus-tool-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs &amp; study material</small></span><b>→</b></a></div><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
     return layout("Campus",body)
@@ -2414,87 +2416,76 @@ def _render_solution_card(row,my_student_id):
     button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\">💡 Helpful answer</button></form>"
     return f'<div class="bubble"><strong>{esc(row["author_name"])}</strong><div>{esc(row["text"])}</div><div class="small">{esc(row["created_at"])}</div>{button}</div>'
 
-@app.route("/community", methods=["GET", "POST"])
+@app.route("/community", methods=["GET"])
 @student_required
 def community():
+    # Community is a clean launcher page. Chat and campus problems are separate pages.
+    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
+<section class="section community-choice-section">
+  <div class="community-choice-grid">
+    <a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+    <a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+  </div>
+</section>'''
+    return layout("Community", body)
+
+
+@app.route("/community/chat", methods=["GET", "POST"])
+@student_required
+def community_chat():
     con = db()
     if request.method == "POST":
-        action = request.form.get("action", "solution")
-
-        # Live student-to-student chat, controlled by the admin ON/OFF switch.
-        if action == "chat_message":
-            chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-            text = request.form.get("message", "").strip()[:1500]
-            if not chat_enabled:
-                con.close()
-                flash("Community Chat is currently turned off by the admin.")
-                return redirect(url_for("community") + "#student-chat")
-            if not text:
-                con.close()
-                flash("Please enter a message.")
-                return redirect(url_for("community") + "#student-chat")
-            try:
-                con.execute(
-                    "INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)",
-                    (session["student_db_id"], text, now()),
-                )
-                con.commit()
-                con.close()
-                return redirect(url_for("community") + "#student-chat")
-            except Exception:
-                con.rollback()
-                con.close()
-                app.logger.exception("Community chat message post failed")
-                flash("We couldn't send that message right now. Please try again.")
-                return redirect(url_for("community") + "#student-chat")
-
-        # Existing campus-problem solution posting.
+        chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+        text = request.form.get("message", "").strip()[:1500]
+        if not chat_enabled:
+            con.close(); flash("Community Chat is currently turned off by the admin."); return redirect(url_for("community_chat"))
+        if not text:
+            con.close(); flash("Please enter a message."); return redirect(url_for("community_chat"))
         try:
-            iid = int(request.form.get("issue_id", "0"))
-        except (TypeError, ValueError):
-            iid = 0
+            con.execute("INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)", (session["student_db_id"], text, now()))
+            con.commit(); con.close(); return redirect(url_for("community_chat"))
+        except Exception:
+            con.rollback(); con.close(); app.logger.exception("Community chat message post failed")
+            flash("We couldn't send that message right now. Please try again."); return redirect(url_for("community_chat"))
+    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+    chat_rows = con.execute("SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
+    con.close()
+    chat_bubbles = "".join(f'''<div class="community-message {"mine" if r["student_id"] == session["student_db_id"] else ""}"><div class="community-message-head"><strong>{esc(r["name"])}</strong><span>{esc(r["created_at"])}</span></div><div class="community-message-text">{esc(r["message"])}</div></div>''' for r in chat_rows)
+    status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
+    if not chat_enabled:
+        chat_panel = '''<div class="community-chat-locked"><div class="community-lock-icon">&#128274;</div><h3>Community Chat is off</h3><p>The admin has temporarily turned off student messaging. When the admin turns it on, you will be able to send messages here.</p></div>'''
+    else:
+        empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
+        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div><form class="community-chat-form" method="post" action="/community/chat"><textarea name="message" maxlength="1500" rows="2" placeholder="Message the student community..." required></textarea><button class="btn accent" type="submit">Send message</button></form>'''
+    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div><div class="community-chat-card community-chat-page-card">{chat_panel}</div></section>'''
+    return layout("Chat with Students", body)
+
+
+@app.route("/community/problems", methods=["GET", "POST"])
+@student_required
+def community_problems():
+    con = db()
+    if request.method == "POST":
+        try: iid = int(request.form.get("issue_id", "0"))
+        except (TypeError, ValueError): iid = 0
         text = request.form.get("text", "").strip()[:1500]
         if iid <= 0 or not text:
-            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community"))
+            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community_problems"))
         try:
             issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
             if not issue:
-                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community"))
+                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community_problems"))
             if issue["student_id"] == session["student_db_id"]:
-                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community"))
+                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community_problems"))
             con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
-            con.commit()
-            con.close()
-            flash("Solution posted successfully.")
-            return redirect(url_for("community") + f"#problem-{iid}")
+            con.commit(); con.close(); flash("Solution posted successfully."); return redirect(url_for("community_problems") + f"#problem-{iid}")
         except Exception:
-            con.rollback()
-            con.close()
-            app.logger.exception("Community solution post failed")
-            flash("We couldn't post that solution right now. Please try again.")
-            return redirect(url_for("community"))
-
-    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-    chat_rows = con.execute(
-        "SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300"
-    ).fetchall()
+            con.rollback(); con.close(); app.logger.exception("Community solution post failed")
+            flash("We couldn't post that solution right now. Please try again."); return redirect(url_for("community_problems"))
     issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
     solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
     by_issue = {}
-    for s in solutions:
-        by_issue.setdefault(s["issue_id"], []).append(s)
-
-    # Public chat shows names only. Student IDs remain admin-only.
-    chat_bubbles = "".join(
-        f'''<div class="community-message {"mine" if r["student_id"] == session["student_db_id"] else ""}"><div class="community-message-head"><strong>{esc(r["name"])}</strong><span>{esc(r["created_at"])}</span></div><div class="community-message-text">{esc(r["message"])}</div></div>'''
-        for r in chat_rows
-    )
-    if not chat_enabled:
-        chat_panel = '''<div class="community-chat-locked"><div class="community-lock-icon">&#128274;</div><h3>Community Chat is off</h3><p>The admin has temporarily turned off student messaging. You can still use the campus-problem section below.</p></div>'''
-    else:
-        empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
-        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div><form class="community-chat-form" method="post" action="/community#student-chat"><input type="hidden" name="action" value="chat_message"><textarea name="message" maxlength="1500" rows="2" placeholder="Message the student community..." required></textarea><button class="btn accent" type="submit">Send message</button></form>'''
-
+    for sol in solutions: by_issue.setdefault(sol["issue_id"], []).append(sol)
     blocks = ""
     for i in issues_rows:
         sols = by_issue.get(i["id"], [])
@@ -2504,21 +2495,11 @@ def community():
         if i["student_id"] == session["student_db_id"] and other_solution:
             accept = f'''<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm('Accept a solution? This deletes the problem and its entire chat.')"><button class="btn good">&#10003; Accept solution &amp; delete chat</button></form>'''
         empty_solutions = '<div class="empty">No solutions yet. Be the first to help.</div>'
-        blocks += f'''<div class="card community-problem-card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or empty_solutions}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><input type="hidden" name="action" value="solution"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark">Post solution</button></form>{accept}</div>'''
-
+        blocks += f'''<div class="card community-problem-card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or empty_solutions}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark" type="submit">Post solution</button></form>{accept}</div>'''
     con.close()
-    status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
     empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
-    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
-<section class="section community-choice-section">
-  <div class="community-choice-grid">
-    <a class="community-choice-card" href="#student-chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-    <a class="community-choice-card" href="#campus-problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-  </div>
-</section>
-<section class="section" id="student-chat"><div class="community-section-head"><div><div class="badge">CHAT WITH STUDENTS</div><h2>Campus conversation.</h2><p class="muted">{status_text} · Student IDs are never shown here.</p></div></div><div class="community-chat-card">{chat_panel}</div></section>
-<section class="section" id="campus-problems"><div class="community-section-head"><div><div class="badge">SOLVE CAMPUS PROBLEM</div><h2>Help fix what matters.</h2><p class="muted">Share practical solutions for problems reported by students.</p></div><a class="btn dark" href="/issues">＋ Report a problem</a></div><div class="community-problem-list">{blocks or empty_problems}</div></section>'''
-    return layout("Community", body)
+    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Share practical solutions for problems reported by students.</p><div class="actions"><a class="btn accent" href="/issues">＋ Report a problem</a></div></div><div class="community-problem-list">{blocks or empty_problems}</div></section>'''
+    return layout("Solve Campus Problem", body)
 
 
 @app.route("/community/solution/<int:solution_id>/helpful", methods=["POST"])
@@ -2527,15 +2508,15 @@ def mark_solution_helpful(solution_id):
     con=db()
     try:
         sol=con.execute("SELECT student_id FROM solutions WHERE id=?",(solution_id,)).fetchone()
-        if not sol: con.close(); flash("That solution is no longer available."); return redirect(url_for("community"))
-        if sol["student_id"]==session["student_db_id"]: con.close(); flash("You cannot mark your own answer helpful."); return redirect(url_for("community"))
+        if not sol: con.close(); flash("That solution is no longer available."); return redirect(url_for("community_problems"))
+        if sol["student_id"]==session["student_db_id"]: con.close(); flash("You cannot mark your own answer helpful."); return redirect(url_for("community_problems"))
         con.execute("INSERT INTO helpful_votes(solution_id,voter_id,created_at) VALUES(?,?,?)",(solution_id,session["student_db_id"],now()))
         con.execute("UPDATE students SET reputation_points=COALESCE(reputation_points,0)+5,helpful_answers=COALESCE(helpful_answers,0)+1 WHERE id=?",(sol["student_id"],))
         con.commit(); flash("Marked as helpful. +5 VYBE points to the helper.")
     except Exception:
         con.rollback(); flash("You already marked this answer helpful, or it is no longer available.")
     finally: con.close()
-    return redirect(url_for("community"))
+    return redirect(url_for("community_problems"))
 
 
 @app.route("/community/problem/<int:iid>/accept", methods=["POST"])
@@ -2548,7 +2529,7 @@ def accept_solution(iid):
             con.close(); abort(403)
         accepted = con.execute("SELECT student_id FROM solutions WHERE issue_id=? AND student_id<>? ORDER BY id ASC LIMIT 1", (iid, session["student_db_id"])).fetchone()
         if not accepted:
-            con.close(); flash("A solution from another student is required first."); return redirect(url_for("community") + f"#problem-{iid}")
+            con.close(); flash("A solution from another student is required first."); return redirect(url_for("community_problems") + f"#problem-{iid}")
         issue=con.execute("SELECT title,category,description FROM issues WHERE id=?",(iid,)).fetchone()
         accepted_detail=con.execute("SELECT text FROM solutions WHERE issue_id=? AND student_id=? ORDER BY id ASC LIMIT 1",(iid,accepted["student_id"])).fetchone()
         solver=con.execute("SELECT name FROM students WHERE id=?",(accepted["student_id"] ,)).fetchone()
@@ -2561,7 +2542,7 @@ def accept_solution(iid):
         con.commit()
         con.close()
         flash("Problem solved. The problem and its entire community chat were deleted.")
-        return redirect(url_for("community"))
+        return redirect(url_for("community_problems"))
     except Exception:
         try: con.rollback()
         except Exception: pass
@@ -2569,7 +2550,7 @@ def accept_solution(iid):
         except Exception: pass
         app.logger.exception("Accept solution failed for issue %s", iid)
         flash("We couldn't accept that solution right now. Please try again.")
-        return redirect(url_for("community") + f"#problem-{iid}")
+        return redirect(url_for("community_problems") + f"#problem-{iid}")
 
 
 # ---------------------------------------------------------------------------
