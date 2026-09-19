@@ -2329,17 +2329,36 @@ def _assistant_make_chunks(content):
     return chunks
 
 
-def _assistant_knowledge_answer(con, question):
-    """Return a small, specific answer from the most relevant knowledge chunks.
+def _clean_answer_text(text, limit=500):
+    text=re.sub(r"\[[^\]]*\]", "", text or "")
+    text=re.sub(r"\s+", " ", text).strip(" -•\t")
+    return text[:limit].rstrip(" .")
 
-    This is deterministic and source-grounded: it does not invent facts and it
-    avoids returning the whole uploaded document. It prefers exact phrases,
-    headings, semester/year context, and chunks containing most of the question.
-    """
+
+def _question_intent(q):
+    q=re.sub(r"\s+", " ", (q or "").lower()).strip()
+    if any(x in q for x in ("eligibility", "eligible", "qualification", "qualify", "criteria", "requirements to apply")):
+        return "eligibility"
+    if any(x in q for x in ("admission link", "apply link", "application link", "where do i apply", "how do i apply", "admission website")):
+        return "admission"
+    m=re.search(r"(?:semester|sem)\s*[- ]?([1-8])\b", q)
+    if m and any(x in q for x in ("subject", "subjects", "course", "courses", "paper", "papers", "study", "syllabus")):
+        return "semester_subjects_"+m.group(1)
+    if any(x in q for x in ("subjects in semester", "courses in semester", "what do i study in semester", "semester subjects")):
+        return "semester_subjects"
+    if any(x in q for x in ("who teaches", "teacher", "teachers", "faculty", "professor", "instructor")):
+        return "faculty"
+    if any(x in q for x in ("fee", "fees", "tuition", "cost of admission")):
+        return "fees"
+    if any(x in q for x in ("duration", "how many years", "years is", "course length")):
+        return "duration"
+    if any(x in q for x in ("degree", "course name", "program name", "programme name")):
+        return "course_name"
+    return "general"
+
+
+def _find_source_passages(rows, question, max_chunks=30):
     q,tokens,phrases=_assistant_query_tokens(question)
-    if not q: return ""
-    rows=_assistant_knowledge_rows(con,question,limit=12)
-    if not rows: return ""
     candidates=[]
     for r in rows:
         content=(r["content"] or "").strip()
@@ -2350,47 +2369,103 @@ def _assistant_knowledge_answer(con, question):
             score=0
             matched=0
             for phrase in phrases:
-                if phrase in low: score+=30
+                if phrase in low: score += 24
             for t in tokens:
                 if re.search(r"\b"+re.escape(t)+r"\b", low):
-                    matched+=1; score+=6
-            if tokens:
-                coverage=matched/max(1,len(tokens))
-                if coverage>=0.60: score+=20
-                elif coverage>=0.40: score+=10
-            if q in low: score+=50
-            # Questions asking for a list should prefer list/table chunks.
-            if any(x in q for x in ("subjects","courses","course","papers","what do i study","curriculum")) and ("semester" in low or "dsc" in low or "aec" in low or "sec" in low):
-                score+=10
-            if any(x in q for x in ("eligibility","eligible","qualification","criteria")) and "eligib" in low:
-                score+=25
-            if any(x in q for x in ("admission","apply","application")) and "admission" in low:
-                score+=20
-            if score: candidates.append((score,matched,int(r["id"]),title,heading,unit))
-    if not candidates:
-        return "I found the uploaded knowledge, but I couldn't find a specific passage that answers that question."
-    candidates.sort(key=lambda x:(x[0],x[1],x[2]),reverse=True)
-    selected=[]; seen=set(); total=0
-    # Usually one best chunk is enough; add a second only if it clearly adds context.
-    for score,matched,kid,title,heading,unit in candidates:
-        key=re.sub(r"\s+"," ",unit.lower()).strip()
-        if key in seen: continue
-        seen.add(key)
-        unit=re.sub(r"\s+"," ",unit).strip()
-        if len(unit)>900: unit=unit[:900].rsplit(" ",1)[0]+"…"
-        if total+len(unit)>1500: continue
-        selected.append((title,heading,unit)); total+=len(unit)
-        if len(selected)>=2: break
-    if not selected: return "I found the source, but the matching passage was not usable as a short answer."
-    # If the strongest chunk is clearly an exact fact/list, present it directly.
-    lines=["🧠 VYBE Assistant answer:"]
-    for title,heading,unit in selected:
-        if heading:
-            lines.append(f"• {unit}  [{heading}]")
-        else:
-            lines.append(f"• {unit}")
-    lines.append("\nSource: VYBE Assistant Knowledge")
-    return "\n".join(lines)
+                    matched += 1; score += 5
+            if q and q in low: score += 40
+            if tokens and matched:
+                score += int(30*matched/max(1,len(tokens)))
+            if score:
+                candidates.append((score,matched,int(r["id"]),title,heading,unit))
+    candidates.sort(key=lambda x:(x[0],x[1],x[2]), reverse=True)
+    return candidates[:max_chunks]
+
+
+def _assistant_knowledge_answer(con, question):
+    """Answer the question, not the document.
+
+    The assistant intentionally returns a tiny fact/list extracted from the
+    strongest source section. It does not echo long source passages.
+    """
+    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
+    if not q: return ""
+    rows=_assistant_knowledge_rows(con, question, limit=20)
+    if not rows: return ""
+    intent=_question_intent(q)
+    candidates=_find_source_passages(rows, question, 60)
+    if not candidates: return ""
+
+    # Semester subject questions: collect the actual course rows from the
+    # requested semester instead of returning prospectus prose.
+    if intent.startswith("semester_subjects"):
+        sem=intent.split("_")[-1] if intent[-1].isdigit() else None
+        hits=[]
+        for _,_,_,_,heading,unit in candidates:
+            low=(heading+" "+unit).lower()
+            if sem and not re.search(r"(?:semester|sem)\s*[- ]?"+sem+r"\b", low):
+                continue
+            for line in re.split(r"\n|(?<=\.)\s+(?=[A-Z])", unit):
+                line=_clean_answer_text(line, 260)
+                if not line: continue
+                if re.search(r"\b(?:DSC|GE|AEC|SEC|VAC|DSE)\b", line, re.I) or "credits" in line.lower():
+                    if line not in hits: hits.append(line)
+        if hits:
+            return "📚 Semester "+sem+" subjects:\n"+"\n".join("• "+x for x in hits[:10])
+
+    if intent=="eligibility":
+        hits=[]
+        for score,_,_,_,heading,unit in candidates:
+            if "eligib" not in (heading+" "+unit).lower(): continue
+            # Prefer the sentence(s) containing eligibility/subject requirements.
+            for sent in re.split(r"(?<=[.!?])\s+|\n", unit):
+                sent=_clean_answer_text(sent, 420)
+                if sent and ("eligib" in sent.lower() or "mathematics" in sent.lower() or "recognized board" in sent.lower()):
+                    if sent not in hits: hits.append(sent)
+        if hits:
+            return "🎓 Eligibility:\n"+"\n".join("• "+x for x in hits[:2])
+
+    if intent=="admission":
+        for _,_,_,_,_,unit in candidates:
+            urls=re.findall(r"https?://[^\s)]+", unit)
+            if urls:
+                return "🔗 Admission link: "+urls[0].rstrip(".,")
+        for _,_,_,_,_,unit in candidates:
+            if "admission" in unit.lower():
+                sent=next((_clean_answer_text(x,350) for x in re.split(r"\n|(?<=[.!?])\s+",unit) if "admission" in x.lower()),"")
+                if sent: return "🎓 Admission: "+sent
+
+    if intent=="faculty":
+        hits=[]
+        for _,_,_,_,_,unit in candidates:
+            for line in unit.splitlines():
+                line=_clean_answer_text(line,220)
+                if line and re.search(r"\b(?:Ms|Mr|Dr|Prof|Professor)\.?\s+[A-Z]", line):
+                    if line not in hits: hits.append(line)
+        if hits:
+            return "👨‍🏫 Faculty:\n"+"\n".join("• "+x for x in hits[:8])
+
+    if intent=="duration":
+        for _,_,_,_,_,unit in candidates:
+            for sent in re.split(r"\n|(?<=[.!?])\s+",unit):
+                if re.search(r"\b(?:four|4)\s*(?:years|year)\b",sent,re.I):
+                    return "⏳ Duration: "+_clean_answer_text(sent,250)+"."
+
+    # General questions: return one short sentence/line, not the raw chunk.
+    best=candidates[0]
+    unit=best[5]
+    sentences=[_clean_answer_text(x,360) for x in re.split(r"\n|(?<=[.!?])\s+",unit)]
+    sentences=[x for x in sentences if x]
+    if sentences:
+        # Choose the sentence with the most question-term coverage.
+        _,tokens,_=_assistant_query_tokens(question)
+        scored=[]
+        for sent in sentences:
+            low=sent.lower(); cov=sum(bool(re.search(r"\b"+re.escape(t)+r"\b",low)) for t in tokens)
+            scored.append((cov,-len(sent),sent))
+        scored.sort(reverse=True)
+        return "🧠 "+scored[0][2]+("." if not scored[0][2].endswith(('.', '?', '!')) else "")
+    return ""
 
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
