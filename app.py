@@ -2239,7 +2239,8 @@ def _free_vybe_answer(con, question):
 @app.route("/chat")
 @student_required
 def chat_alias():
-    return redirect(url_for("community_chat"))
+    # Keep the legacy /chat URL, but open the Community chooser first.
+    return redirect(url_for("community"))
 
 
 @app.route("/announcements")
@@ -2384,7 +2385,7 @@ def dashboard():
 <div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p></div>
 <div class="student-feature-list">
 <a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/chat"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community Chat</strong><small>Connect, discuss, solve together.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/community"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community</strong><small>Chat with students or solve campus problems.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
 <a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small></span><span class="student-arrow">›</span></a>
 </div>
