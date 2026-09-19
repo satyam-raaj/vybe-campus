@@ -2390,6 +2390,15 @@ def _assistant_knowledge_answer(con, question):
     """
     q=re.sub(r"\s+", " ", (question or "").lower()).strip()
     if not q: return ""
+
+    # Do not guess when the question depends on missing conversation context.
+    # For example, "what is his name?" has no identifiable person in the
+    # question/source, so returning the first name found in a document is wrong.
+    vague_referent = re.search(r"\b(his|her|their|this|that|he|she|they)\b", q)
+    bare_name_question = bool(re.search(r"\b(what is|what's|tell me)\s+(his|her|their)\s+name\b", q))
+    if bare_name_question or (vague_referent and len(re.findall(r"[a-z0-9]+", q)) <= 8):
+        return "I need the person or subject you mean. Please mention their name, role, or the message you are referring to."
+
     rows=_assistant_knowledge_rows(con, question, limit=20)
     if not rows: return ""
     intent=_question_intent(q)
@@ -2451,8 +2460,13 @@ def _assistant_knowledge_answer(con, question):
                 if re.search(r"\b(?:four|4)\s*(?:years|year)\b",sent,re.I):
                     return "⏳ Duration: "+_clean_answer_text(sent,250)+"."
 
-    # General questions: return one short sentence/line, not the raw chunk.
+    # General questions: only answer when there is strong evidence that the
+    # selected passage actually addresses the question. Otherwise say that the
+    # source does not contain a supported answer instead of returning an
+    # unrelated sentence.
     best=candidates[0]
+    if best[0] < 12 or best[1] < 1:
+        return "I couldn't find a specific answer to that in the VYBE knowledge."
     unit=best[5]
     sentences=[_clean_answer_text(x,360) for x in re.split(r"\n|(?<=[.!?])\s+",unit)]
     sentences=[x for x in sentences if x]
