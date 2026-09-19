@@ -1717,7 +1717,7 @@ function renderStudentNotifications(data){{
   }}
 }}
 function refreshStudentNotifications(){{
-  fetch('/student/notifications',{credentials:'same-origin',cache:'no-store'})
+  fetch('/student/notifications',{{credentials:'same-origin',cache:'no-store'}})
     .then(function(r){{return r.ok?r.json():null;}})
     .then(function(data){{if(data)renderStudentNotifications(data);}})
     .catch(function(){{}});
@@ -1738,7 +1738,7 @@ if(notificationList){{
     const nid=item.getAttribute('data-notification-id');
     const mid=item.getAttribute('data-reply-message-id');
     const fd=new FormData(); fd.append('notification_id',nid);
-    fetch('/student/notifications/read',{method:'POST',body:fd,credentials:'same-origin'})
+    fetch('/student/notifications/read',{{method:'POST',body:fd,credentials:'same-origin'}})
       .finally(function(){{
         if(mid) window.location.href='/community/chat#community-msg-'+mid;
         else refreshStudentNotifications();
@@ -1747,7 +1747,7 @@ if(notificationList){{
 }}
 if(notificationReadAll){{
   notificationReadAll.addEventListener('click',function(){{
-    fetch('/student/notifications/read',{method:'POST',body:new URLSearchParams(),credentials:'same-origin'})
+    fetch('/student/notifications/read',{{method:'POST',body:new URLSearchParams(),credentials:'same-origin'}})
       .then(function(){{refreshStudentNotifications();}}).catch(function(){{}});
   }});
 }}
@@ -2415,6 +2415,14 @@ def student_notifications_read():
             con.execute("UPDATE student_notifications SET read_at=? WHERE recipient_student_id=? AND read_at IS NULL", (now(), my_id))
         con.commit()
         return jsonify({"ok": True})
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        # Notifications are optional; a missing/older notification table must
+        # never break the student's chat or navigation.
+        return jsonify({"ok": False})
     finally:
         con.close()
 
