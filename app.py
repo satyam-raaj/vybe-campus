@@ -1058,10 +1058,8 @@ def security_headers(response):
 
 CSS = r"""
 /* Student community chat controls */
-.community-chat-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px}
-.community-select-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 13px;border-radius:12px;border:1px solid rgba(55,133,199,.30);background:rgba(255,255,255,.045);color:#c8d9e8;font:inherit;font-size:12px;font-weight:750;cursor:pointer}
-.community-select-toggle:hover{border-color:rgba(75,155,224,.58);color:#fff}
-.community-selection-actions{display:none;align-items:center;gap:7px;margin-left:auto}
+.community-chat-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 10px;min-height:38px}
+.community-select-help{font-size:11px;color:#718ba3;margin-right:auto}.community-select-help.is-hidden{display:none}.community-selection-actions{display:none;align-items:center;gap:7px;margin-left:auto}
 .community-selection-actions.is-visible{display:flex}
 .community-selection-count{font-size:11px;color:#8fa6bd;white-space:nowrap}
 .community-delete-toolbar{display:flex;align-items:center;gap:7px}
@@ -1069,23 +1067,19 @@ CSS = r"""
 .community-delete-toolbar .community-delete-selected{color:#ffb7bf;border-color:rgba(255,100,120,.22)}
 .community-delete-toolbar .community-delete-selected:hover{background:rgba(255,70,70,.09);border-color:rgba(255,100,120,.40)}
 .community-delete-toolbar .community-delete-all{color:#ff9c9c;border-color:rgba(255,100,100,.18)}
+.community-delete-toolbar .community-selection-done{color:#c7d5e2}
+.community-delete-toolbar button:disabled{opacity:.45;cursor:not-allowed}
 .community-delete-toolbar .community-delete-all:hover{background:rgba(255,70,70,.08);color:#ffb4b4}
-.community-message{display:flex;align-items:flex-start;gap:8px;transition:background .15s ease,border-color .15s ease}
+.community-message{display:flex;align-items:flex-start;gap:8px;transition:background .15s ease,border-color .15s ease,transform .12s ease;user-select:none}.community-message:active{transform:scale(.995)}
 .community-message.is-selectable{cursor:pointer}
 .community-message.is-selected{border-color:rgba(37,170,242,.48);background:rgba(37,170,242,.075)}
 .community-message-content{min-width:0;flex:1}
-.community-message-select{display:none;align-items:center;justify-content:center;flex:0 0 22px;margin-top:2px;cursor:pointer}
-.community-message-select.is-visible{display:flex}
-.community-message-select input{width:17px;height:17px;accent-color:#25aaf2;cursor:pointer}
 .community-chat-disabled-note{margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.07);border-radius:12px;color:#91a9c0;font-size:12px}
 .community-chat-keyboard-hint{margin-top:6px;color:#6f879d;font-size:11px;text-align:right}
 .community-chat-form textarea{overflow:hidden;line-height:1.45;min-height:46px;max-height:140px;resize:none}
 @media(max-width:850px){
   .community-chat-tools{margin-bottom:8px}
-  .community-selection-actions{gap:5px}
-  .community-selection-count{font-size:10px}
-  .community-delete-toolbar{gap:5px}
-  .community-delete-toolbar button{min-height:36px;padding:7px 9px;font-size:10px}
+  .community-chat-tools{padding:2px 0 7px;min-height:36px}.community-selection-actions{gap:5px}.community-selection-count{font-size:10px}.community-delete-toolbar{gap:5px}.community-delete-toolbar button{min-height:34px;padding:7px 8px;font-size:10px}.community-select-help{font-size:10px}
   .community-chat-keyboard-hint{text-align:center;font-size:10px}
   .community-message-select{flex-basis:20px}
 }
@@ -1570,13 +1564,13 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 @media(max-width:850px){.community-page-section{padding-top:8px}.community-page-top{margin-bottom:14px}.community-page-top h1{font-size:clamp(34px,11vw,48px)}.community-back-link{margin-bottom:14px}.community-chat-page-card{width:100%;margin-left:0;margin-right:0}.community-page-section .community-problem-list{width:100%}}
 @media(max-width:600px){
   .community-chat-page-section{padding-left:0;padding-right:0;padding-bottom:0}
-  .community-chat-page-section .community-page-top{padding:0 14px}
-  .community-chat-page-section .community-chat-page-card{width:100vw;max-width:none;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);border-radius:20px 20px 0 0;padding:14px 12px calc(86px + env(safe-area-inset-bottom));min-height:calc(100dvh - 170px);display:flex;flex-direction:column}
-  .community-chat-page-section .community-chat-window{flex:1;min-height:calc(100dvh - 390px);max-height:none;overflow-y:auto;padding:8px 2px 12px;overscroll-behavior:contain}
-  .community-chat-page-section .community-chat-form{position:sticky;bottom:calc(60px + env(safe-area-inset-bottom));z-index:4;padding-top:8px;background:linear-gradient(180deg,transparent,rgba(1,4,10,.96) 25%)}
+  .community-chat-page-section .community-page-top{padding:0 10px;margin-bottom:8px}.community-chat-page-section .community-page-top h1{font-size:28px;margin:5px 0}.community-chat-page-section .community-page-top p{font-size:11px}.community-chat-page-section .community-back-link{margin-bottom:8px}
+  .community-chat-page-section .community-chat-page-card{width:100vw;max-width:none;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);border-radius:18px 18px 0 0;padding:10px 10px calc(76px + env(safe-area-inset-bottom));min-height:calc(100dvh - 125px);display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(4,15,27,.99),rgba(1,6,12,.99));border-left:0;border-right:0}
+  .community-chat-page-section .community-chat-window{flex:1;min-height:calc(100dvh - 315px);max-height:none;overflow-y:auto;padding:6px 2px 12px;overscroll-behavior:contain}
+  .community-chat-page-section .community-chat-form{position:sticky;bottom:calc(56px + env(safe-area-inset-bottom));z-index:4;padding-top:7px;background:linear-gradient(180deg,transparent,rgba(1,4,10,.98) 25%)}
   .community-chat-page-section .community-chat-form textarea{border-radius:18px;padding:13px 15px;min-height:48px;background:rgba(6,18,31,.96)}
   .community-chat-page-section .community-chat-keyboard-hint{padding-bottom:2px}
-  .community-chat-page-section .community-message{padding:12px 11px;border-radius:16px}
+  .community-chat-page-section .community-message{padding:11px 10px;border-radius:15px;margin:0 1px}.community-chat-page-section .community-message-head strong{font-size:12px}.community-chat-page-section .community-message-text{font-size:14px;line-height:1.48}
   .community-chat-page-section .community-selection-actions{flex-wrap:wrap;justify-content:flex-end}
   .community-chat-page-section .community-chat-tools{position:sticky;top:0;z-index:5;padding:3px 0 8px;background:rgba(1,4,10,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 }
@@ -2561,20 +2555,12 @@ def community_chat():
     bubbles = []
     for r in chat_rows:
         mine = r["student_id"] == my_id
-        selector = (
-            f'<label class="community-message-select" data-select-for="{r["id"]}">'
-            f'<input type="checkbox" name="message_ids" value="{r["id"]}" form="community-delete-form" aria-label="Select this message"></label>'
-            if mine else ""
-        )
-        selectable_class = " is-selectable" if mine else ""
         mine_class = " mine" if mine else ""
         mine_flag = "1" if mine else "0"
         bubbles.append(
-            f'<div class="community-message{mine_class}{selectable_class}" data-message-id="{r["id"]}" data-mine="{mine_flag}">'
-            f'{selector}'
+            f'<div class="community-message{mine_class}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
             f'<div class="community-message-content">'
-            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong>'
-            f'<span>{esc(r["created_at"])}</span></div>'
+            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
             f'<div class="community-message-text">{esc(r["message"])}</div>'
             f'</div></div>'
         )
@@ -2584,15 +2570,16 @@ def community_chat():
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
     select_controls = f'''<div class="community-chat-tools">
-      <button type="button" class="community-select-toggle" id="community-select-toggle" aria-pressed="false">☑ Select messages</button>
       <div class="community-selection-actions" id="community-selection-actions">
         <span class="community-selection-count" id="community-selection-count">0 selected</span>
         <form id="community-delete-form" class="community-delete-toolbar" method="post" action="/community/chat">
           <input type="hidden" name="action" value="delete_selected" id="community-delete-action">
-          <button class="community-delete-selected" type="submit" onclick="return window.vybeConfirmSelectedDelete(event)">Delete selected</button>
-          <button class="community-delete-all" type="button" onclick="return window.vybeDeleteAllCommunityMessages(event)">Delete all</button>
+          <button class="community-delete-selected" type="submit" id="community-delete-selected">Delete selected</button>
+          <button class="community-delete-all" type="button" id="community-delete-all">Delete all</button>
+          <button class="community-selection-done" type="button" id="community-selection-done">Done</button>
         </form>
       </div>
+      <div class="community-select-help" id="community-select-help">Tap your message to select it</div>
     </div>'''
 
     if not chat_enabled:
@@ -2601,7 +2588,7 @@ def community_chat():
     else:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
         <form class="community-chat-form" method="post" action="/community/chat" id="community-send-form">
-            <textarea name="message" maxlength="1500" rows="1" placeholder="Type a message... Enter to send" required autocomplete="off" aria-label="Message"></textarea>
+            <textarea name="message" maxlength="1500" rows="1" placeholder="Message..." required autocomplete="off" aria-label="Message"></textarea>
         </form>
         <div class="community-chat-keyboard-hint">Enter sends · Shift + Enter makes a new line</div>'''
 
@@ -2611,56 +2598,72 @@ def community_chat():
     </section>
     <script>
     (function() {{
-      const selectToggle = document.getElementById('community-select-toggle');
+      const selected = new Set();
       const actionBar = document.getElementById('community-selection-actions');
       const countEl = document.getElementById('community-selection-count');
-      let selectMode = false;
+      const helpEl = document.getElementById('community-select-help');
+      const deleteForm = document.getElementById('community-delete-form');
+      const deleteAction = document.getElementById('community-delete-action');
+      const doneBtn = document.getElementById('community-selection-done');
+      const deleteSelectedBtn = document.getElementById('community-delete-selected');
+      const deleteAllBtn = document.getElementById('community-delete-all');
 
-      function selectedBoxes() {{
-        return Array.from(document.querySelectorAll('#community-delete-form input[name="message_ids"]:checked'));
-      }}
       function updateSelectionUI() {{
-        const boxes = document.querySelectorAll('.community-message-select');
-        boxes.forEach(function(label) {{ label.classList.toggle('is-visible', selectMode); }});
-        const selected = selectedBoxes();
         document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
-          const box = msg.querySelector('input[name="message_ids"]');
-          msg.classList.toggle('is-selected', !!(box && box.checked));
+          const id = msg.getAttribute('data-message-id');
+          const on = selected.has(id);
+          msg.classList.toggle('is-selected', on);
+          msg.setAttribute('aria-pressed', on ? 'true' : 'false');
         }});
-        if (actionBar) actionBar.classList.toggle('is-visible', selectMode);
-        if (countEl) countEl.textContent = selected.length + ' selected';
-        if (selectToggle) {{
-          selectToggle.setAttribute('aria-pressed', selectMode ? 'true' : 'false');
-          selectToggle.textContent = selectMode ? '✓ Done' : '☑ Select messages';
-        }}
+        const has = selected.size > 0;
+        if (actionBar) actionBar.classList.toggle('is-visible', has);
+        if (helpEl) helpEl.classList.toggle('is-hidden', has);
+        if (countEl) countEl.textContent = selected.size + ' selected';
+        if (deleteSelectedBtn) deleteSelectedBtn.disabled = !has;
       }}
-      function toggleSelectMode(force) {{
-        selectMode = typeof force === 'boolean' ? force : !selectMode;
-        if (!selectMode) {{
-          document.querySelectorAll('#community-delete-form input[name="message_ids"]').forEach(function(box) {{ box.checked = false; }});
-        }}
+
+      function toggleMessage(msg) {{
+        if (msg.getAttribute('data-mine') !== '1') return;
+        const id = msg.getAttribute('data-message-id');
+        if (!id) return;
+        if (selected.has(id)) selected.delete(id); else selected.add(id);
         updateSelectionUI();
       }}
-      if (selectToggle) selectToggle.addEventListener('click', function() {{ toggleSelectMode(); }});
 
       document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
         msg.addEventListener('click', function(e) {{
-          if (!selectMode) return;
-          if (e.target.closest('input, label, a, button')) return;
-          const box = msg.querySelector('input[name="message_ids"]');
-          if (box) {{ box.checked = !box.checked; updateSelectionUI(); }}
+          if (e.target.closest('a,button,textarea,input,form')) return;
+          toggleMessage(msg);
+        }});
+        msg.addEventListener('keydown', function(e) {{
+          if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
         }});
       }});
-      document.querySelectorAll('.community-message-select input').forEach(function(box) {{
-        box.addEventListener('change', updateSelectionUI);
+
+      if (doneBtn) doneBtn.addEventListener('click', function() {{ selected.clear(); updateSelectionUI(); }});
+
+      if (deleteForm) deleteForm.addEventListener('submit', function(e) {{
+        if (!selected.size) {{ e.preventDefault(); alert('Tap one or more of your messages first.'); return; }}
+        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
+        selected.forEach(function(id) {{
+          const input = document.createElement('input');
+          input.type = 'hidden'; input.name = 'message_ids'; input.value = id; input.setAttribute('data-dynamic-message-id','1');
+          deleteForm.appendChild(input);
+        }});
+        if (!confirm('Delete ' + selected.size + ' selected message' + (selected.size > 1 ? 's' : '') + '?')) e.preventDefault();
+      }});
+
+      if (deleteAllBtn) deleteAllBtn.addEventListener('click', function() {{
+        if (!confirm('Delete all of your community messages? This cannot be undone.')) return;
+        if (!deleteForm || !deleteAction) return;
+        deleteAction.value = 'delete_all';
+        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
+        deleteForm.submit();
       }});
 
       const sendBox = document.querySelector('#community-send-form textarea[name="message"]');
       if (sendBox) {{
-        const resize = function() {{
-          this.style.height = 'auto';
-          this.style.height = Math.min(this.scrollHeight, 140) + 'px';
-        }};
+        const resize = function() {{ this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 140) + 'px'; }};
         sendBox.addEventListener('input', resize);
         sendBox.addEventListener('keydown', function(e) {{
           if (e.key === 'Enter' && !e.shiftKey) {{
@@ -2670,27 +2673,6 @@ def community_chat():
           }}
         }});
       }}
-      window.vybeConfirmSelectedDelete = function(e) {{
-        const selected = selectedBoxes();
-        if (!selected.length) {{
-          if (e) e.preventDefault();
-          alert('Select one or more of your messages first.');
-          return false;
-        }}
-        return confirm('Delete ' + selected.length + ' selected message' + (selected.length > 1 ? 's' : '') + '?');
-      }};
-      window.vybeDeleteAllCommunityMessages = function(e) {{
-        if (e) e.preventDefault();
-        const own = document.querySelectorAll('#community-delete-form input[name="message_ids"]');
-        if (!own.length) {{ alert('You have no messages to delete.'); return false; }}
-        if (!confirm('Delete all of your community messages? This cannot be undone.')) return false;
-        const form = document.getElementById('community-delete-form');
-        const action = document.getElementById('community-delete-action');
-        if (!form || !action) return false;
-        action.value = 'delete_all';
-        form.submit();
-        return false;
-      }};
       updateSelectionUI();
     }})();
     </script>'''
