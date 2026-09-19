@@ -857,8 +857,7 @@ def _safe_500_page():
   .student-bottom-nav button.mobile-menu-nav{
     border:0!important;background:transparent!important;color:#91a9c0!important;
     font:inherit!important;cursor:pointer!important;padding:0!important;
-  }\n  /* Mobile-only Menu icon: compact VYBE-style control. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:34px!important;height:34px!important;display:grid!important;place-items:center!important;\n    border:1px solid rgba(73,173,235,.28)!important;\n    border-radius:11px!important;\n    background:rgba(8,25,40,.72)!important;\n    box-shadow:0 5px 16px rgba(0,0,0,.18)!important;\n    font-size:20px!important;line-height:1!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:rgba(22,91,139,.38)!important;\n    border-color:rgba(73,173,235,.58)!important;\n  }
-  .student-bottom-nav a.active,
+  }\n  /* Mobile-only Menu icon: use the exact same hamburger glyph treatment as desktop. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:auto!important;height:auto!important;display:block!important;\n    border:0!important;border-radius:0!important;background:transparent!important;\n    box-shadow:none!important;\n    font-family:Arial,Helvetica,sans-serif!important;\n    font-size:24px!important;line-height:1!important;letter-spacing:normal!important;\n    font-weight:400!important;color:#e5f4ff!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:transparent!important;border:0!important;color:#22aef2!important;\n  }\n  .student-bottom-nav a.active,
   .student-bottom-nav a:active,
   .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
   .student-bottom-nav .mobile-menu-nav{order:1}
@@ -1348,7 +1347,7 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
     top:0!important;
     right:auto!important;
     bottom:70px!important;
-    width:min(78vw,280px)!important;
+    width:min(58vw,205px)!important;
     height:auto!important;
     margin:0!important;
     padding:14px!important;
@@ -1450,7 +1449,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☷</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
