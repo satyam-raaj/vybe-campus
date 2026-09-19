@@ -2803,8 +2803,8 @@ def assistant():
     if question and enabled:
         answer = _free_vybe_answer(con, question)
         sources = _campus_search(con, question, 6)
-    con.close()
     if not enabled:
+        con.close()
         body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
         return layout("Ask VYBE", body)
     source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
@@ -2834,6 +2834,10 @@ def assistant():
                 f'</div>'
             )
         timetable_html = "".join(tt_cards)
+
+    # The timetable cards above still use the DB connection, so close it only
+    # after all timetable data has been fetched.
+    con.close()
 
     answer_html = esc(answer).replace("\n", "<br>")
     if timetable_html:
