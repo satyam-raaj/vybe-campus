@@ -857,7 +857,7 @@ def _safe_500_page():
   .student-bottom-nav button.mobile-menu-nav{
     border:0!important;background:transparent!important;color:#91a9c0!important;
     font:inherit!important;cursor:pointer!important;padding:0!important;
-  }
+  }\n  /* Mobile-only Menu icon: compact VYBE-style control. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:34px!important;height:34px!important;display:grid!important;place-items:center!important;\n    border:1px solid rgba(73,173,235,.28)!important;\n    border-radius:11px!important;\n    background:rgba(8,25,40,.72)!important;\n    box-shadow:0 5px 16px rgba(0,0,0,.18)!important;\n    font-size:20px!important;line-height:1!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:rgba(22,91,139,.38)!important;\n    border-color:rgba(73,173,235,.58)!important;\n  }
   .student-bottom-nav a.active,
   .student-bottom-nav a:active,
   .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
@@ -872,7 +872,7 @@ def _safe_500_page():
   #vybeMobileNav.student-mobile-menu.mobile-nav.open{
     display:flex!important;flex-direction:column!important;
     position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(72vw,240px)!important;min-width:0!important;
+    width:min(58vw,205px)!important;min-width:0!important;
     z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
     border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
     border-radius:0!important;
@@ -976,7 +976,7 @@ def _safe_500_page():
     right:auto!important;
     top:0!important;
     bottom:68px!important;
-    width:min(78vw,250px)!important;
+    width:min(58vw,205px)!important;
     z-index:1000!important;
   }
 }
@@ -1450,7 +1450,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☷</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -1477,7 +1477,7 @@ function setMenu(open){{
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
     const icon=bottomMenu.querySelector("span");
-    if(icon) icon.textContent=isOpen?"✕":"☰";
+    if(icon) icon.textContent=isOpen?"✕":"☷";
   }}
 }}
 
