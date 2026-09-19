@@ -824,7 +824,20 @@ def global_online_gate():
 def _safe_500_page():
     # Keep the 500 response independent of the database/layout system so the
     # error handler itself can never cause a second exception.
-    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}</style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}/* VYBE mobile bottom navigation: Profile + Home + Menu */
+@media (max-width:850px){
+  .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;height:68px!important;display:flex!important;align-items:center!important;justify-content:space-around!important;z-index:200!important;padding:8px 14px!important;background:rgba(2,8,14,.96)!important;border-top:1px solid rgba(58,126,175,.20)!important;backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important}
+  .student-bottom-nav a{flex:1!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;max-width:100px!important;text-decoration:none!important}
+  .student-bottom-nav .mobile-profile-nav{order:1!important}
+  .student-bottom-nav .mobile-home-nav{order:2!important}
+  .student-bottom-nav .mobile-menu-nav{order:3!important}
+  .student-bottom-nav .mobile-back-nav{order:4!important}
+  .student-bottom-spacer{height:82px!important}
+  #vybeMobileNav.mobile-nav.open{display:flex!important;flex-direction:column!important;position:fixed!important;right:0!important;top:0!important;bottom:68px!important;width:min(82vw,330px)!important;min-width:0!important;height:auto!important;z-index:190!important;margin:0!important;padding:22px 14px 18px!important;border:1px solid rgba(58,126,175,.28)!important;border-right:0!important;border-radius:24px 0 0 24px!important;background:rgba(3,10,18,.985)!important;box-shadow:-22px 0 70px rgba(0,0,0,.58),-8px 0 35px rgba(10,41,66,.22)!important;backdrop-filter:blur(28px)!important;-webkit-backdrop-filter:blur(28px)!important;overflow-y:auto!important}
+  #vybeMobileNav.mobile-nav.open a{display:flex!important;align-items:center!important;min-height:50px!important;padding:13px 15px!important;border-radius:14px!important;color:#dbe8f2!important;font-size:15px!important}
+  #vybeMobileNav.mobile-nav.open a:hover{background:rgba(58,126,175,.12)!important}
+}
+</style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(error):
@@ -1112,7 +1125,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin">{brand}{top_back}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search" aria-label="Search campus"></form><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="active" href="/dashboard"><span>⌂</span>Home</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-menu-nav" href="javascript:void(0)" onclick="var t=document.getElementById('vybeNavToggle');if(t)t.click()"><span>☰</span>Menu</a>{mobile_back}<div class="student-bottom-spacer"></div>'''
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
         brand = '<a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
