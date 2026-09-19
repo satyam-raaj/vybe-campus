@@ -1039,6 +1039,49 @@ input:focus,textarea:focus,select:focus{border-color:#32aef0;background:rgba(7,2
 .community-arrow{background:rgba(12,43,68,.7);border-color:rgba(74,159,216,.25)}
 .chat-composer{background:rgba(4,17,30,.78);border-color:rgba(72,157,213,.24);box-shadow:0 22px 60px rgba(0,0,0,.42)}
 .online{color:#63e6a2}.offline{color:#ff6f7f}
+/* VYBE VARIANT A — ALMOST BLACK + SUBTLE NAVY */
+:root{
+  --bg:#020508;
+  --bg2:#07101A;
+  --panel:rgba(5,13,22,.90);
+  --line:rgba(72,112,145,.20);
+  --line2:rgba(73,132,177,.42);
+  --text:#E8F0F7;
+  --muted:#8396A8;
+  --accent:#3A7EAF;
+  --accent2:#0A2942;
+  --shadow:0 28px 90px rgba(0,0,0,.72);
+}
+body{
+  background:
+    radial-gradient(850px 500px at 8% -18%,rgba(16,55,82,.14),transparent 70%),
+    radial-gradient(900px 620px at 92% 4%,rgba(8,38,62,.11),transparent 72%),
+    linear-gradient(180deg,#020508 0%,#03070B 48%,#020508 100%);
+  color:var(--text);
+}
+.nav{background:rgba(2,6,10,.82);border-bottom-color:rgba(72,112,145,.16)}
+.card,.panel,.student-feature,.student-mini,.student-link,.feed-item,.stat-chip,.top-stat,.top-tool{
+  background:linear-gradient(145deg,rgba(8,18,29,.90),rgba(3,9,15,.92));
+  border-color:var(--line);
+  box-shadow:0 18px 55px rgba(0,0,0,.24);
+}
+.card:hover,.student-feature:hover,.student-mini:hover,.student-link:hover{border-color:var(--line2)}
+.ai-box{background:linear-gradient(145deg,rgba(10,25,40,.94),rgba(3,10,17,.96));border-color:rgba(91,139,173,.22)}
+.btn,.button,.student-control.active{
+  background:linear-gradient(180deg,#174667,#0D2C45);
+  border-color:rgba(86,145,184,.38);
+}
+.btn:hover,.button:hover{background:linear-gradient(180deg,#1D5277,#123954)}
+input,textarea,select{background:rgba(2,8,14,.78)!important;border-color:rgba(72,112,145,.25)!important;color:var(--text)!important}
+input:focus,textarea:focus,select:focus{border-color:rgba(73,132,177,.55)!important;box-shadow:0 0 0 3px rgba(38,96,135,.12)!important}
+.student-space-pill{border-color:rgba(73,132,177,.38);color:#91B4CC;background:rgba(22,65,92,.10)}
+.student-feature-icon,.student-control,.student-header-icon{background:linear-gradient(145deg,rgba(13,39,59,.90),rgba(4,14,23,.96));border-color:rgba(72,112,145,.22)}
+.student-arrow{color:#75A7C5}
+.mobile-nav.open{background:rgba(3,10,16,.97);border-color:rgba(72,112,145,.25)}
+.nav-toggle{background:rgba(5,14,22,.86);border-color:rgba(72,112,145,.24)}
+.footer{border-top-color:rgba(72,112,145,.12)}
+::selection{background:rgba(58,126,175,.28);color:#F4F8FB}
+
 """
 
 
