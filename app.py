@@ -1429,6 +1429,60 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 }
 
 
+  /* FINAL MOBILE-ONLY MENU ICON
+     Desktop navigation is intentionally untouched. */
+  @media (max-width:850px){
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{
+      width:24px!important;
+      height:20px!important;
+      display:flex!important;
+      flex-direction:column!important;
+      align-items:center!important;
+      justify-content:space-between!important;
+      flex:0 0 20px!important;
+      margin:0 auto 2px!important;
+      padding:1px 0!important;
+      background:transparent!important;
+      border:0!important;
+      border-radius:0!important;
+      box-shadow:none!important;
+      font-size:0!important;
+      line-height:0!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines i{
+      display:block!important;
+      width:22px!important;
+      height:2px!important;
+      flex:0 0 2px!important;
+      margin:0!important;
+      padding:0!important;
+      border:0!important;
+      border-radius:2px!important;
+      background:#91a9c0!important;
+      box-shadow:none!important;
+      transform-origin:center!important;
+      transition:transform .18s ease, opacity .18s ease, background .18s ease!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(1){
+      transform:translateY(9px) rotate(45deg)!important;
+      background:#22aef2!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(2){
+      opacity:0!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(3){
+      transform:translateY(-9px) rotate(-45deg)!important;
+      background:#22aef2!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{
+      display:block!important;
+      font-size:11px!important;
+      line-height:1!important;
+      color:inherit!important;
+    }
+  }
+
+
 """
 
 
@@ -1449,7 +1503,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin">{brand}<div class="student-header-tools"><a class="student-header-icon" href="/announcements" aria-label="Announcements">🔔<span class="dot"></span></a><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
 <div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span>☰</span>Menu</button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -1475,8 +1529,8 @@ function setMenu(open){{
   }}
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
-    const icon=bottomMenu.querySelector("span");
-    if(icon) icon.textContent=isOpen?"✕":"☷";
+    const icon=bottomMenu.querySelector(".mobile-menu-icon-lines");
+    if(icon) icon.classList.toggle("is-open",isOpen);
   }}
 }}
 
