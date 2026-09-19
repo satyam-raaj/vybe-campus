@@ -2233,109 +2233,164 @@ def _resource_ocr_script(form_id,file_id,text_id,status_id):
 def _timetable_ocr_script(form_id,file_id,text_id,status_id):
     return _resource_ocr_script(form_id,file_id,text_id,status_id)
 
-def _assistant_knowledge_rows(con, question, limit=6):
-    """Rank persistent admin-managed assistant knowledge for a question."""
-    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
-    tokens=[w for w in re.findall(r"[a-z0-9]+", q) if len(w)>=3]
-    stop={"what","when","where","which","who","why","how","does","did","are","the","and","for","from","with","about","please","tell","show","give","can","you","our","this","that","have","has","into","there","their","your","student","students","vybe"}
-    tokens=[t for t in tokens if t not in stop][:12]
-    rows=con.execute("SELECT id,title,description,original_name,content,source_type,created_at,updated_at FROM assistant_knowledge ORDER BY id DESC LIMIT 80").fetchall()
+def _assistant_query_tokens(question):
+    q = re.sub(r"\s+", " ", (question or "").lower()).strip()
+    # Common words which do not help locate a fact in a college document.
+    stop = {
+        "what","when","where","which","who","why","how","does","did","are","the",
+        "and","for","from","with","about","please","tell","show","give","can","you",
+        "our","this","that","have","has","into","there","their","your","student","students",
+        "vybe","assistant","tell","me","is","of","to","in","on","a","an","do","i","my"
+    }
+    aliases = {
+        "bsc":"b.sc", "bachelor":"b.sc", "computer":"computer", "cs":"computer science",
+        "sem":"semester", "sem1":"semester 1", "semester1":"semester 1", "sem2":"semester 2", "semester2":"semester 2",
+        "eligibility":"eligibility", "eligible":"eligibility", "qualification":"eligibility",
+        "fee":"fees", "fees":"fees", "admission":"admission", "apply":"admission",
+        "teacher":"faculty", "teachers":"faculty", "professor":"faculty", "prof":"faculty",
+        "sir":"faculty", "mam":"faculty", "maam":"faculty", "instructor":"faculty",
+    }
+    raw = re.findall(r"[a-z0-9.]+", q)
+    expanded=[]
+    for w in raw:
+        if w in stop: continue
+        w=aliases.get(w,w)
+        for part in re.findall(r"[a-z0-9]+", w):
+            if len(part)>=2 and part not in stop:
+                expanded.append(part)
+    # Preserve useful multi-word phrases as well as individual terms.
+    phrases=[]
+    for phrase in ("semester 1","semester 2","semester 3","semester 4","semester 5","semester 6","semester 7","semester 8",
+                   "computer science","minor in entrepreneurship","object oriented programming using python",
+                   "admission link","online admission","class 12","class xii"):
+        if phrase in q: phrases.append(phrase)
+    return q, list(dict.fromkeys(expanded))[:24], phrases
+
+
+def _assistant_knowledge_rows(con, question, limit=8):
+    """Rank knowledge by exact phrases, title/heading matches and term coverage."""
+    q,tokens,phrases = _assistant_query_tokens(question)
+    rows=con.execute("SELECT id,title,description,original_name,content,source_type,created_at,updated_at FROM assistant_knowledge ORDER BY id DESC LIMIT 100").fetchall()
     scored=[]
     for r in rows:
-        title=(r["title"] or "").lower(); desc=(r["description"] or "").lower(); hay=(title+" "+desc+" "+(r["original_name"] or "")+" "+(r["content"] or "")).lower()
+        title=(r["title"] or "").lower()
+        desc=(r["description"] or "").lower()
+        name=(r["original_name"] or "").lower()
+        content=(r["content"] or "").lower()
+        hay=title+" "+desc+" "+name+" "+content
         score=0
+        for phrase in phrases:
+            if phrase in hay: score += 18
         for t in tokens:
-            if t in title: score+=8
-            if t in desc: score+=4
-            if t in hay: score+=min(4,hay.count(t))
+            if re.search(r"\b"+re.escape(t)+r"\b", title): score += 10
+            elif re.search(r"\b"+re.escape(t)+r"\b", desc): score += 5
+            elif re.search(r"\b"+re.escape(t)+r"\b", hay): score += 2
         if not tokens and r["source_type"]=="note": score=1
         if score: scored.append((score,int(r["id"]),r))
-    scored.sort(key=lambda x:(x[0],x[1]),reverse=True)
+    scored.sort(key=lambda x:(x[0],x[1]), reverse=True)
     return [x[2] for x in scored[:limit]]
 
-def _assistant_knowledge_context(con, question, limit=5, max_each=5000):
-    rows=_assistant_knowledge_rows(con,question,limit)
-    parts=[]
-    for r in rows:
-        content=(r["content"] or "").strip()
-        if not content: continue
-        low=content.lower(); start=0
-        for token in re.findall(r"[a-z0-9]+",(question or "").lower())[:10]:
-            if len(token)>=3:
-                pos=low.find(token)
-                if pos>=0: start=max(0,pos-700); break
-        parts.append(f"[{r['title'] or r['original_name'] or 'VYBE knowledge'}]\n{content[start:start+max_each]}")
-    return "\n\n".join(parts)
+
+def _assistant_make_chunks(content):
+    """Split a source into heading-aware chunks instead of isolated sentences."""
+    text=re.sub(r"\r\n?", "\n", content or "").strip()
+    if not text: return []
+    lines=text.split("\n")
+    chunks=[]; heading=[]; buf=[]
+    heading_re=re.compile(r"^(?:#{1,6}\s+|(?:I|II|III|IV)\s+Year\b|Semester\s+[1-8]\b|[A-Z][A-Za-z0-9 &(),.'’:/\-]{2,80}:\s*$)", re.I)
+    def flush():
+        nonlocal buf
+        if buf:
+            body="\n".join(buf).strip()
+            if len(body)>=25: chunks.append((" > ".join(heading[-3:]),body))
+            buf=[]
+    for line in lines:
+        clean=line.strip()
+        if not clean:
+            if buf: flush()
+            continue
+        if heading_re.match(clean) and len(clean)<130:
+            flush()
+            h=re.sub(r"^#+\s*", "", clean).strip()
+            if h.endswith(":"): h=h[:-1]
+            heading.append(h)
+            heading=heading[-4:]
+            continue
+        buf.append(clean)
+        if len(" ".join(buf))>=1200: flush()
+    flush()
+    # Also make short line-level units available for timetable/OCR style sources.
+    if len(chunks)<4:
+        units=[]
+        for line in lines:
+            line=re.sub(r"\s+"," ",line).strip(" -•\t")
+            if len(line)>=20: units.append(("",line))
+        chunks.extend(units[:300])
+    return chunks
+
 
 def _assistant_knowledge_answer(con, question):
-    """Answer from stored knowledge instead of dumping the uploaded file.
+    """Return a small, specific answer from the most relevant knowledge chunks.
 
-    This is intentionally extractive: it ranks sentences from the most relevant
-    knowledge items and returns only the useful passages. It never exposes the
-    complete stored document just because a question matched the document.
+    This is deterministic and source-grounded: it does not invent facts and it
+    avoids returning the whole uploaded document. It prefers exact phrases,
+    headings, semester/year context, and chunks containing most of the question.
     """
-    q=re.sub(r"\s+", " ", (question or "").lower()).strip()
-    if not q:
-        return ""
-
-    stop={"what","when","where","which","who","why","how","does","did","are","the","and","for","from","with","about","please","tell","show","give","can","you","our","this","that","have","has","into","there","their","your","student","students","vybe","assistant"}
-    tokens=[w for w in re.findall(r"[a-z0-9]+", q) if len(w)>=3 and w not in stop][:18]
-    rows=_assistant_knowledge_rows(con, question, limit=8)
-    if not rows:
-        return ""
-
+    q,tokens,phrases=_assistant_query_tokens(question)
+    if not q: return ""
+    rows=_assistant_knowledge_rows(con,question,limit=12)
+    if not rows: return ""
     candidates=[]
     for r in rows:
         content=(r["content"] or "").strip()
-        if not content:
-            continue
-        # Split both normal prose and simple list/template files into useful units.
-        units=re.split(r"(?<=[.!?])\s+|\n+|(?<=:)\s+(?=[A-Z0-9•*-])", content)
+        if not content: continue
         title=(r["title"] or r["original_name"] or "VYBE knowledge")
-        for unit in units:
-            unit=re.sub(r"\s+", " ", unit).strip(" -•\t")
-            if len(unit)<12:
-                continue
-            low=unit.lower()
+        for heading,unit in _assistant_make_chunks(content):
+            low=(heading+" "+unit).lower()
             score=0
-            for token in tokens:
-                if token in low:
-                    score += 3 if re.search(r"\b"+re.escape(token)+r"\b", low) else 1
-            # Prefer a unit that directly contains the key subject from the question.
-            if q in low:
-                score += 10
-            if score:
-                candidates.append((score, int(r["id"]), title, unit))
-
+            matched=0
+            for phrase in phrases:
+                if phrase in low: score+=30
+            for t in tokens:
+                if re.search(r"\b"+re.escape(t)+r"\b", low):
+                    matched+=1; score+=6
+            if tokens:
+                coverage=matched/max(1,len(tokens))
+                if coverage>=0.60: score+=20
+                elif coverage>=0.40: score+=10
+            if q in low: score+=50
+            # Questions asking for a list should prefer list/table chunks.
+            if any(x in q for x in ("subjects","courses","course","papers","what do i study","curriculum")) and ("semester" in low or "dsc" in low or "aec" in low or "sec" in low):
+                score+=10
+            if any(x in q for x in ("eligibility","eligible","qualification","criteria")) and "eligib" in low:
+                score+=25
+            if any(x in q for x in ("admission","apply","application")) and "admission" in low:
+                score+=20
+            if score: candidates.append((score,matched,int(r["id"]),title,heading,unit))
     if not candidates:
-        return "I found the uploaded knowledge, but I couldn't find a passage that directly answers that question. Try asking with a more specific keyword."
-
-    candidates.sort(key=lambda x:(x[0],x[1]), reverse=True)
-    selected=[]
-    seen=set()
-    total=0
-    for score,kid,title,unit in candidates:
-        key=unit.lower()
-        if key in seen:
-            continue
+        return "I found the uploaded knowledge, but I couldn't find a specific passage that answers that question."
+    candidates.sort(key=lambda x:(x[0],x[1],x[2]),reverse=True)
+    selected=[]; seen=set(); total=0
+    # Usually one best chunk is enough; add a second only if it clearly adds context.
+    for score,matched,kid,title,heading,unit in candidates:
+        key=re.sub(r"\s+"," ",unit.lower()).strip()
+        if key in seen: continue
         seen.add(key)
-        # Keep answers compact; never return the whole document.
-        unit=unit[:420]
-        if total+len(unit)>1800:
-            continue
-        selected.append((title,unit))
-        total += len(unit)
-        if len(selected)>=5:
-            break
-
-    if not selected:
-        return "I found the knowledge source, but the matching information is too large to display as an answer. Try a more specific question."
-
-    lines=["🧠 Based on VYBE Assistant Knowledge:"]
-    for title,unit in selected:
-        lines.append(f"• {unit}")
+        unit=re.sub(r"\s+"," ",unit).strip()
+        if len(unit)>900: unit=unit[:900].rsplit(" ",1)[0]+"…"
+        if total+len(unit)>1500: continue
+        selected.append((title,heading,unit)); total+=len(unit)
+        if len(selected)>=2: break
+    if not selected: return "I found the source, but the matching passage was not usable as a short answer."
+    # If the strongest chunk is clearly an exact fact/list, present it directly.
+    lines=["🧠 VYBE Assistant answer:"]
+    for title,heading,unit in selected:
+        if heading:
+            lines.append(f"• {unit}  [{heading}]")
+        else:
+            lines.append(f"• {unit}")
+    lines.append("\nSource: VYBE Assistant Knowledge")
     return "\n".join(lines)
-
 
 def _campus_search(con, q, limit=8):
     like=f"%{q}%"
@@ -2414,7 +2469,7 @@ def _free_vybe_answer(con, question):
             if not terms or all(t in hay for t in terms[:4]): matches.append(r)
         matches=matches or rows[:3]
         teacher_intent=any(x in q for x in ("teacher","teachers","faculty","professor","prof","instructor","who teaches","teacher name","faculty name","sir","mam","ma'am"))
-        lines=["🗓️ Timetable information from VYBE:"]
+        lines=["🗓️ Timetable information from VYBE:", "[[TIMETABLE_IDS:" + ",".join(str(int(r["id"])) for r in matches[:3]) + "]]" ]
         for r in matches[:3]:
             text=(r["assistant_text"] or "").strip()
             if teacher_intent and text:
@@ -2678,7 +2733,38 @@ def assistant():
         body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
         return layout("Ask VYBE", body)
     source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{esc(answer)}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+
+    # Timetable questions show the actual uploaded timetable in the answer.
+    timetable_html = ""
+    marker = re.search(r"\[\[TIMETABLE_IDS:([0-9,]+)\]\]", answer or "")
+    if marker:
+        ids = []
+        for raw_id in marker.group(1).split(","):
+            try:
+                ids.append(int(raw_id))
+            except ValueError:
+                pass
+        answer = re.sub(r"\n?\[\[TIMETABLE_IDS:[0-9,]+\]\]", "", answer or "").strip()
+        tt_cards = []
+        for tid in ids[:3]:
+            tt = con.execute("SELECT id,title,original_name,created_at FROM timetables WHERE id=?", (tid,)).fetchone()
+            if not tt:
+                continue
+            title = esc(tt["title"] or tt["original_name"] or "Timetable")
+            tt_cards.append(
+                f'<div style="margin-top:16px;padding:14px;border:1px solid rgba(58,145,214,.22);border-radius:18px;background:rgba(4,12,20,.65)">'
+                f'<strong style="display:block;margin-bottom:10px">🗓️ {title}</strong>'
+                f'<iframe src="/timetable-file/{int(tt["id"])}" title="{title}" style="width:100%;height:680px;border:0;border-radius:14px;background:#08080a"></iframe>'
+                f'<a class="btn dark" style="margin-top:10px" href="/timetable-file/{int(tt["id"])}" target="_blank" rel="noopener">Open full timetable →</a>'
+                f'</div>'
+            )
+        timetable_html = "".join(tt_cards)
+
+    answer_html = esc(answer).replace("\n", "<br>")
+    if timetable_html:
+        answer_html += timetable_html
+
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · FREE</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">No AI API key required. Ask about announcements, updates, events, notes, files, resources, community questions, or the current date and time.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
