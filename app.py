@@ -2640,6 +2640,122 @@ def community_chat():
       const deleteSelectedBtn = document.getElementById('community-delete-selected');
       const deleteAllBtn = document.getElementById('community-delete-all');
 
+      const chatWindow = document.querySelector('.community-chat-window');
+      const liveMessagesUrl = '/community/chat/messages';
+      let liveTimer = null;
+      let liveBusy = false;
+      let liveStarted = false;
+
+      function escClient(value) {{
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+      }}
+
+      function buildLiveMessage(m) {{
+        const mine = String(m.student_id) === String({my_id});
+        const wrap = document.createElement('div');
+        wrap.className = 'community-message' + (mine ? ' mine' : '');
+        wrap.id = 'community-msg-' + m.id;
+        wrap.dataset.messageId = m.id;
+        wrap.dataset.mine = mine ? '1' : '0';
+        wrap.setAttribute('role', 'button');
+        wrap.tabIndex = 0;
+        wrap.setAttribute('aria-pressed', selected.has(String(m.id)) ? 'true' : 'false');
+
+        const content = document.createElement('div');
+        content.className = 'community-message-content';
+        const head = document.createElement('div');
+        head.className = 'community-message-head';
+        const strong = document.createElement('strong');
+        strong.textContent = m.name || 'Student';
+        head.appendChild(strong);
+        content.appendChild(head);
+
+        if (m.reply_to_id && m.reply_message) {{
+          const ref = document.createElement('button');
+          ref.type = 'button';
+          ref.className = 'community-reply-reference';
+          ref.dataset.replyTarget = m.reply_to_id;
+          const rt = document.createElement('strong');
+          rt.textContent = 'Replying to ' + (m.reply_name || 'Student');
+          const rp = document.createElement('span');
+          rp.textContent = String(m.reply_message).slice(0, 120);
+          ref.appendChild(rt); ref.appendChild(rp);
+          content.appendChild(ref);
+        }}
+        const text = document.createElement('div');
+        text.className = 'community-message-text';
+        text.textContent = m.message || '';
+        content.appendChild(text);
+        wrap.appendChild(content);
+        return wrap;
+      }}
+
+      function bindLiveMessage(msg) {{
+        if (!msg || msg.dataset.liveBound === '1') return;
+        msg.dataset.liveBound = '1';
+        if (msg.dataset.mine === '1') {{
+          msg.addEventListener('click', function(e) {{
+            if (e.target.closest('a,button,textarea,input,form')) return;
+            toggleMessage(msg);
+          }});
+          msg.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
+          }});
+        }} else {{
+          msg.addEventListener('click', function(e) {{
+            if (e.target.closest('.community-reply-reference')) return;
+            startReply(msg);
+          }});
+          msg.addEventListener('keydown', function(e) {{
+            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
+          }});
+        }}
+        const ref = msg.querySelector('.community-reply-reference');
+        if (ref) ref.addEventListener('click', function(e) {{
+          e.preventDefault(); e.stopPropagation();
+          const target = document.getElementById('community-msg-' + ref.dataset.replyTarget);
+          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
+        }});
+      }}
+
+      async function refreshLiveChat(forceBottom) {{
+        if (!chatWindow || liveBusy) return;
+        liveBusy = true;
+        try {{
+          const wasNearBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 90;
+          const response = await fetch(liveMessagesUrl + '?t=' + Date.now(), {{credentials:'same-origin', cache:'no-store', headers:{{'Accept':'application/json'}}}});
+          if (!response.ok) return;
+          const data = await response.json();
+          const messages = Array.isArray(data.messages) ? data.messages : [];
+          const currentIds = new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x => x.dataset.messageId));
+          const incomingIds = new Set(messages.map(m => String(m.id)));
+          messages.forEach(function(m) {{
+            const id = String(m.id);
+            if (!currentIds.has(id)) chatWindow.appendChild(buildLiveMessage(m));
+          }});
+          Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(el) {{
+            if (!incomingIds.has(el.dataset.messageId)) {{
+              selected.delete(el.dataset.messageId);
+              el.remove();
+            }}
+          }});
+          chatWindow.querySelectorAll('.community-message').forEach(bindLiveMessage);
+          updateSelectionUI();
+          if (messages.length && (forceBottom || wasNearBottom)) chatWindow.scrollTo({{top:chatWindow.scrollHeight, behavior: forceBottom ? 'smooth' : 'auto'}});
+          if (!liveStarted && messages.length) {{ liveStarted = true; chatWindow.scrollTop = chatWindow.scrollHeight; }}
+        }} catch (_) {{
+          // Temporary network errors are ignored; the next poll retries automatically.
+        }} finally {{ liveBusy = false; }}
+      }}
+
+      function startLiveChat() {{
+        if (!chatWindow || liveTimer) return;
+        refreshLiveChat(false);
+        liveTimer = setInterval(function() {{ refreshLiveChat(false); }}, 500);
+      }}
+
       function updateSelectionUI() {{
         document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
           const id = msg.getAttribute('data-message-id');
@@ -2753,7 +2869,18 @@ def community_chat():
           if (e.key === 'Enter' && !e.shiftKey) {{
             e.preventDefault();
             const form = document.getElementById('community-send-form');
-            if (this.value.trim() && form) form.submit();
+            if (this.value.trim() && form) {{
+              const messageText = this.value.trim();
+              const formData = new FormData(form);
+              this.value = '';
+              this.style.height = 'auto';
+              clearReply();
+              this.disabled = true;
+              fetch(form.action, {{method:'POST', body:formData, credentials:'same-origin', headers:{{'X-VYBE-Live-Chat':'1'}}}})
+                .then(function() {{ return refreshLiveChat(true); }})
+                .catch(function() {{ sendBox.value = messageText; resize.call(sendBox); }})
+                .finally(function() {{ sendBox.disabled = false; sendBox.focus(); }});
+            }}
           }}
         }});
       }}
@@ -2761,10 +2888,42 @@ def community_chat():
         if (!window.matchMedia('(max-width: 850px)').matches) document.body.classList.remove('vybe-chat-composing');
       }});
       updateSelectionUI();
+      startLiveChat();
     }})();
     </script>'''
     return layout("Chat with Students", body)
 
+
+
+@app.route("/community/chat/messages", methods=["GET"])
+@student_required
+def community_chat_messages():
+    """Lightweight live-chat endpoint used by the chat page polling loop."""
+    con = db()
+    try:
+        rows = con.execute(
+            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+            "s.name, r.message AS reply_message, rs.name AS reply_name "
+            "FROM community_messages cm "
+            "JOIN students s ON s.id=cm.student_id "
+            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+            "LEFT JOIN students rs ON rs.id=r.student_id "
+            "ORDER BY cm.id ASC LIMIT 300"
+        ).fetchall()
+        return jsonify({"messages": [
+            {
+                "id": int(r["id"]),
+                "student_id": int(r["student_id"]),
+                "name": r["name"],
+                "message": r["message"],
+                "created_at": r["created_at"],
+                "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
+                "reply_message": r["reply_message"],
+                "reply_name": r["reply_name"],
+            } for r in rows
+        ]})
+    finally:
+        con.close()
 
 
 @app.route("/community/problems", methods=["GET", "POST"])
