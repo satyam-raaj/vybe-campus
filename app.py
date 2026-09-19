@@ -1499,6 +1499,38 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
   }
 
 
+/* =========================================================
+   COMMUNITY PAGE — TWO STUDENT OPTIONS + LIVE CHAT
+   Responsive on desktop and mobile without changing desktop nav.
+   ========================================================= */
+.community-choice-section{padding-top:0}
+.community-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1000px;margin:0 auto}
+.community-choice-card{position:relative;display:flex;align-items:center;gap:16px;min-width:0;padding:20px 22px;border:1px solid rgba(55,133,199,.30);border-radius:24px;background:linear-gradient(145deg,rgba(8,30,51,.96),rgba(3,12,22,.98));box-shadow:0 18px 55px rgba(0,0,0,.30);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+.community-choice-card:hover{transform:translateY(-3px);border-color:rgba(75,155,224,.58);box-shadow:0 24px 65px rgba(0,30,65,.30)}
+.community-choice-icon{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;border-radius:16px;background:linear-gradient(145deg,rgba(27,91,139,.65),rgba(5,25,43,.98));border:1px solid rgba(75,155,224,.24);font-size:24px}
+.community-choice-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.community-choice-copy strong{font-size:18px;letter-spacing:-.025em}.community-choice-copy small{font-size:12px;line-height:1.45;color:#9db6cc}.community-choice-arrow{font-size:34px;line-height:1;color:#82b9e5}
+.community-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}.community-section-head h2{margin:9px 0 5px;font-size:clamp(25px,4vw,34px);letter-spacing:-.045em}.community-section-head p{margin:0}
+.community-chat-card{border:1px solid rgba(55,133,199,.30);border-radius:26px;background:linear-gradient(145deg,rgba(7,24,42,.96),rgba(2,10,18,.98));padding:16px;box-shadow:0 22px 65px rgba(0,0,0,.34)}
+.community-chat-window{display:flex;flex-direction:column;gap:9px;max-height:520px;min-height:180px;overflow-y:auto;padding:4px;scroll-behavior:smooth}
+.community-message{max-width:min(78%,720px);align-self:flex-start;padding:11px 14px;border-radius:17px 17px 17px 5px;background:rgba(255,255,255,.045);border:1px solid rgba(55,133,199,.20);word-break:break-word}.community-message.mine{align-self:flex-end;border-radius:17px 17px 5px 17px;background:rgba(15,67,103,.34);border-color:rgba(75,155,224,.28)}
+.community-message-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}.community-message-head strong{font-size:13px;color:#dceeff}.community-message-head span{font-size:10px;color:#718ba3}.community-message-text{font-size:14px;line-height:1.5;color:#edf6ff;white-space:pre-wrap}
+.community-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:12px}.community-chat-form textarea{min-height:48px;height:48px;resize:none;padding:13px 14px}.community-chat-form .btn{height:48px;white-space:nowrap}
+.community-chat-locked{min-height:190px;display:grid;place-items:center;text-align:center;padding:28px 18px}.community-lock-icon{font-size:28px;margin-bottom:6px}.community-chat-locked h3{margin:0 0 7px;font-size:20px}.community-chat-locked p{max-width:520px;margin:0;color:#8fa6bd;line-height:1.55;font-size:13px}
+.community-problem-list{display:grid;gap:16px}.community-problem-card{scroll-margin-top:90px}
+@media(max-width:850px){
+  .community-choice-grid{grid-template-columns:1fr;gap:11px}
+  .community-choice-card{padding:15px 16px;border-radius:20px;gap:12px}
+  .community-choice-icon{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}
+  .community-choice-copy strong{font-size:16px}.community-choice-copy small{font-size:11px}
+  .community-choice-arrow{font-size:29px}
+  .community-section-head{align-items:stretch;flex-direction:column;gap:11px}.community-section-head .btn{width:100%}
+  .community-chat-card{padding:10px;border-radius:21px}.community-chat-window{min-height:150px;max-height:430px;padding:3px}
+  .community-message{max-width:88%;padding:10px 12px}.community-message-text{font-size:13px}
+  .community-chat-form{grid-template-columns:1fr;gap:8px}.community-chat-form textarea{height:48px;min-height:48px}.community-chat-form .btn{width:100%;height:44px}
+  .community-chat-locked{min-height:160px;padding:22px 14px}
+  .community-problem-card{scroll-margin-top:75px}
+}
+
 """
 
 
@@ -2387,6 +2419,36 @@ def _render_solution_card(row,my_student_id):
 def community():
     con = db()
     if request.method == "POST":
+        action = request.form.get("action", "solution")
+
+        # Live student-to-student chat, controlled by the admin ON/OFF switch.
+        if action == "chat_message":
+            chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+            text = request.form.get("message", "").strip()[:1500]
+            if not chat_enabled:
+                con.close()
+                flash("Community Chat is currently turned off by the admin.")
+                return redirect(url_for("community") + "#student-chat")
+            if not text:
+                con.close()
+                flash("Please enter a message.")
+                return redirect(url_for("community") + "#student-chat")
+            try:
+                con.execute(
+                    "INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)",
+                    (session["student_db_id"], text, now()),
+                )
+                con.commit()
+                con.close()
+                return redirect(url_for("community") + "#student-chat")
+            except Exception:
+                con.rollback()
+                con.close()
+                app.logger.exception("Community chat message post failed")
+                flash("We couldn't send that message right now. Please try again.")
+                return redirect(url_for("community") + "#student-chat")
+
+        # Existing campus-problem solution posting.
         try:
             iid = int(request.form.get("issue_id", "0"))
         except (TypeError, ValueError):
@@ -2395,7 +2457,6 @@ def community():
         if iid <= 0 or not text:
             con.close(); flash("Please enter a valid solution."); return redirect(url_for("community"))
         try:
-            # Any approved student may solve any other student's problem.
             issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
             if not issue:
                 con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community"))
@@ -2412,10 +2473,28 @@ def community():
             app.logger.exception("Community solution post failed")
             flash("We couldn't post that solution right now. Please try again.")
             return redirect(url_for("community"))
+
+    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+    chat_rows = con.execute(
+        "SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300"
+    ).fetchall()
     issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
     solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
     by_issue = {}
-    for s in solutions: by_issue.setdefault(s["issue_id"], []).append(s)
+    for s in solutions:
+        by_issue.setdefault(s["issue_id"], []).append(s)
+
+    # Public chat shows names only. Student IDs remain admin-only.
+    chat_bubbles = "".join(
+        f'''<div class="community-message {"mine" if r["student_id"] == session["student_db_id"] else ""}"><div class="community-message-head"><strong>{esc(r["name"])}</strong><span>{esc(r["created_at"])}</span></div><div class="community-message-text">{esc(r["message"])}</div></div>'''
+        for r in chat_rows
+    )
+    if not chat_enabled:
+        chat_panel = '''<div class="community-chat-locked"><div class="community-lock-icon">&#128274;</div><h3>Community Chat is off</h3><p>The admin has temporarily turned off student messaging. You can still use the campus-problem section below.</p></div>'''
+    else:
+        empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
+        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div><form class="community-chat-form" method="post" action="/community#student-chat"><input type="hidden" name="action" value="chat_message"><textarea name="message" maxlength="1500" rows="2" placeholder="Message the student community..." required></textarea><button class="btn accent" type="submit">Send message</button></form>'''
+
     blocks = ""
     for i in issues_rows:
         sols = by_issue.get(i["id"], [])
@@ -2423,10 +2502,22 @@ def community():
         other_solution = any(s["student_id"] != session["student_db_id"] for s in sols)
         accept = ""
         if i["student_id"] == session["student_db_id"] and other_solution:
-            accept = f'<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm(\'Accept a solution? This deletes the problem and its entire chat.\')"><button class="btn good">✓ Accept solution &amp; delete chat</button></form>'
-        blocks += f'''<div class="card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or '<div class="empty">No solutions yet. Be the first to help.</div>'}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark">Post solution</button></form>{accept}</div>'''
+            accept = f'''<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm('Accept a solution? This deletes the problem and its entire chat.')"><button class="btn good">&#10003; Accept solution &amp; delete chat</button></form>'''
+        empty_solutions = '<div class="empty">No solutions yet. Be the first to help.</div>'
+        blocks += f'''<div class="card community-problem-card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or empty_solutions}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><input type="hidden" name="action" value="solution"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark">Post solution</button></form>{accept}</div>'''
+
     con.close()
-    body = f'''<section class="section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Solutions are visible immediately. There is no admin moderation. Only the original reporter can accept a solution, and the accept button appears after another student has contributed.</p></section><section class="section" style="display:grid;gap:16px">{blocks or '<div class="empty">No campus problems have been reported yet.</div>'}</section>'''
+    status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
+    empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
+    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
+<section class="section community-choice-section">
+  <div class="community-choice-grid">
+    <a class="community-choice-card" href="#student-chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+    <a class="community-choice-card" href="#campus-problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+  </div>
+</section>
+<section class="section" id="student-chat"><div class="community-section-head"><div><div class="badge">CHAT WITH STUDENTS</div><h2>Campus conversation.</h2><p class="muted">{status_text} · Student IDs are never shown here.</p></div></div><div class="community-chat-card">{chat_panel}</div></section>
+<section class="section" id="campus-problems"><div class="community-section-head"><div><div class="badge">SOLVE CAMPUS PROBLEM</div><h2>Help fix what matters.</h2><p class="muted">Share practical solutions for problems reported by students.</p></div><a class="btn dark" href="/issues">＋ Report a problem</a></div><div class="community-problem-list">{blocks or empty_problems}</div></section>'''
     return layout("Community", body)
 
 
