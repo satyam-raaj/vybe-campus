@@ -1057,6 +1057,26 @@ def security_headers(response):
 
 
 CSS = r"""
+/* Student community chat controls */
+.community-message{display:flex;align-items:flex-start;gap:8px}
+.community-message-content{min-width:0;flex:1}
+.community-message-select{display:flex;align-items:center;justify-content:center;flex:0 0 22px;margin-top:2px;cursor:pointer}
+.community-message-select input{width:17px;height:17px;accent-color:#25aaf2;cursor:pointer}
+.community-delete-toolbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:10px}
+.community-delete-toolbar button{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:9px 13px;background:rgba(255,255,255,.045);color:#b8c9d9;cursor:pointer;font:inherit;font-size:12px}
+.community-delete-toolbar .community-delete-selected:hover{border-color:rgba(34,174,242,.45);color:#fff}
+.community-delete-toolbar .community-delete-all{color:#ff9c9c;border-color:rgba(255,100,100,.18)}
+.community-delete-toolbar .community-delete-all:hover{background:rgba(255,70,70,.08);color:#ffb4b4}
+.community-chat-disabled-note{margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.07);border-radius:12px;color:#91a9c0;font-size:12px}
+.community-chat-keyboard-hint{margin-top:6px;color:#6f879d;font-size:11px;text-align:right}
+.community-chat-form textarea{overflow:hidden;line-height:1.45}
+@media(max-width:850px){
+  .community-delete-toolbar{gap:7px}
+  .community-delete-toolbar button{flex:1;min-height:40px;padding:8px 9px;font-size:11px}
+  .community-chat-keyboard-hint{text-align:center;font-size:10px}
+  .community-message-select{flex-basis:20px}
+}
+
 :root{--bg:#01040a;--bg2:#020914;--panel:rgba(3,14,27,.86);--line:rgba(28,91,145,.24);--line2:rgba(37,116,181,.48);--text:#eef6ff;--muted:#8fa6bd;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#268fd0;--accent2:#073f6b;--shadow:0 28px 90px rgba(0,0,0,.68)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
@@ -2434,30 +2454,169 @@ def community():
 @student_required
 def community_chat():
     con = db()
+    my_id = session["student_db_id"]
+
     if request.method == "POST":
+        action = (request.form.get("action") or "send").strip().lower()
+
+        # A student can delete only their own messages. Deleting remains
+        # available even when the admin temporarily turns chat sending off.
+        if action == "delete_selected":
+            raw_ids = request.form.getlist("message_ids")
+            ids = []
+            for raw in raw_ids:
+                try:
+                    mid = int(raw)
+                    if mid > 0:
+                        ids.append(mid)
+                except (TypeError, ValueError):
+                    continue
+            ids = list(dict.fromkeys(ids))
+            if ids:
+                placeholders = ",".join("?" for _ in ids)
+                try:
+                    con.execute(
+                        f"DELETE FROM community_messages WHERE student_id=? AND id IN ({placeholders})",
+                        [my_id] + ids,
+                    )
+                    con.commit()
+                    flash("Selected messages deleted.")
+                except Exception:
+                    con.rollback()
+                    app.logger.exception("Selected community messages delete failed")
+                    flash("We couldn't delete those messages right now. Please try again.")
+            else:
+                flash("Select at least one of your messages to delete.")
+            con.close()
+            return redirect(url_for("community_chat"))
+
+        if action == "delete_all":
+            try:
+                con.execute("DELETE FROM community_messages WHERE student_id=?", (my_id,))
+                con.commit()
+                flash("All of your community messages were deleted.")
+            except Exception:
+                con.rollback()
+                app.logger.exception("All community messages delete failed")
+                flash("We couldn't delete your messages right now. Please try again.")
+            con.close()
+            return redirect(url_for("community_chat"))
+
+        # Normal message sending is controlled by the admin switch.
         chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
         text = request.form.get("message", "").strip()[:1500]
         if not chat_enabled:
-            con.close(); flash("Community Chat is currently turned off by the admin."); return redirect(url_for("community_chat"))
+            con.close()
+            flash("Community Chat is currently turned off by the admin.")
+            return redirect(url_for("community_chat"))
         if not text:
-            con.close(); flash("Please enter a message."); return redirect(url_for("community_chat"))
+            con.close()
+            return redirect(url_for("community_chat"))
         try:
-            con.execute("INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)", (session["student_db_id"], text, now()))
-            con.commit(); con.close(); return redirect(url_for("community_chat"))
+            con.execute(
+                "INSERT INTO community_messages(student_id,message,created_at) VALUES(?,?,?)",
+                (my_id, text, now()),
+            )
+            con.commit()
+            con.close()
+            return redirect(url_for("community_chat"))
         except Exception:
-            con.rollback(); con.close(); app.logger.exception("Community chat message post failed")
-            flash("We couldn't send that message right now. Please try again."); return redirect(url_for("community_chat"))
+            con.rollback()
+            con.close()
+            app.logger.exception("Community chat message post failed")
+            flash("We couldn't send that message right now. Please try again.")
+            return redirect(url_for("community_chat"))
+
     chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
-    chat_rows = con.execute("SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300").fetchall()
+    chat_rows = con.execute(
+        "SELECT cm.*, s.name FROM community_messages cm JOIN students s ON s.id=cm.student_id ORDER BY cm.id ASC LIMIT 300"
+    ).fetchall()
     con.close()
-    chat_bubbles = "".join(f'''<div class="community-message {"mine" if r["student_id"] == session["student_db_id"] else ""}"><div class="community-message-head"><strong>{esc(r["name"])}</strong><span>{esc(r["created_at"])}</span></div><div class="community-message-text">{esc(r["message"])}</div></div>''' for r in chat_rows)
+
+    bubbles = []
+    for r in chat_rows:
+        mine = r["student_id"] == my_id
+        selector = (
+            f'<label class="community-message-select"><input type="checkbox" '
+            f'name="message_ids" value="{r["id"]}" form="community-delete-form" '
+            f'aria-label="Select this message"></label>' if mine else ""
+        )
+        bubbles.append(
+            f'<div class="community-message {"mine" if mine else ""}">'
+            f'{selector}'
+            f'<div class="community-message-content">'
+            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong>'
+            f'<span>{esc(r["created_at"])}</span></div>'
+            f'<div class="community-message-text">{esc(r["message"])}</div>'
+            f'</div></div>'
+        )
+    chat_bubbles = "".join(bubbles)
+
     status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
+    empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
+
     if not chat_enabled:
-        chat_panel = '''<div class="community-chat-locked"><div class="community-lock-icon">&#128274;</div><h3>Community Chat is off</h3><p>The admin has temporarily turned off student messaging. When the admin turns it on, you will be able to send messages here.</p></div>'''
+        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
+        <div class="community-chat-disabled-note">&#128274; Sending is currently off. Your existing messages can still be selected and deleted.</div>
+        <form id="community-delete-form" class="community-delete-toolbar" method="post" action="/community/chat">
+            <input type="hidden" name="action" value="delete_selected">
+            <button class="community-delete-selected" type="submit" onclick="return window.vybeConfirmSelectedDelete(event)">Delete selected</button>
+            <button class="community-delete-all" type="button" onclick="return window.vybeDeleteAllCommunityMessages(event)">Delete all my messages</button>
+        </form>'''
     else:
-        empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
-        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div><form class="community-chat-form" method="post" action="/community/chat"><textarea name="message" maxlength="1500" rows="2" placeholder="Message the student community..." required></textarea><button class="btn accent" type="submit">Send message</button></form>'''
-    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div><div class="community-chat-card community-chat-page-card">{chat_panel}</div></section>'''
+        chat_panel = f'''<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
+        <form class="community-chat-form" method="post" action="/community/chat" id="community-send-form">
+            <textarea name="message" maxlength="1500" rows="1" placeholder="Type a message... Enter to send · Shift+Enter for a new line" required autocomplete="off"></textarea>
+        </form>
+        <form id="community-delete-form" class="community-delete-toolbar" method="post" action="/community/chat">
+            <input type="hidden" name="action" value="delete_selected">
+            <button class="community-delete-selected" type="submit" onclick="return window.vybeConfirmSelectedDelete(event)">Delete selected</button>
+            <button class="community-delete-all" type="button" onclick="return window.vybeDeleteAllCommunityMessages(event)">Delete all my messages</button>
+        </form>
+        <div class="community-chat-keyboard-hint">Press <strong>Enter</strong> to send. Press <strong>Shift + Enter</strong> for a new line.</div>'''
+
+    body = f'''<section class="section community-page-section">
+      <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
+      <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
+    </section>
+    <script>
+    (function() {{
+      const sendBox = document.querySelector('#community-send-form textarea[name="message"]');
+      if (sendBox) {{
+        sendBox.addEventListener('keydown', function(e) {{
+          if (e.key === 'Enter' && !e.shiftKey) {{
+            e.preventDefault();
+            const form = document.getElementById('community-send-form');
+            if (this.value.trim() && form) form.submit();
+          }}
+        }});
+      }}
+      window.vybeConfirmSelectedDelete = function(e) {{
+        const selected = document.querySelectorAll('#community-delete-form input[name="message_ids"]:checked');
+        if (!selected.length) {{
+          if (e) e.preventDefault();
+          alert('Select at least one of your messages first.');
+          return false;
+        }}
+        return confirm('Delete the selected message' + (selected.length > 1 ? 's' : '') + '?');
+      }};
+      window.vybeDeleteAllCommunityMessages = function(e) {{
+        if (e) e.preventDefault();
+        const own = document.querySelectorAll('#community-delete-form input[name="message_ids"]');
+        if (!own.length) {{
+          alert('You have no messages to delete.');
+          return false;
+        }}
+        if (!confirm('Delete all of your community messages? This cannot be undone.')) return false;
+        const form = document.getElementById('community-delete-form');
+        if (!form) return false;
+        const action = form.querySelector('input[name="action"]');
+        if (action) action.value = 'delete_all';
+        form.submit();
+        return false;
+      }};
+    }})();
+    </script>'''
     return layout("Chat with Students", body)
 
 
