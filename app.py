@@ -2372,12 +2372,19 @@ def student_notifications():
     con = db()
     try:
         my_id = session["student_db_id"]
-        rows = con.execute(
-            "SELECT sn.id, sn.reply_message_id, sn.title, sn.message, sn.created_at, sn.read_at, s.name AS sender_name "
-            "FROM student_notifications sn LEFT JOIN students s ON s.id=sn.sender_student_id "
-            "WHERE sn.recipient_student_id=? ORDER BY sn.id DESC LIMIT 20",
-            (my_id,),
-        ).fetchall()
+        try:
+            rows = con.execute(
+                "SELECT sn.id, sn.reply_message_id, sn.title, sn.message, sn.created_at, sn.read_at, s.name AS sender_name "
+                "FROM student_notifications sn LEFT JOIN students s ON s.id=sn.sender_student_id "
+                "WHERE sn.recipient_student_id=? ORDER BY sn.id DESC LIMIT 20",
+                (my_id,),
+            ).fetchall()
+        except Exception:
+            # Notification storage is optional. Keep the bell empty if an older
+            # deployment has not completed the migration yet.
+            try: con.rollback()
+            except Exception: pass
+            return jsonify({"unread": 0, "notifications": []})
         unread = sum(1 for r in rows if not r["read_at"])
         return jsonify({"unread": unread, "notifications": [{
             "id": int(r["id"]),
@@ -2736,26 +2743,38 @@ def community_chat():
                 (my_id, text, created_at, reply_id),
             )
 
+            # Commit the chat message FIRST. Notification storage is deliberately
+            # isolated so a notification/database issue can NEVER make the actual
+            # student message fail.
+            con.commit()
+
             # If this is a reply to another student, create a personal notification
             # for the original sender. This does not notify the person who replied.
             if reply_recipient_id:
-                sent_row = con.execute(
-                    "SELECT id FROM community_messages WHERE student_id=? AND created_at=? ORDER BY id DESC LIMIT 1",
-                    (my_id, created_at),
-                ).fetchone()
-                reply_message_id = int(sent_row["id"]) if sent_row else None
-                sender_row = con.execute("SELECT name FROM students WHERE id=?", (my_id,)).fetchone()
-                sender_name = sender_row["name"] if sender_row else "A student"
-                con.execute(
-                    "INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at) VALUES(?,?,?,?,?,?,NULL)",
-                    (reply_recipient_id, my_id, reply_message_id, "New reply in Community Chat", f"{sender_name} replied to your message: {text[:180]}", created_at),
-                )
+                try:
+                    sent_row = con.execute(
+                        "SELECT id FROM community_messages WHERE student_id=? AND created_at=? ORDER BY id DESC LIMIT 1",
+                        (my_id, created_at),
+                    ).fetchone()
+                    reply_message_id = int(sent_row["id"]) if sent_row else None
+                    sender_row = con.execute("SELECT name FROM students WHERE id=?", (my_id,)).fetchone()
+                    sender_name = sender_row["name"] if sender_row else "A student"
+                    con.execute(
+                        "INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at) VALUES(?,?,?,?,?,?,NULL)",
+                        (reply_recipient_id, my_id, reply_message_id, "New reply in Community Chat", f"{sender_name} replied to your message: {text[:180]}", created_at),
+                    )
+                    con.commit()
+                except Exception:
+                    # Notifications are optional; never break Community Chat.
+                    try: con.rollback()
+                    except Exception: pass
+                    app.logger.exception("Student reply notification failed; chat message was preserved")
 
-            con.commit()
             con.close()
             return redirect(url_for("community_chat"))
         except Exception:
-            con.rollback()
+            try: con.rollback()
+            except Exception: pass
             con.close()
             app.logger.exception("Community chat message post failed")
             flash("We couldn't send that message right now. Please try again.")
