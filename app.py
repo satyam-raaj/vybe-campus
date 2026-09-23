@@ -1673,6 +1673,23 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
   .student-quick-grid{grid-template-columns:1fr;gap:10px}.student-quick{min-height:82px;padding:14px;border-radius:19px}.student-quick-icon{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}.student-quick strong{font-size:16px}.student-quick small{font-size:11px}.student-dashboard-bar{gap:0;padding:7px;margin-bottom:24px;border-radius:17px}.student-dashboard-bar>div{padding:7px 8px}.student-dashboard-bar span{font-size:7px}.student-dashboard-bar strong{font-size:16px}.student-dashboard-bar small{display:block;font-size:9px;margin-top:2px}.student-section-title h2{font-size:21px}.student-mini-grid{grid-template-columns:1fr;gap:9px}.student-mini{min-height:70px;padding:11px 13px;border-radius:18px}.student-mini .student-feature-icon{width:43px;height:43px;flex-basis:43px}.student-wide-link{min-height:72px;padding:14px 15px;border-radius:19px;gap:13px}.student-wide-link .student-feature-icon{width:44px;height:44px;flex-basis:44px}.student-wide-link strong{font-size:15px}.student-wide-link small{font-size:11px}.student-arrow{font-size:31px}
 }
 
+/* =========================================================
+   VYBE STUDENT UX OVERHAUL — student-facing only
+   ========================================================= */
+.student-ux-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:stretch}
+.student-ux-panel{border:1px solid rgba(89,142,183,.24);border-radius:24px;background:linear-gradient(145deg,rgba(10,27,44,.92),rgba(3,12,21,.97));padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.student-ux-panel h2{margin:0 0 6px;letter-spacing:-.035em}.student-ux-panel p{margin:0}
+.student-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.student-action{display:flex;align-items:center;gap:13px;min-height:82px;padding:15px;border:1px solid rgba(80,139,183,.24);border-radius:19px;background:rgba(255,255,255,.025);color:inherit;text-decoration:none;transition:.2s ease}.student-action:hover{transform:translateY(-2px);border-color:rgba(55,188,246,.52);background:rgba(31,115,162,.10)}
+.student-action-icon{width:45px;height:45px;flex:0 0 45px;display:grid;place-items:center;border-radius:14px;background:rgba(35,112,160,.18);border:1px solid rgba(90,178,226,.2);font-size:21px}.student-action-copy{min-width:0;display:flex;flex-direction:column;gap:3px}.student-action-copy strong{font-size:14px}.student-action-copy small{font-size:11px;color:#91a9bf;line-height:1.35}.student-action-arrow{margin-left:auto;color:#7fb2d7;font-size:24px}
+.student-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}.student-stat{padding:12px;border-radius:17px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.student-stat strong{display:block;font-size:20px}.student-stat span{font-size:10px;color:#849bb1}
+.student-steps{display:grid;gap:9px;margin-top:14px}.student-step{display:flex;gap:11px;align-items:flex-start;padding:12px;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}.student-step b{width:25px;height:25px;flex:0 0 25px;display:grid;place-items:center;border-radius:50%;background:rgba(41,159,219,.15);color:#8bd8ff;font-size:11px}.student-step strong{display:block;font-size:12px}.student-step small{display:block;color:#879eb5;font-size:10px;line-height:1.4;margin-top:2px}
+.student-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.student-filter-chip{display:inline-flex;align-items:center;gap:5px;padding:8px 11px;border:1px solid rgba(78,144,190,.24);border-radius:999px;background:rgba(255,255,255,.025);color:#b7cadb;font-size:11px;text-decoration:none}.student-filter-chip:hover{border-color:rgba(55,188,246,.5);color:#fff}
+.student-empty{padding:28px 18px;text-align:center;border:1px dashed rgba(93,143,177,.3);border-radius:22px;background:rgba(255,255,255,.018)}.student-empty .icon{font-size:28px;margin-bottom:7px}.student-empty strong{display:block;margin-bottom:4px}.student-empty span{font-size:12px;color:#8299ae}
+.student-form-label{display:block;font-size:11px;font-weight:800;color:#a9bfd2;margin:0 0 6px;letter-spacing:.02em}.student-search-big{display:flex;gap:9px}.student-search-big input{flex:1}.student-search-big .btn{white-space:nowrap}.student-result-count{font-size:11px;color:#7e95aa;margin:10px 2px}.student-ai-prompts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.student-ai-prompt{border:1px solid rgba(79,149,196,.26);background:rgba(255,255,255,.025);color:#abc1d3;border-radius:999px;padding:8px 11px;font-size:11px;cursor:pointer}.student-ai-prompt:hover{color:#fff;border-color:rgba(58,188,246,.52)}
+@media(max-width:850px){.student-ux-grid{grid-template-columns:1fr}.student-action-grid{grid-template-columns:1fr}.student-stat-grid{grid-template-columns:repeat(3,1fr)}.student-search-big{display:grid;grid-template-columns:1fr}.student-search-big .btn{width:100%}}
+@media(max-width:600px){.student-ux-panel{padding:15px;border-radius:20px}.student-stat{padding:10px 8px}.student-stat strong{font-size:17px}.student-stat span{font-size:9px}.student-action{min-height:76px;padding:13px;border-radius:17px}.student-action-icon{width:42px;height:42px;flex-basis:42px}.student-filter-chip{padding:7px 9px}}
+
+
 
 """
 
@@ -2943,7 +2960,7 @@ def timetable():
         else:
             preview=f'<div class="notice"><strong>📄 {esc(r["original_name"])}</strong><p class="small">This timetable is a document. Open it below.</p></div>'
         cards += f'<div class="card timetable-card"><div class="badge">🗓️ TIMETABLE</div><h2>{esc(r["title"])}</h2><p class="small">Updated {esc(r["created_at"])}</p><div class="timetable-preview">{preview}</div><div class="actions timetable-actions"><a class="btn accent" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">Open / view timetable →</a></div></div>'
-    body=f'<section class="section timetable-head"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">The latest timetable posted by VYBE admin or an approved publisher.</p></section><section class="section timetable-list">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
+    body=f'<section class="section timetable-head"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">Preview the latest schedule here or open it full-screen when you need a closer look.</p></section><section class="section timetable-list">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
     return layout("Timetable",body)
 
 
@@ -2970,7 +2987,7 @@ def search():
     cards=""
     for r in results:
         cards += f'''<a class="feed-item" href="{esc(r["url"])}"><span class="pill">{esc(r["type"])}</span><h3 style="margin:9px 0 5px">{esc(r["title"])}</h3><p class="muted" style="margin:0">{esc(r["text"])}</p></a>'''
-    body=f'''<section class="section"><div class="badge">VYBE SEARCH</div><h1>Find anything.</h1><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" maxlength="100" placeholder="Search announcements, events, resources, community..."><button class="btn accent">Search VYBE →</button></form></div></section><section class="section feed-list">{cards or ('<div class="empty">Search your campus information from one place.</div>' if not q else '<div class="empty">Nothing matched that search.</div>')}</section>'''
+    body=f'''<section class="section"><div class="badge">VYBE SEARCH</div><h1>Find anything.</h1><p class="muted">Search announcements, events, resources and campus information from one place.</p><div class="card" style="margin-top:16px"><form class="form" method="get"><label class="student-form-label" for="vybeSearchInput">What are you looking for?</label><div class="student-search-big"><input id="vybeSearchInput" name="q" value="{esc(q)}" maxlength="100" placeholder="Try: timetable, Python notes, events..."><button class="btn accent">Search →</button></div><div class="student-filter-bar"><a class="student-filter-chip" href="/search?q=timetable">🗓️ Timetable</a><a class="student-filter-chip" href="/search?q=notes">📚 Notes</a><a class="student-filter-chip" href="/search?q=announcement">📣 Announcements</a><a class="student-filter-chip" href="/search?q=event">🎉 Events</a></div></form></div></section><section class="section"><div class="student-result-count">{len(results)} result{'s' if len(results)!=1 else ''}{' for “'+esc(q)+'”' if q else ''}</div><div class="feed-list">{cards or ('<div class="student-empty"><div class="icon">🔎</div><strong>'+('Nothing matched that search.' if q else 'Start with a search above.')+'</strong><span>'+('Try a shorter or different keyword.' if q else 'Search by subject, resource, event or campus information.')+'</span></div>')}</div></section>''' 
     return layout("Search",body)
 
 
@@ -3022,45 +3039,7 @@ def assistant():
         sources = _campus_search(con, question, 6)
     if not enabled:
         con.close()
-        body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
-        return layout("Ask VYBE", body)
-    source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
-
-    # Timetable questions show the actual uploaded timetable in the answer.
-    timetable_html = ""
-    marker = re.search(r"\[\[TIMETABLE_IDS:([0-9,]+)\]\]", answer or "")
-    if marker:
-        ids = []
-        for raw_id in marker.group(1).split(","):
-            try:
-                ids.append(int(raw_id))
-            except ValueError:
-                pass
-        answer = re.sub(r"\n?\[\[TIMETABLE_IDS:[0-9,]+\]\]", "", answer or "").strip()
-        tt_cards = []
-        for tid in ids[:3]:
-            tt = con.execute("SELECT id,title,original_name,created_at FROM timetables WHERE id=?", (tid,)).fetchone()
-            if not tt:
-                continue
-            title = esc(tt["title"] or tt["original_name"] or "Timetable")
-            tt_cards.append(
-                f'<div style="margin-top:16px;padding:14px;border:1px solid rgba(58,145,214,.22);border-radius:18px;background:rgba(4,12,20,.65)">'
-                f'<strong style="display:block;margin-bottom:10px">🗓️ {title}</strong>'
-                f'<iframe src="/timetable-file/{int(tt["id"])}" title="{title}" style="width:100%;height:680px;border:0;border-radius:14px;background:#08080a"></iframe>'
-                f'<a class="btn dark" style="margin-top:10px" href="/timetable-file/{int(tt["id"])}" target="_blank" rel="noopener">Open full timetable →</a>'
-                f'</div>'
-            )
-        timetable_html = "".join(tt_cards)
-
-    # The timetable cards above still use the DB connection, so close it only
-    # after all timetable data has been fetched.
-    con.close()
-
-    answer_html = esc(answer).replace("\n", "<br>")
-    if timetable_html:
-        answer_html += timetable_html
-
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Powered by VYBE AI. Ask about your college, documents, timetable, resources, or any general question.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+        body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Ask in normal language. VYBE can help with campus information, documents, timetable and resources.</p><form class="form" method="post" style="margin-top:20px"><label class="student-form-label" for="vybeQuestion">What do you need?</label><textarea id="vybeQuestion" name="question" maxlength="1000" placeholder="e.g. Where are the Data Structures notes?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button><div class="student-ai-prompts"><button class="student-ai-prompt" type="button" data-prompt="What are the latest announcements?">📣 Latest announcements</button><button class="student-ai-prompt" type="button" data-prompt="Show me the latest timetable.">🗓️ Latest timetable</button><button class="student-ai-prompt" type="button" data-prompt="Where are my study resources?">📚 Find resources</button></div></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}<script>document.querySelectorAll('.student-ai-prompt').forEach(function(b){{b.addEventListener('click',function(){{var q=document.getElementById('vybeQuestion');q.value=b.dataset.prompt;q.focus();}})}});</script>''' 
     return layout("Ask VYBE",body)
 
 
@@ -3081,33 +3060,7 @@ def dashboard():
     con.close()
     ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
     event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
-    body = f'''<section class="student-home">
-<div class="student-home-head">
-  <div class="student-space-pill">🎓&nbsp; YOUR VYBE SPACE</div>
-  <h1>Hi, {esc(s["name"])} 👋</h1>
-  <p>Everything you need for college, in one place.</p>
-</div>
-<div class="student-quick-grid">
-  <a class="student-quick primary" href="/assistant"><span class="student-quick-icon">✨</span><span><strong>Ask VYBE</strong><small>Get instant help</small></span><b>›</b></a>
-  <a class="student-quick" href="/academics"><span class="student-quick-icon">📚</span><span><strong>Academics</strong><small>Notes, PYQs &amp; study material</small></span><b>›</b></a>
-  <a class="student-quick" href="/community"><span class="student-quick-icon">👥</span><span><strong>Community</strong><small>Chat &amp; solve campus problems</small></span><b>›</b></a>
-  <a class="student-quick" href="/issues"><span class="student-quick-icon">🏫</span><span><strong>Campus</strong><small>Contact faculty directly</small></span><b>›</b></a>
-</div>
-<div class="student-dashboard-bar">
-  <div><span>YOUR ACTIVITY</span><strong>{counts["issues"]} <small>reports</small></strong></div>
-  <div><span>COMMUNITY HELP</span><strong>{counts["solutions"]} <small>solutions</small></strong></div>
-  <div><span>RESOURCES</span><strong>{counts["resources"]} <small>available</small></strong></div>
-</div>
-<div class="student-section-title"><div><span class="student-kicker">STAY UPDATED</span><h2>What's happening?</h2></div><a href="/announcements">See all</a></div>
-<div class="student-mini-grid">
-  <a class="student-mini" href="/announcements"><span class="student-feature-icon">📣</span><span><strong>Announcements</strong><small>Latest college updates</small></span><span>›</span></a>
-  <a class="student-mini" href="/events"><span class="student-feature-icon">🗓️</span><span><strong>Upcoming Events</strong><small>See what's coming up</small></span><span>›</span></a>
-</div>
-<div class="student-section-title compact"><div><span class="student-kicker">YOUR RESOURCES</span><h2>Study &amp; connect</h2></div></div>
-<a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a>
-<a class="student-wide-link" href="{esc(wa)}" target="_blank" rel="noopener noreferrer" style="{'' if valid_url(wa) else 'opacity:.6;pointer-events:none;'}"><span class="student-feature-icon">◉</span><span><strong>WhatsApp Community</strong><small>{'Join the configured community' if valid_url(wa) else 'Not configured yet'}</small></span><span class="student-arrow">›</span></a>
-</section>'''
-
+    body = f'''<section class="student-home"><div class="student-home-head"><div class="student-space-pill">🎓&nbsp; YOUR VYBE SPACE</div><h1>Hi, {esc(s["name"])} 👋</h1><p>Everything you need for college, in one simple place.</p></div><div class="student-ux-grid"><div class="student-ux-panel"><div class="badge">QUICK ACCESS</div><h2>What do you need?</h2><p class="muted">The four things students use most are right here.</p><div class="student-action-grid"><a class="student-action" href="/assistant"><span class="student-action-icon">✨</span><span class="student-action-copy"><strong>Ask VYBE</strong><small>Ask about campus, timetable or resources.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/academics"><span class="student-action-icon">📚</span><span class="student-action-copy"><strong>Academics</strong><small>Notes, PYQs, syllabus and timetable.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/community"><span class="student-action-icon">👥</span><span class="student-action-copy"><strong>Community</strong><small>Chat and solve campus problems together.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/issues"><span class="student-action-icon">🏫</span><span class="student-action-copy"><strong>Campus</strong><small>Find faculty contacts for campus problems.</small></span><span class="student-action-arrow">›</span></a></div></div><div class="student-ux-panel"><div class="badge">YOUR ACTIVITY</div><h2>At a glance.</h2><p class="muted">Useful numbers without extra clutter.</p><div class="student-stat-grid"><div class="student-stat"><strong>{counts["issues"]}</strong><span>My reports</span></div><div class="student-stat"><strong>{counts["solutions"]}</strong><span>Solutions</span></div><div class="student-stat"><strong>{counts["resources"]}</strong><span>Resources</span></div></div><div class="student-steps"><a class="student-step" href="/announcements"><b>1</b><span><strong>Check announcements</strong><small>See important campus updates.</small></span></a><a class="student-step" href="/events"><b>2</b><span><strong>See upcoming events</strong><small>Keep track of campus activities.</small></span></a><a class="student-step" href="/profile"><b>3</b><span><strong>Open your profile</strong><small>Manage your personal VYBE information.</small></span></a></div></div></div><div class="student-section-title compact"><div><span class="student-kicker">STAY UPDATED</span><h2>What's happening?</h2></div><a href="/announcements">See all announcements</a></div><div class="student-ux-grid"><div class="student-ux-panel">{ann_html or '<div class="student-empty"><div class="icon">📣</div><strong>No new announcements</strong><span>You are all caught up.</span></div>'}</div><div class="student-ux-panel">{event_html or '<div class="student-empty"><div class="icon">🗓️</div><strong>No upcoming events</strong><span>New events will appear here.</span></div>'}</div></div><a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a><a class="student-wide-link" href="{esc(wa)}" target="_blank" rel="noopener noreferrer" style="{'' if valid_url(wa) else 'opacity:.6;pointer-events:none;'}"><span class="student-feature-icon">◉</span><span><strong>WhatsApp Community</strong><small>{'Join the configured community' if valid_url(wa) else 'Not configured yet'}</small></span><span class="student-arrow">›</span></a></section>''' 
     return layout("Dashboard", body)
 
 
@@ -3143,7 +3096,7 @@ def academics():
     for r in rows:
         file_link = f'<a class="btn dark" href="/resource/{r["id"]}">Open file</a>' if r["file_name"] else '<span class="pill">Drive / link resource</span>'
         cards += f'''<div class="card"><div class="resource-meta"><span class="pill">{esc(r["resource_type"])}</span><span class="pill">{esc(r["semester"])}</span></div><h3>{esc(r["title"])}</h3><p class="small">{esc(r["course"])} · {esc(r["subject"])}</p><p class="muted">{esc(r["description"])}</p>{file_link}</div>'''
-    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Search by resource, course, semester or subject.</p><div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">🗓️ Timetable</h2><p class="muted" style="margin:0">Open the latest class schedule.</p></div><a class="btn accent" href="/timetable">Open Timetable →</a></div></div><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
+    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Find notes, PYQs, assignments and study material using search or filters.</p><div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">🗓️ Timetable</h2><p class="muted" style="margin:0">Open the latest class schedule.</p></div><a class="btn accent" href="/timetable">Open Timetable →</a></div></div><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
     return layout("Academics", body)
 
 
@@ -3185,13 +3138,7 @@ def _render_solution_card(row,my_student_id):
 @student_required
 def community():
     # Community is a clean launcher page. Chat and campus problems are separate pages.
-    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
-<section class="section community-choice-section">
-  <div class="community-choice-grid">
-    <a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-    <a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
-  </div>
-</section>'''
+    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Pick one space and get straight to the thing you want to do.</p></section><section class="section community-choice-section"><div class="community-choice-grid"><a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">💬</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk normally using your name only. Reply, delete your own messages and receive notifications.</small></span><span class="community-choice-arrow">›</span></a><a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">🛠️</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Report an issue, post practical solutions, mark helpful answers and manage saved reports.</small></span><span class="community-choice-arrow">›</span></a></div></section><section class="section"><div class="student-ux-panel"><div class="badge">HOW IT WORKS</div><div class="student-steps"><div class="student-step"><b>1</b><span><strong>Want to talk?</strong><small>Open Chat with students.</small></span></div><div class="student-step"><b>2</b><span><strong>Found a problem?</strong><small>Open Solve campus problem and submit it.</small></span></div><div class="student-step"><b>3</b><span><strong>Know a solution?</strong><small>Open a problem and post your practical answer.</small></span></div></div></div></section>''' 
     return layout("Community", body)
 
 
