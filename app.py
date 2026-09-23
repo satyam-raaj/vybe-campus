@@ -3149,10 +3149,121 @@ def issues():
     con = db()
     faculty = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
     con.close()
-    cards = "".join(f'<div class="card"><h2 style="margin:0 0 7px">{esc(x["name"])}</h2><p class="muted" style="margin:0 0 9px">{esc(x["designation"])}</p><a href="mailto:{esc(x["email"])}" style="color:inherit;text-decoration:underline;word-break:break-word">{esc(x["email"])}</a></div>' for x in faculty)
-    if not cards:
-        cards = '<div class="empty">Faculty contact details have not been added yet.</div>'
-    body = f"""<section class="section"><div class="badge">CAMPUS</div><h1>Report campus problems.</h1><div class="card" style="margin-bottom:18px"><h2 style="margin:0">Report all the campus problems directly to the faculty.</h2></div></section><section class="section"><h2>Faculty &amp; Teachers</h2><div class="grid">{cards}</div></section>"""
+
+    faculty_cards = "".join(
+        f'''<article class="campus-faculty-card" data-faculty-name="{esc(x["name"]).lower()}" data-faculty-role="{esc(x["designation"]).lower()}">
+            <div class="campus-faculty-avatar">{esc((x["name"] or "?").strip()[0:1]).upper()}</div>
+            <div class="campus-faculty-info">
+                <h3>{esc(x["name"])}</h3>
+                <p class="campus-faculty-role">{esc(x["designation"])}</p>
+                <a class="campus-faculty-email" href="mailto:{esc(x["email"])}">{esc(x["email"])}</a>
+            </div>
+            <a class="campus-mail-btn" href="mailto:{esc(x["email"])}" aria-label="Email {esc(x["name"])}">✉</a>
+        </article>'''
+        for x in faculty
+    )
+
+    if not faculty_cards:
+        faculty_cards = '''<div class="campus-empty-state">
+            <div class="campus-empty-icon">✉</div>
+            <h3>Faculty contacts coming soon</h3>
+            <p>Faculty contact details will appear here once they are added by VYBE admin.</p>
+        </div>'''
+
+    body = f'''<style>
+      .vybe-campus-wrap{{max-width:980px;margin:0 auto;padding-bottom:24px}}
+      .campus-hero{{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.10);border-radius:28px;padding:28px 30px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));box-shadow:0 24px 70px rgba(0,0,0,.22)}}
+      .campus-hero:after{{content:"";position:absolute;width:220px;height:220px;right:-80px;top:-100px;border-radius:50%;background:rgba(70,170,230,.12);filter:blur(12px);pointer-events:none}}
+      .campus-hero-top{{display:flex;gap:18px;align-items:flex-start;position:relative;z-index:1}}
+      .campus-hero-icon{{width:54px;height:54px;flex:0 0 54px;border-radius:17px;display:grid;place-items:center;background:rgba(50,170,235,.13);border:1px solid rgba(75,180,235,.25);font-size:25px}}
+      .campus-hero h1{{margin:2px 0 7px;font-size:clamp(28px,4vw,42px);letter-spacing:-.04em}}
+      .campus-hero p{{margin:0;max-width:650px;line-height:1.65}}
+      .campus-note{{margin-top:20px;padding:13px 15px;border-radius:15px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07);font-size:13px;color:#cfd6dd}}
+      .campus-section-head{{display:flex;align-items:end;justify-content:space-between;gap:18px;margin:30px 2px 14px}}
+      .campus-section-head h2{{margin:0;font-size:23px;letter-spacing:-.025em}}
+      .campus-section-head p{{margin:5px 0 0}}
+      .campus-count{{font-size:12px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);white-space:nowrap}}
+      .campus-tools-row{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}}
+      .campus-search{{position:relative;flex:1;min-width:220px}}
+      .campus-search input{{width:100%;box-sizing:border-box;padding:13px 15px 13px 42px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);color:inherit;outline:none}}
+      .campus-search input:focus{{border-color:rgba(65,174,235,.55);box-shadow:0 0 0 3px rgba(65,174,235,.09)}}
+      .campus-search span{{position:absolute;left:15px;top:50%;transform:translateY(-50%);opacity:.62}}
+      .campus-faculty-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+      .campus-faculty-card{{display:flex;align-items:center;gap:14px;min-width:0;padding:17px;border-radius:21px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);transition:transform .18s ease,border-color .18s ease,background .18s ease;box-shadow:0 12px 30px rgba(0,0,0,.12)}}
+      .campus-faculty-card:hover{{transform:translateY(-2px);border-color:rgba(75,180,235,.28);background:rgba(255,255,255,.055)}}
+      .campus-faculty-avatar{{width:48px;height:48px;flex:0 0 48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,rgba(70,180,235,.24),rgba(255,255,255,.07));border:1px solid rgba(100,190,235,.20);font-weight:750;font-size:18px}}
+      .campus-faculty-info{{min-width:0;flex:1}}
+      .campus-faculty-info h3{{margin:0 0 4px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-role{{margin:0 0 7px!important;font-size:12px;color:#aab3bc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-email{{display:block;color:#8fd7ff;text-decoration:none;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-email:hover{{text-decoration:underline}}
+      .campus-mail-btn{{width:38px;height:38px;flex:0 0 38px;border-radius:12px;display:grid;place-items:center;text-decoration:none;background:rgba(60,175,235,.10);border:1px solid rgba(75,180,235,.20);color:#8fd7ff;font-size:17px}}
+      .campus-mail-btn:active{{transform:scale(.96)}}
+      .campus-empty-state{{grid-column:1/-1;text-align:center;padding:42px 20px;border:1px dashed rgba(255,255,255,.12);border-radius:22px;background:rgba(255,255,255,.025)}}
+      .campus-empty-icon{{width:50px;height:50px;margin:0 auto 12px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.06);font-size:22px}}
+      .campus-empty-state h3{{margin:0 0 7px}}
+      .campus-empty-state p{{margin:0;color:#9aa3ad;font-size:13px}}
+      .campus-no-results{{display:none;text-align:center;padding:28px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);color:#9aa3ad}}
+      @media(max-width:700px){{
+        .vybe-campus-wrap{{padding-bottom:12px}}
+        .campus-hero{{padding:22px 18px;border-radius:22px}}
+        .campus-hero-top{{gap:13px}}
+        .campus-hero-icon{{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}}
+        .campus-hero h1{{font-size:28px}}
+        .campus-faculty-grid{{grid-template-columns:1fr;gap:11px}}
+        .campus-faculty-card{{padding:14px;border-radius:18px}}
+        .campus-section-head{{margin-top:24px}}
+        .campus-section-head h2{{font-size:20px}}
+        .campus-tools-row{{display:block}}
+        .campus-search{{min-width:0;width:100%}}
+        .campus-note{{font-size:12px}}
+      }}
+    </style>
+    <section class="section vybe-campus-wrap">
+      <div class="campus-hero">
+        <div class="campus-hero-top">
+          <div class="campus-hero-icon">🏫</div>
+          <div>
+            <div class="badge">CAMPUS SUPPORT</div>
+            <h1>Report campus problems.</h1>
+            <p class="muted">Report all the campus problems directly to the faculty.</p>
+          </div>
+        </div>
+        <div class="campus-note">Choose a faculty member below and tap their email ID to contact them directly.</div>
+      </div>
+
+      <div class="campus-section-head">
+        <div><h2>Faculty &amp; Teachers</h2><p class="small">Find the right contact quickly.</p></div>
+        <span class="campus-count" id="campusFacultyCount">{len(faculty)} contacts</span>
+      </div>
+
+      <div class="campus-tools-row">
+        <label class="campus-search"><span>⌕</span><input id="campusFacultySearch" type="search" placeholder="Search by name or designation..." autocomplete="off"></label>
+      </div>
+
+      <div class="campus-faculty-grid" id="campusFacultyGrid">{faculty_cards}</div>
+      <div class="campus-no-results" id="campusNoResults">No matching faculty contact found.</div>
+    </section>
+    <script>
+      (function(){{
+        const input=document.getElementById('campusFacultySearch');
+        const grid=document.getElementById('campusFacultyGrid');
+        const empty=document.getElementById('campusNoResults');
+        const count=document.getElementById('campusFacultyCount');
+        if(!input||!grid) return;
+        const cards=Array.from(grid.querySelectorAll('.campus-faculty-card'));
+        function filter(){{
+          const q=(input.value||'').trim().toLowerCase(); let shown=0;
+          cards.forEach(function(card){{
+            const hay=(card.dataset.facultyName+' '+card.dataset.facultyRole).toLowerCase();
+            const ok=!q||hay.includes(q); card.style.display=ok?'flex':'none'; if(ok) shown++;
+          }});
+          if(count) count.textContent=shown+' contact'+(shown===1?'':'s');
+          if(empty) empty.style.display=shown?'none':'block';
+        }}
+        input.addEventListener('input',filter);
+      }})();
+    </script>'''
     return layout("Campus", body)
 
 
