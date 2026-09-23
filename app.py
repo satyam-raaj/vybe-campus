@@ -621,14 +621,16 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS saved_reports (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, issue_category TEXT NOT NULL, issue_description TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, saved_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS accepted_solutions (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, accepted_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS helpful_votes (id BIGSERIAL PRIMARY KEY, solution_id BIGINT NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
-            "CREATE TABLE IF NOT EXISTS campus_pages (id BIGSERIAL PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS campus_pages (id BIGSERIAL PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS faculty (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, designation TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
         ])
     else:
         con.executescript([
             "CREATE TABLE IF NOT EXISTS saved_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, issue_category TEXT NOT NULL, issue_description TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, saved_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS accepted_solutions (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, accepted_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS helpful_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE, voter_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, created_at TEXT NOT NULL, UNIQUE(solution_id,voter_id))",
-            "CREATE TABLE IF NOT EXISTS campus_pages (id INTEGER PRIMARY KEY AUTOINCREMENT, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS campus_pages (id INTEGER PRIMARY KEY AUTOINCREMENT, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS faculty (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, designation TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
         ])
     # Student-to-student notification storage for chat replies.
     if con.is_pg:
@@ -3141,11 +3143,17 @@ def resource(rid):
     return send_file(path, mimetype=r["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=r["original_name"] or path.name)
 
 
-@app.route("/issues", methods=["GET","POST"])
+@app.route("/issues", methods=["GET"])
 @student_required
 def issues():
-    # Campus is intentionally cleared for the next Campus features.
-    return layout("Campus", "")
+    con = db()
+    faculty = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
+    con.close()
+    cards = "".join(f'<div class="card"><h2 style="margin:0 0 7px">{esc(x["name"])}</h2><p class="muted" style="margin:0 0 9px">{esc(x["designation"])}</p><a href="mailto:{esc(x["email"])}" style="color:inherit;text-decoration:underline;word-break:break-word">{esc(x["email"])}</a></div>' for x in faculty)
+    if not cards:
+        cards = '<div class="empty">Faculty contact details have not been added yet.</div>'
+    body = f"""<section class="section"><div class="badge">CAMPUS</div><h1>Report campus problems.</h1><div class="card" style="margin-bottom:18px"><h2 style="margin:0">Report all the campus problems directly to the faculty.</h2></div></section><section class="section"><h2>Faculty &amp; Teachers</h2><div class="grid">{cards}</div></section>"""
+    return layout("Campus", body)
 
 
 def _render_solution_card(row,my_student_id):
@@ -3897,6 +3905,7 @@ def admin_panel():
         "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
         "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
         "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
+        "faculty": con.execute("SELECT COUNT(*) AS c FROM faculty").fetchone()["c"],
     }
     assistant_enabled = setting(con, "vybe_assistant_enabled", "1") == "1"
     online = setting(con, "vybe_online", "1") == "1"
@@ -3909,6 +3918,7 @@ def admin_panel():
       <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
       <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
       <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
+      <a class="card" href="/admin/campus"><div class="kpi">{stats["faculty"]}</div><h3>Campus</h3><p class="muted">Manage faculty names, designations and email contacts.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
       <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
       <a class="card" href="/admin/assistant"><div class="kpi">🧠</div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
@@ -4313,6 +4323,36 @@ def problem_status(iid):
     if row:
         idx=STATUSES.index(row["status"]) if row["status"] in STATUSES else 0; con.execute("UPDATE issues SET status=? WHERE id=?",(STATUSES[(idx+1)%len(STATUSES)],iid)); con.commit()
     con.close(); return redirect(url_for("admin_problems"))
+
+
+@app.route("/admin/campus", methods=["GET", "POST"])
+@admin_required
+def admin_campus():
+    con = db()
+    if request.method == "POST":
+        action = request.form.get("action", "add").strip()
+        fid = request.form.get("faculty_id", "").strip()
+        name = request.form.get("name", "").strip()[:160]
+        designation = request.form.get("designation", "").strip()[:160]
+        email = request.form.get("email", "").strip()[:254]
+        if action == "delete":
+            if fid.isdigit():
+                con.execute("DELETE FROM faculty WHERE id=?", (int(fid),)); con.commit(); flash("Faculty member removed.")
+            else: flash("Invalid faculty record.")
+        elif not name or not designation or not email or "@" not in email or " " in email:
+            flash("Name, designation and a valid email address are required.")
+        elif action == "edit" and fid.isdigit():
+            con.execute("UPDATE faculty SET name=?, designation=?, email=?, updated_at=? WHERE id=?", (name, designation, email, now(), int(fid)))
+            con.commit(); flash("Faculty member updated.")
+        else:
+            con.execute("INSERT INTO faculty(name,designation,email,created_at,updated_at) VALUES(?,?,?,?,?)", (name, designation, email, now(), now()))
+            con.commit(); flash("Faculty member added.")
+        con.close(); return redirect(url_for("admin_campus"))
+    rows = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
+    con.close()
+    cards = "".join(f"""<div class="card"><h2 style="margin:0 0 6px">{esc(x['name'])}</h2><p class="muted">{esc(x['designation'])}</p><p><a href="mailto:{esc(x['email'])}">{esc(x['email'])}</a></p><div class="actions"><details><summary class="btn dark">Edit</summary><form class="form" method="post" style="margin-top:12px"><input type="hidden" name="action" value="edit"><input type="hidden" name="faculty_id" value="{x['id']}"><input name="name" value="{esc(x['name'])}" maxlength="160" required><input name="designation" value="{esc(x['designation'])}" maxlength="160" required><input type="email" name="email" value="{esc(x['email'])}" maxlength="254" required><button class="btn accent">Save changes</button></form></details><form method="post" onsubmit="return confirm('Remove this faculty member?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="faculty_id" value="{x['id']}"><button class="btn danger">Delete</button></form></div></div>""" for x in rows)
+    body = f"""<section class="section"><div class="badge">ADMIN CAMPUS</div><h1>Faculty contacts.</h1><p class="muted">These contacts appear on the student Campus page.</p><div class="card"><h2>Add faculty / teacher</h2><form class="form" method="post"><input type="hidden" name="action" value="add"><input name="name" maxlength="160" placeholder="Full name" required><input name="designation" maxlength="160" placeholder="Designation" required><input type="email" name="email" maxlength="254" placeholder="Email ID" required><button class="btn accent">Add faculty</button></form></div></section><section class="section"><div class="grid">{cards or '<div class="empty">No faculty members added yet.</div>'}</div></section>"""
+    return layout("Campus", body, admin=True)
 
 
 @app.route("/admin/settings", methods=["GET","POST"])
