@@ -3144,17 +3144,9 @@ def resource(rid):
 @app.route("/issues", methods=["GET","POST"])
 @student_required
 def issues():
-    con=db()
-    if request.method=="POST":
-        title=request.form.get("title","").strip()[:120]; desc=request.form.get("description","").strip()[:2000]; cat=request.form.get("category","").strip()[:80]
-        if not title or not desc: con.close(); flash("Please enter a title and description."); return redirect(url_for("issues"))
-        con.execute("INSERT INTO issues(student_id,title,category,description,status,created_at) VALUES(?,?,?,?,?,?)",(session["student_db_id"],title,cat,desc,"open",now())); con.commit(); con.close(); flash("Your campus problem is now visible to students."); return redirect(url_for("community_problems"))
-    rows=con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); saved=con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC",(session["student_db_id"],)).fetchall(); con.close()
-    cards="".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a></div>' for x in rows)
-    saved_cards="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
-    body=f'''<section class="section"><div class="badge">CAMPUS</div><h1>Fix what matters.</h1><p class="muted">Report Wi-Fi, systems, classrooms, electricity, facilities or anything else.</p><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{cards or '<div class="empty">No active reports yet.</div>'}</div></div></section><section class="section" id="saved-reports"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>'''
-    return layout("Campus",body)
-
+    # Campus is now a navigation alias. All student-facing campus-problem cards
+    # live inside Community -> Solve Campus Problem.
+    return redirect(url_for("community_problems"))
 
 
 def _render_solution_card(row,my_student_id):
@@ -3689,9 +3681,16 @@ def community_problems():
             accept = f'''<form method="post" action="/community/problem/{i["id"]}/accept" onsubmit="return confirm('Accept a solution? This deletes the problem and its entire chat.')"><button class="btn good">&#10003; Accept solution &amp; delete chat</button></form>'''
         empty_solutions = '<div class="empty">No solutions yet. Be the first to help.</div>'
         blocks += f'''<div class="card community-problem-card" id="problem-{i["id"]}"><div class="resource-meta"><span class="pill">{esc(i["category"])}</span><span class="pill">{esc(i["status"])}</span></div><h2>{esc(i["title"])}</h2><p class="muted">{esc(i["description"])}</p><p class="small">Reported by {esc(i["reporter_name"])} · {esc(i["created_at"])}</p><div class="chat">{sol_html or empty_solutions}</div><form class="form" method="post" style="margin-top:14px"><input type="hidden" name="issue_id" value="{i["id"]}"><textarea name="text" maxlength="1500" placeholder="Suggest a practical solution..." required></textarea><button class="btn dark" type="submit">Post solution</button></form>{accept}</div>'''
+    my_rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall()
+    saved = con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall()
     con.close()
+    my_cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a></div>' for x in my_rows)
+    saved_cards = "".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
     empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
-    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Share practical solutions for problems reported by students.</p><div class="actions"><a class="btn accent" href="/issues">＋ Report a problem</a></div></div><div class="community-problem-list">{blocks or empty_problems}</div></section>'''
+    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Report a problem or share practical solutions for problems reported by students.</p></div>
+<section class="section"><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{my_cards or '<div class="empty">No active reports yet.</div>'}</div></div></section>
+<section class="section"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>
+<section class="section"><h2>Campus problems</h2><div class="community-problem-list">{blocks or empty_problems}</div></section></section>'''
     return layout("Solve Campus Problem", body)
 
 
