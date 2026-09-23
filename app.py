@@ -3144,9 +3144,8 @@ def resource(rid):
 @app.route("/issues", methods=["GET","POST"])
 @student_required
 def issues():
-    # Campus is now a navigation alias. All student-facing campus-problem cards
-    # live inside Community -> Solve Campus Problem.
-    return redirect(url_for("community_problems"))
+    # Campus is intentionally cleared for the next Campus features.
+    return layout("Campus", "")
 
 
 def _render_solution_card(row,my_student_id):
