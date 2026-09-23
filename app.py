@@ -1666,6 +1666,10 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
   body.vybe-chat-composing .student-bottom-nav,
   body.vybe-chat-composing .student-bottom-spacer{display:none!important}
 }
+/* Clean student home */
+.clean-home{max-width:980px;padding-top:28px}.clean-home-head{padding-bottom:30px}.clean-home-head h1{margin-top:20px}.clean-home-head p{font-size:16px}.home-section-label{font-size:11px;font-weight:800;letter-spacing:.14em;color:#6f9fc2;margin:0 0 11px}.home-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.home-action{display:flex;align-items:center;gap:14px;min-height:106px;padding:18px;border:1px solid rgba(61,130,178,.30);border-radius:22px;background:linear-gradient(145deg,rgba(10,32,52,.82),rgba(3,14,25,.92));transition:transform .22s ease,border-color .22s ease,background .22s ease}.home-action:hover{transform:translateY(-2px);border-color:rgba(45,174,242,.58);background:linear-gradient(145deg,rgba(12,40,64,.9),rgba(3,15,27,.95))}.home-action-primary{border-color:rgba(25,174,242,.58);background:linear-gradient(145deg,rgba(8,43,69,.9),rgba(3,16,28,.95))}.home-action-icon{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:rgba(27,89,130,.32);border:1px solid rgba(105,183,227,.22);font-size:22px}.home-action>span:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}.home-action strong{font-size:16px;letter-spacing:-.02em}.home-action small{font-size:12px;line-height:1.4;color:#98b1c8}.home-action>b{font-size:27px;color:#7899b5;font-weight:400}.home-updates-head{display:flex;align-items:end;justify-content:space-between;margin-top:30px;margin-bottom:11px}.home-updates-head p{margin:0;color:#829ab1;font-size:12px}.home-updates-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.home-update-panel{padding:15px;border:1px solid rgba(61,130,178,.26);border-radius:22px;background:rgba(5,20,34,.62)}.home-panel-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:1px 2px 10px;color:#dcecf8;font-size:14px;font-weight:750}.home-panel-title a{color:#59bdf3;font-size:11px;font-weight:700}.home-update{display:flex;align-items:center;gap:10px;padding:11px 9px;border-radius:15px;border:1px solid transparent;transition:.2s ease}.home-update:hover{background:rgba(31,105,151,.12);border-color:rgba(61,130,178,.22)}.home-update-icon{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:11px;background:rgba(27,89,130,.24);font-size:15px}.home-update>span:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}.home-update strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.home-update small{font-size:10px;color:#8099b0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.home-update>b{font-size:20px;color:#6887a1;font-weight:400}.home-empty{padding:16px 9px;color:#70889e;font-size:11px}
+@media(max-width:850px){.clean-home{padding-top:18px}.clean-home-head{padding-bottom:25px}.clean-home-head h1{font-size:38px;margin-top:18px}.clean-home-head p{font-size:14px;line-height:1.5}.home-action-grid{grid-template-columns:1fr;gap:10px}.home-action{min-height:88px;padding:14px 15px;border-radius:19px}.home-action-icon{width:44px;height:44px;flex-basis:44px;font-size:20px}.home-action strong{font-size:16px}.home-action small{font-size:12px}.home-updates-head{margin-top:26px}.home-updates-head p{font-size:11px}.home-updates-grid{grid-template-columns:1fr;gap:10px}.home-update-panel{border-radius:19px;padding:13px}.home-section-label{font-size:10px}}
+
 
 
 """
@@ -3062,30 +3066,27 @@ def assistant():
 @student_required
 def dashboard():
     con = db()
-    s = con.execute("SELECT name,reputation_points,helpful_answers,accepted_solutions FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    counts = {
-        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
-        "issues": con.execute("SELECT COUNT(*) AS c FROM issues WHERE student_id=?", (session["student_db_id"],)).fetchone()["c"],
-        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
-    }
-    drive = setting(con, "google_drive_url", DRIVE_URL)
-    wa = setting(con, "whatsapp_link", "")
+    s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
-    ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
-    event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
-    body = f'''<section class="student-home">
-<div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p></div>
-<div class="student-feature-list">
-<a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/community"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community</strong><small>Chat with students or solve campus problems.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
-<a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small></span><span class="student-arrow">›</span></a>
+    ann_html="".join(f'<a class="home-update" href="/announcements"><span class="home-update-icon">📣</span><span><strong>{esc(a["title"])}</strong><small>{esc(a["message"][:140])}</small></span><b>›</b></a>' for a in anns)
+    event_html="".join(f'<a class="home-update" href="/events"><span class="home-update-icon">🗓️</span><span><strong>{esc(e["title"])}</strong><small>{esc(e["event_date"])} · {esc(e["event_time"] or "TBA")}</small></span><b>›</b></a>' for e in evs)
+    if not ann_html:
+        ann_html = '<div class="home-empty">No new announcements right now.</div>'
+    if not event_html:
+        event_html = '<div class="home-empty">No upcoming events right now.</div>'
+    body = f'''<section class="student-home clean-home">
+<div class="student-home-head clean-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Everything you need for your campus, in one place.</p></div>
+<div class="home-section-label">QUICK ACCESS</div>
+<div class="home-action-grid">
+<a class="home-action home-action-primary" href="/assistant"><span class="home-action-icon">✦</span><span><strong>Ask VYBE</strong><small>Get answers, guidance and quick help.</small></span><b>›</b></a>
+<a class="home-action" href="/community"><span class="home-action-icon">👥</span><span><strong>Community</strong><small>Chat, solve problems or join WhatsApp.</small></span><b>›</b></a>
+<a class="home-action" href="/academics"><span class="home-action-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs, syllabus and study material.</small></span><b>›</b></a>
+<a class="home-action" href="/issues"><span class="home-action-icon">🏫</span><span><strong>Campus</strong><small>Contact faculty and report campus problems.</small></span><b>›</b></a>
 </div>
-<div class="student-mini-grid"><a class="student-mini" href="/announcements"><span class="student-feature-icon">📣</span><strong>Latest Announcement</strong><span>›</span></a><a class="student-mini" href="/events"><span class="student-feature-icon">🗓️</span><strong>Upcoming Events</strong><span>›</span></a></div>
-<a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a>
-<a class="student-wide-link" href="{esc(wa)}" target="_blank" rel="noopener noreferrer" style="{'' if valid_url(wa) else 'opacity:.6;pointer-events:none;'}"><span class="student-feature-icon">◉</span><span><strong>WhatsApp Community</strong><small>{'Join the configured community' if valid_url(wa) else 'Not configured yet'}</small></span><span class="student-arrow">›</span></a>
+<div class="home-updates-head"><div><div class="home-section-label">STAY UPDATED</div><p>Keep up with what is happening on campus.</p></div></div>
+<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all&nbsp;›</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all&nbsp;›</a></div>{event_html}</div></div>
 </section>'''
     return layout("Dashboard", body)
 
@@ -3274,16 +3275,24 @@ def _render_solution_card(row,my_student_id):
 @app.route("/community", methods=["GET"])
 @student_required
 def community():
-    # Community is a clean launcher page. Chat and campus problems are separate pages.
+    # Community launcher: chat, campus problems, and WhatsApp community.
+    con = db()
+    wa = setting(con, "whatsapp_link", "")
+    con.close()
+    whatsapp_card = (
+        f'<a class="community-choice-card" href="{esc(wa)}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Join the VYBE WhatsApp community.</small></span><span class="community-choice-arrow">&#8250;</span></a>'
+        if valid_url(wa) else
+        '<div class="community-choice-card" style="opacity:.65;cursor:default"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Community link is not configured yet.</small></span></div>'
+    )
     body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
 <section class="section community-choice-section">
   <div class="community-choice-grid">
     <a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
     <a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+    {whatsapp_card}
   </div>
 </section>'''
     return layout("Community", body)
-
 
 @app.route("/community/chat", methods=["GET", "POST"])
 @student_required
