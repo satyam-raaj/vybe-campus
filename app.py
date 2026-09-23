@@ -1184,7 +1184,6 @@ CSS = r"""
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
 .student-top-tools{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}.top-stat,.top-tool{min-height:38px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.055);display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 9px;color:#eee;font-size:12px;white-space:nowrap}.top-stat{flex-direction:column;line-height:1;min-width:58px}.top-stat small{font-size:8px;color:var(--muted);text-transform:uppercase}.top-search{display:flex;align-items:center;width:190px}.top-search input{height:38px;border-radius:12px 0 0 12px;padding:8px 10px;font-size:12px}.top-search button{height:38px;width:38px;border:1px solid #2a2a2e;border-left:0;border-radius:0 12px 12px 0;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.page-back,.mobile-back{border:1px solid var(--line);background:rgba(255,255,255,.05);color:#ddd;border-radius:12px;padding:8px 12px;cursor:pointer}.page-back{margin:2px 0 4px}.mobile-back{display:none;width:100%;text-align:left}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.student-home{max-width:900px;margin:0 auto;padding:34px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(0,174,255,.75);border-radius:999px;color:#5fc9ff;background:rgba(0,151,255,.08);font-size:12px;font-weight:800;letter-spacing:.08em}.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#a9b9d0;margin:0}.student-home-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.student-home-stats span{padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid var(--line);color:#cdd7e5;font-size:12px}.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(92,124,157,.28);border-radius:24px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));box-shadow:0 18px 50px rgba(0,0,0,.25);transition:.25s ease;overflow:hidden}.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5);box-shadow:0 22px 60px rgba(0,0,0,.32)}.student-feature.primary{border-color:rgba(0,190,255,.78);background:linear-gradient(135deg,rgba(14,42,61,.96),rgba(9,16,24,.94));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,112,190,.13)}.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(60,96,132,.45),rgba(15,27,40,.8));border:1px solid rgba(130,181,225,.22);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#a7b8cf;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#70caff}.student-arrow{font-size:37px;color:#8ba6c5;line-height:1}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.25s ease}.student-mini:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#829ab7}.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7b8cf}.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(92,124,157,.28);background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(52,91,125,.3);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb0c5}.campus-tool b{font-size:26px;color:#819bb9;font-weight:400}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.nav{position:relative}.mobile-nav.open{display:grid;gap:4px;position:absolute;right:18px;top:72px;z-index:120;min-width:210px;padding:10px;border:1px solid rgba(58,145,214,.28);border-radius:18px;background:rgba(3,12,22,.97);box-shadow:0 22px 60px rgba(0,0,0,.5);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.timetable-head{padding:8px 0 6px}.timetable-head h1{font-size:34px;letter-spacing:-.045em;margin:14px 0 7px}.timetable-head .muted{font-size:13px;line-height:1.45}.timetable-list{padding:8px 0 18px;display:grid;gap:12px}.timetable-card{padding:14px;border-radius:20px;overflow:hidden}.timetable-card h2{font-size:18px;line-height:1.2;margin:10px 0 5px}.timetable-card .small{font-size:11px}.timetable-preview{width:100%;overflow:hidden;border-radius:14px;margin-top:10px;background:#030a12;border:1px solid rgba(58,145,214,.18)}.timetable-preview img{width:100%!important;height:auto!important;max-height:none!important;object-fit:contain!important;border-radius:14px!important;display:block}.timetable-actions{margin-top:10px;display:flex}.timetable-actions .btn{width:100%;justify-content:center;text-align:center;padding:12px 14px;font-size:13px}.timetable-card .notice{padding:14px}.timetable-card .notice strong{font-size:13px;word-break:break-word}}@media(max-width:850px){.student-bottom-nav a{flex:1;min-width:0}.student-bottom-nav .mobile-menu-nav{order:1}.student-bottom-nav .mobile-home-nav{order:2}.student-bottom-nav .mobile-profile-nav{order:3}.student-bottom-nav .mobile-back-nav{order:4}}\n@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini{min-height:72px;padding:10px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.page-back{display:inline-flex}.hero{padding:55px 0 35px}.hero h1{font-size:74px}.card{border-radius:22px}.actions .btn{max-width:100%}}
-.student-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}.student-quick{position:relative;display:flex;align-items:center;gap:14px;min-height:100px;padding:18px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(145deg,rgba(19,29,41,.94),rgba(8,13,19,.94));box-shadow:0 14px 42px rgba(0,0,0,.2);transition:.22s ease;overflow:hidden}.student-quick:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.55);box-shadow:0 20px 55px rgba(0,0,0,.3)}.student-quick.primary{border-color:rgba(0,190,255,.7);background:linear-gradient(145deg,rgba(14,45,64,.96),rgba(8,15,23,.96))}.student-quick-icon{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;border-radius:16px;background:rgba(72,111,148,.25);border:1px solid rgba(160,205,240,.18);font-size:24px}.student-quick span:nth-child(2){display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}.student-quick strong{font-size:17px;letter-spacing:-.02em}.student-quick small{font-size:12px;color:#9fb1c8;line-height:1.35}.student-quick b{font-size:28px;font-weight:400;color:#7894b1}.student-dashboard-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 30px;padding:12px;border:1px solid rgba(92,124,157,.22);border-radius:20px;background:rgba(255,255,255,.035)}.student-dashboard-bar>div{padding:9px 12px;border-right:1px solid rgba(255,255,255,.08)}.student-dashboard-bar>div:last-child{border-right:0}.student-dashboard-bar span{display:block;font-size:9px;letter-spacing:.08em;color:#7f95ad;font-weight:800}.student-dashboard-bar strong{display:block;margin-top:5px;font-size:20px}.student-dashboard-bar small{font-size:11px;color:#8298b0;font-weight:500}.student-section-title{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 2px 12px}.student-section-title.compact{margin-top:30px}.student-section-title h2{margin:3px 0 0;font-size:24px;letter-spacing:-.035em}.student-section-title a{font-size:12px;color:#75caff;text-decoration:none}.student-kicker{font-size:9px;letter-spacing:.1em;color:#718aa4;font-weight:800}.student-mini{min-height:76px}.student-mini>span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}.student-mini small{font-size:11px;color:#91a5bd}.student-mini strong{font-size:14px}.student-wide-link{min-height:78px}
 
 .admin-header{min-width:0}.admin-navlinks{display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;margin-left:12px}.admin-navlinks::-webkit-scrollbar{display:none}.admin-navlinks a{flex:0 0 auto;padding:8px 9px;border-radius:10px;color:#c9d8e7;font-size:11px;white-space:nowrap}.admin-navlinks a:hover{background:rgba(25,101,157,.18);color:#fff}.admin-header .nav-toggle{display:none;flex:0 0 auto}@media(max-width:1050px){.admin-navlinks{gap:2px}.admin-navlinks a{padding:7px 6px;font-size:10px}}@media(max-width:850px){.admin-navlinks{display:none}.admin-header .nav-toggle{display:grid;place-items:center}}
 
@@ -1667,28 +1666,6 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
   body.vybe-chat-composing .student-bottom-nav,
   body.vybe-chat-composing .student-bottom-spacer{display:none!important}
 }
-
-@media(max-width:600px){
-  .student-home{padding:20px 0 18px}.student-home-head{padding:5px 2px 22px}.student-home-head h1{font-size:36px;margin:17px 0 8px}.student-home-head p{font-size:14px;line-height:1.45}.student-space-pill{font-size:10px;padding:8px 12px}
-  .student-quick-grid{grid-template-columns:1fr;gap:10px}.student-quick{min-height:82px;padding:14px;border-radius:19px}.student-quick-icon{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}.student-quick strong{font-size:16px}.student-quick small{font-size:11px}.student-dashboard-bar{gap:0;padding:7px;margin-bottom:24px;border-radius:17px}.student-dashboard-bar>div{padding:7px 8px}.student-dashboard-bar span{font-size:7px}.student-dashboard-bar strong{font-size:16px}.student-dashboard-bar small{display:block;font-size:9px;margin-top:2px}.student-section-title h2{font-size:21px}.student-mini-grid{grid-template-columns:1fr;gap:9px}.student-mini{min-height:70px;padding:11px 13px;border-radius:18px}.student-mini .student-feature-icon{width:43px;height:43px;flex-basis:43px}.student-wide-link{min-height:72px;padding:14px 15px;border-radius:19px;gap:13px}.student-wide-link .student-feature-icon{width:44px;height:44px;flex-basis:44px}.student-wide-link strong{font-size:15px}.student-wide-link small{font-size:11px}.student-arrow{font-size:31px}
-}
-
-/* =========================================================
-   VYBE STUDENT UX OVERHAUL — student-facing only
-   ========================================================= */
-.student-ux-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:stretch}
-.student-ux-panel{border:1px solid rgba(89,142,183,.24);border-radius:24px;background:linear-gradient(145deg,rgba(10,27,44,.92),rgba(3,12,21,.97));padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
-.student-ux-panel h2{margin:0 0 6px;letter-spacing:-.035em}.student-ux-panel p{margin:0}
-.student-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.student-action{display:flex;align-items:center;gap:13px;min-height:82px;padding:15px;border:1px solid rgba(80,139,183,.24);border-radius:19px;background:rgba(255,255,255,.025);color:inherit;text-decoration:none;transition:.2s ease}.student-action:hover{transform:translateY(-2px);border-color:rgba(55,188,246,.52);background:rgba(31,115,162,.10)}
-.student-action-icon{width:45px;height:45px;flex:0 0 45px;display:grid;place-items:center;border-radius:14px;background:rgba(35,112,160,.18);border:1px solid rgba(90,178,226,.2);font-size:21px}.student-action-copy{min-width:0;display:flex;flex-direction:column;gap:3px}.student-action-copy strong{font-size:14px}.student-action-copy small{font-size:11px;color:#91a9bf;line-height:1.35}.student-action-arrow{margin-left:auto;color:#7fb2d7;font-size:24px}
-.student-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}.student-stat{padding:12px;border-radius:17px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.student-stat strong{display:block;font-size:20px}.student-stat span{font-size:10px;color:#849bb1}
-.student-steps{display:grid;gap:9px;margin-top:14px}.student-step{display:flex;gap:11px;align-items:flex-start;padding:12px;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}.student-step b{width:25px;height:25px;flex:0 0 25px;display:grid;place-items:center;border-radius:50%;background:rgba(41,159,219,.15);color:#8bd8ff;font-size:11px}.student-step strong{display:block;font-size:12px}.student-step small{display:block;color:#879eb5;font-size:10px;line-height:1.4;margin-top:2px}
-.student-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.student-filter-chip{display:inline-flex;align-items:center;gap:5px;padding:8px 11px;border:1px solid rgba(78,144,190,.24);border-radius:999px;background:rgba(255,255,255,.025);color:#b7cadb;font-size:11px;text-decoration:none}.student-filter-chip:hover{border-color:rgba(55,188,246,.5);color:#fff}
-.student-empty{padding:28px 18px;text-align:center;border:1px dashed rgba(93,143,177,.3);border-radius:22px;background:rgba(255,255,255,.018)}.student-empty .icon{font-size:28px;margin-bottom:7px}.student-empty strong{display:block;margin-bottom:4px}.student-empty span{font-size:12px;color:#8299ae}
-.student-form-label{display:block;font-size:11px;font-weight:800;color:#a9bfd2;margin:0 0 6px;letter-spacing:.02em}.student-search-big{display:flex;gap:9px}.student-search-big input{flex:1}.student-search-big .btn{white-space:nowrap}.student-result-count{font-size:11px;color:#7e95aa;margin:10px 2px}.student-ai-prompts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.student-ai-prompt{border:1px solid rgba(79,149,196,.26);background:rgba(255,255,255,.025);color:#abc1d3;border-radius:999px;padding:8px 11px;font-size:11px;cursor:pointer}.student-ai-prompt:hover{color:#fff;border-color:rgba(58,188,246,.52)}
-@media(max-width:850px){.student-ux-grid{grid-template-columns:1fr}.student-action-grid{grid-template-columns:1fr}.student-stat-grid{grid-template-columns:repeat(3,1fr)}.student-search-big{display:grid;grid-template-columns:1fr}.student-search-big .btn{width:100%}}
-@media(max-width:600px){.student-ux-panel{padding:15px;border-radius:20px}.student-stat{padding:10px 8px}.student-stat strong{font-size:17px}.student-stat span{font-size:9px}.student-action{min-height:76px;padding:13px;border-radius:17px}.student-action-icon{width:42px;height:42px;flex-basis:42px}.student-filter-chip{padding:7px 9px}}
-
 
 
 """
@@ -2960,7 +2937,7 @@ def timetable():
         else:
             preview=f'<div class="notice"><strong>📄 {esc(r["original_name"])}</strong><p class="small">This timetable is a document. Open it below.</p></div>'
         cards += f'<div class="card timetable-card"><div class="badge">🗓️ TIMETABLE</div><h2>{esc(r["title"])}</h2><p class="small">Updated {esc(r["created_at"])}</p><div class="timetable-preview">{preview}</div><div class="actions timetable-actions"><a class="btn accent" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">Open / view timetable →</a></div></div>'
-    body=f'<section class="section timetable-head"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">Preview the latest schedule here or open it full-screen when you need a closer look.</p></section><section class="section timetable-list">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
+    body=f'<section class="section timetable-head"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">The latest timetable posted by VYBE admin or an approved publisher.</p></section><section class="section timetable-list">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
     return layout("Timetable",body)
 
 
@@ -2987,7 +2964,7 @@ def search():
     cards=""
     for r in results:
         cards += f'''<a class="feed-item" href="{esc(r["url"])}"><span class="pill">{esc(r["type"])}</span><h3 style="margin:9px 0 5px">{esc(r["title"])}</h3><p class="muted" style="margin:0">{esc(r["text"])}</p></a>'''
-    body=f'''<section class="section"><div class="badge">VYBE SEARCH</div><h1>Find anything.</h1><p class="muted">Search announcements, events, resources and campus information from one place.</p><div class="card" style="margin-top:16px"><form class="form" method="get"><label class="student-form-label" for="vybeSearchInput">What are you looking for?</label><div class="student-search-big"><input id="vybeSearchInput" name="q" value="{esc(q)}" maxlength="100" placeholder="Try: timetable, Python notes, events..."><button class="btn accent">Search →</button></div><div class="student-filter-bar"><a class="student-filter-chip" href="/search?q=timetable">🗓️ Timetable</a><a class="student-filter-chip" href="/search?q=notes">📚 Notes</a><a class="student-filter-chip" href="/search?q=announcement">📣 Announcements</a><a class="student-filter-chip" href="/search?q=event">🎉 Events</a></div></form></div></section><section class="section"><div class="student-result-count">{len(results)} result{'s' if len(results)!=1 else ''}{' for “'+esc(q)+'”' if q else ''}</div><div class="feed-list">{cards or ('<div class="student-empty"><div class="icon">🔎</div><strong>'+('Nothing matched that search.' if q else 'Start with a search above.')+'</strong><span>'+('Try a shorter or different keyword.' if q else 'Search by subject, resource, event or campus information.')+'</span></div>')}</div></section>''' 
+    body=f'''<section class="section"><div class="badge">VYBE SEARCH</div><h1>Find anything.</h1><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" maxlength="100" placeholder="Search announcements, events, resources, community..."><button class="btn accent">Search VYBE →</button></form></div></section><section class="section feed-list">{cards or ('<div class="empty">Search your campus information from one place.</div>' if not q else '<div class="empty">Nothing matched that search.</div>')}</section>'''
     return layout("Search",body)
 
 
@@ -3039,7 +3016,45 @@ def assistant():
         sources = _campus_search(con, question, 6)
     if not enabled:
         con.close()
-        body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Ask in normal language. VYBE can help with campus information, documents, timetable and resources.</p><form class="form" method="post" style="margin-top:20px"><label class="student-form-label" for="vybeQuestion">What do you need?</label><textarea id="vybeQuestion" name="question" maxlength="1000" placeholder="e.g. Where are the Data Structures notes?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button><div class="student-ai-prompts"><button class="student-ai-prompt" type="button" data-prompt="What are the latest announcements?">📣 Latest announcements</button><button class="student-ai-prompt" type="button" data-prompt="Show me the latest timetable.">🗓️ Latest timetable</button><button class="student-ai-prompt" type="button" data-prompt="Where are my study resources?">📚 Find resources</button></div></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}<script>document.querySelectorAll('.student-ai-prompt').forEach(function(b){{b.addEventListener('click',function(){{var q=document.getElementById('vybeQuestion');q.value=b.dataset.prompt;q.focus();}})}});</script>''' 
+        body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
+        return layout("Ask VYBE", body)
+    source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
+
+    # Timetable questions show the actual uploaded timetable in the answer.
+    timetable_html = ""
+    marker = re.search(r"\[\[TIMETABLE_IDS:([0-9,]+)\]\]", answer or "")
+    if marker:
+        ids = []
+        for raw_id in marker.group(1).split(","):
+            try:
+                ids.append(int(raw_id))
+            except ValueError:
+                pass
+        answer = re.sub(r"\n?\[\[TIMETABLE_IDS:[0-9,]+\]\]", "", answer or "").strip()
+        tt_cards = []
+        for tid in ids[:3]:
+            tt = con.execute("SELECT id,title,original_name,created_at FROM timetables WHERE id=?", (tid,)).fetchone()
+            if not tt:
+                continue
+            title = esc(tt["title"] or tt["original_name"] or "Timetable")
+            tt_cards.append(
+                f'<div style="margin-top:16px;padding:14px;border:1px solid rgba(58,145,214,.22);border-radius:18px;background:rgba(4,12,20,.65)">'
+                f'<strong style="display:block;margin-bottom:10px">🗓️ {title}</strong>'
+                f'<iframe src="/timetable-file/{int(tt["id"])}" title="{title}" style="width:100%;height:680px;border:0;border-radius:14px;background:#08080a"></iframe>'
+                f'<a class="btn dark" style="margin-top:10px" href="/timetable-file/{int(tt["id"])}" target="_blank" rel="noopener">Open full timetable →</a>'
+                f'</div>'
+            )
+        timetable_html = "".join(tt_cards)
+
+    # The timetable cards above still use the DB connection, so close it only
+    # after all timetable data has been fetched.
+    con.close()
+
+    answer_html = esc(answer).replace("\n", "<br>")
+    if timetable_html:
+        answer_html += timetable_html
+
+    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Powered by VYBE AI. Ask about your college, documents, timetable, resources, or any general question.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
@@ -3060,7 +3075,18 @@ def dashboard():
     con.close()
     ann_html="".join(f'<a class="feed-item" href="/announcements"><span class="pill">{esc(a["priority"])}</span><strong style="display:block;margin-top:7px">{esc(a["title"])}</strong><span class="small">{esc(a["message"][:180])}</span></a>' for a in anns)
     event_html="".join(f'<a class="feed-item" href="/events"><span class="pill">🎉 {esc(e["event_date"])}</span><strong style="display:block;margin-top:7px">{esc(e["title"])}</strong><span class="small">🕒 {esc(e["event_time"] or "TBA")} · 📍 {esc(e["location"] or "TBA")}</span></a>' for e in evs)
-    body = f'''<section class="student-home"><div class="student-home-head"><div class="student-space-pill">🎓&nbsp; YOUR VYBE SPACE</div><h1>Hi, {esc(s["name"])} 👋</h1><p>Everything you need for college, in one simple place.</p></div><div class="student-ux-grid"><div class="student-ux-panel"><div class="badge">QUICK ACCESS</div><h2>What do you need?</h2><p class="muted">The four things students use most are right here.</p><div class="student-action-grid"><a class="student-action" href="/assistant"><span class="student-action-icon">✨</span><span class="student-action-copy"><strong>Ask VYBE</strong><small>Ask about campus, timetable or resources.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/academics"><span class="student-action-icon">📚</span><span class="student-action-copy"><strong>Academics</strong><small>Notes, PYQs, syllabus and timetable.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/community"><span class="student-action-icon">👥</span><span class="student-action-copy"><strong>Community</strong><small>Chat and solve campus problems together.</small></span><span class="student-action-arrow">›</span></a><a class="student-action" href="/issues"><span class="student-action-icon">🏫</span><span class="student-action-copy"><strong>Campus</strong><small>Find faculty contacts for campus problems.</small></span><span class="student-action-arrow">›</span></a></div></div><div class="student-ux-panel"><div class="badge">QUICK LINKS</div><h2>Stay updated.</h2><p class="muted">Keep up with what is happening around VYBE.</p><div class="student-steps"><a class="student-step" href="/announcements"><b>1</b><span><strong>Check announcements</strong><small>See important campus updates.</small></span></a><a class="student-step" href="/events"><b>2</b><span><strong>See upcoming events</strong><small>Keep track of campus activities.</small></span></a><a class="student-step" href="/profile"><b>3</b><span><strong>Open your profile</strong><small>Manage your personal VYBE information.</small></span></a></div></div></div><div class="student-section-title compact"><div><span class="student-kicker">STAY UPDATED</span><h2>What's happening?</h2></div><a href="/announcements">See all announcements</a></div><div class="student-ux-grid"><div class="student-ux-panel">{ann_html or '<div class="student-empty"><div class="icon">📣</div><strong>No new announcements</strong><span>You are all caught up.</span></div>'}</div><div class="student-ux-panel">{event_html or '<div class="student-empty"><div class="icon">🗓️</div><strong>No upcoming events</strong><span>New events will appear here.</span></div>'}</div></div></section>''' 
+    body = f'''<section class="student-home">
+<div class="student-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Your Campus, Your Community, Your Space.</p></div>
+<div class="student-feature-list">
+<a class="student-feature primary" href="/assistant"><span class="student-feature-icon">💬</span><span class="student-feature-copy"><strong>Ask VYBE</strong><small>Get quick answers, help and guidance.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/community"><span class="student-feature-icon">👥</span><span class="student-feature-copy"><strong>Community</strong><small>Chat with students or solve campus problems.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/academics"><span class="student-feature-icon">🎓</span><span class="student-feature-copy"><strong>Academics</strong><small>Notes, PYQs, Syllabus &amp; Study Material.</small></span><span class="student-arrow">›</span></a>
+<a class="student-feature" href="/issues"><span class="student-feature-icon">📄</span><span class="student-feature-copy"><strong>Campus</strong><small>Report Problem and Open Saved Reports.</small></span><span class="student-arrow">›</span></a>
+</div>
+<div class="student-mini-grid"><a class="student-mini" href="/announcements"><span class="student-feature-icon">📣</span><strong>Latest Announcement</strong><span>›</span></a><a class="student-mini" href="/events"><span class="student-feature-icon">🗓️</span><strong>Upcoming Events</strong><span>›</span></a></div>
+<a class="student-wide-link" href="{esc(drive)}" target="_blank" rel="noopener noreferrer"><span class="student-feature-icon">☁️</span><span><strong>Google Drive</strong><small>Open the shared academic folder</small></span><span class="student-arrow">›</span></a>
+<a class="student-wide-link" href="{esc(wa)}" target="_blank" rel="noopener noreferrer" style="{'' if valid_url(wa) else 'opacity:.6;pointer-events:none;'}"><span class="student-feature-icon">◉</span><span><strong>WhatsApp Community</strong><small>{'Join the configured community' if valid_url(wa) else 'Not configured yet'}</small></span><span class="student-arrow">›</span></a>
+</section>'''
     return layout("Dashboard", body)
 
 
@@ -3096,7 +3122,7 @@ def academics():
     for r in rows:
         file_link = f'<a class="btn dark" href="/resource/{r["id"]}">Open file</a>' if r["file_name"] else '<span class="pill">Drive / link resource</span>'
         cards += f'''<div class="card"><div class="resource-meta"><span class="pill">{esc(r["resource_type"])}</span><span class="pill">{esc(r["semester"])}</span></div><h3>{esc(r["title"])}</h3><p class="small">{esc(r["course"])} · {esc(r["subject"])}</p><p class="muted">{esc(r["description"])}</p>{file_link}</div>'''
-    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Find notes, PYQs, assignments and study material using search or filters.</p><div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">🗓️ Timetable</h2><p class="muted" style="margin:0">Open the latest class schedule.</p></div><a class="btn accent" href="/timetable">Open Timetable →</a></div></div><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
+    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Search by resource, course, semester or subject.</p><div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">🗓️ Timetable</h2><p class="muted" style="margin:0">Open the latest class schedule.</p></div><a class="btn accent" href="/timetable">Open Timetable →</a></div></div><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
     return layout("Academics", body)
 
 
@@ -3123,10 +3149,121 @@ def issues():
     con = db()
     faculty = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
     con.close()
-    cards = "".join(f'<div class="card"><h2 style="margin:0 0 7px">{esc(x["name"])}</h2><p class="muted" style="margin:0 0 9px">{esc(x["designation"])}</p><a href="mailto:{esc(x["email"])}" style="color:inherit;text-decoration:underline;word-break:break-word">{esc(x["email"])}</a></div>' for x in faculty)
-    if not cards:
-        cards = '<div class="empty">Faculty contact details have not been added yet.</div>'
-    body = f"""<section class="section"><div class="badge">CAMPUS</div><h1>Report campus problems.</h1><div class="card" style="margin-bottom:18px"><h2 style="margin:0">Report all the campus problems directly to the faculty.</h2></div></section><section class="section"><h2>Faculty &amp; Teachers</h2><div class="grid">{cards}</div></section>"""
+
+    faculty_cards = "".join(
+        f'''<article class="campus-faculty-card" data-faculty-name="{esc(x["name"]).lower()}" data-faculty-role="{esc(x["designation"]).lower()}">
+            <div class="campus-faculty-avatar">{esc((x["name"] or "?").strip()[0:1]).upper()}</div>
+            <div class="campus-faculty-info">
+                <h3>{esc(x["name"])}</h3>
+                <p class="campus-faculty-role">{esc(x["designation"])}</p>
+                <a class="campus-faculty-email" href="mailto:{esc(x["email"])}">{esc(x["email"])}</a>
+            </div>
+            <a class="campus-mail-btn" href="mailto:{esc(x["email"])}" aria-label="Email {esc(x["name"])}">✉</a>
+        </article>'''
+        for x in faculty
+    )
+
+    if not faculty_cards:
+        faculty_cards = '''<div class="campus-empty-state">
+            <div class="campus-empty-icon">✉</div>
+            <h3>Faculty contacts coming soon</h3>
+            <p>Faculty contact details will appear here once they are added by VYBE admin.</p>
+        </div>'''
+
+    body = f'''<style>
+      .vybe-campus-wrap{{max-width:980px;margin:0 auto;padding-bottom:24px}}
+      .campus-hero{{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.10);border-radius:28px;padding:28px 30px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));box-shadow:0 24px 70px rgba(0,0,0,.22)}}
+      .campus-hero:after{{content:"";position:absolute;width:220px;height:220px;right:-80px;top:-100px;border-radius:50%;background:rgba(70,170,230,.12);filter:blur(12px);pointer-events:none}}
+      .campus-hero-top{{display:flex;gap:18px;align-items:flex-start;position:relative;z-index:1}}
+      .campus-hero-icon{{width:54px;height:54px;flex:0 0 54px;border-radius:17px;display:grid;place-items:center;background:rgba(50,170,235,.13);border:1px solid rgba(75,180,235,.25);font-size:25px}}
+      .campus-hero h1{{margin:2px 0 7px;font-size:clamp(28px,4vw,42px);letter-spacing:-.04em}}
+      .campus-hero p{{margin:0;max-width:650px;line-height:1.65}}
+      .campus-note{{margin-top:20px;padding:13px 15px;border-radius:15px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07);font-size:13px;color:#cfd6dd}}
+      .campus-section-head{{display:flex;align-items:end;justify-content:space-between;gap:18px;margin:30px 2px 14px}}
+      .campus-section-head h2{{margin:0;font-size:23px;letter-spacing:-.025em}}
+      .campus-section-head p{{margin:5px 0 0}}
+      .campus-count{{font-size:12px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);white-space:nowrap}}
+      .campus-tools-row{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}}
+      .campus-search{{position:relative;flex:1;min-width:220px}}
+      .campus-search input{{width:100%;box-sizing:border-box;padding:13px 15px 13px 42px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);color:inherit;outline:none}}
+      .campus-search input:focus{{border-color:rgba(65,174,235,.55);box-shadow:0 0 0 3px rgba(65,174,235,.09)}}
+      .campus-search span{{position:absolute;left:15px;top:50%;transform:translateY(-50%);opacity:.62}}
+      .campus-faculty-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+      .campus-faculty-card{{display:flex;align-items:center;gap:14px;min-width:0;padding:17px;border-radius:21px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);transition:transform .18s ease,border-color .18s ease,background .18s ease;box-shadow:0 12px 30px rgba(0,0,0,.12)}}
+      .campus-faculty-card:hover{{transform:translateY(-2px);border-color:rgba(75,180,235,.28);background:rgba(255,255,255,.055)}}
+      .campus-faculty-avatar{{width:48px;height:48px;flex:0 0 48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,rgba(70,180,235,.24),rgba(255,255,255,.07));border:1px solid rgba(100,190,235,.20);font-weight:750;font-size:18px}}
+      .campus-faculty-info{{min-width:0;flex:1}}
+      .campus-faculty-info h3{{margin:0 0 4px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-role{{margin:0 0 7px!important;font-size:12px;color:#aab3bc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-email{{display:block;color:#8fd7ff;text-decoration:none;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      .campus-faculty-email:hover{{text-decoration:underline}}
+      .campus-mail-btn{{width:38px;height:38px;flex:0 0 38px;border-radius:12px;display:grid;place-items:center;text-decoration:none;background:rgba(60,175,235,.10);border:1px solid rgba(75,180,235,.20);color:#8fd7ff;font-size:17px}}
+      .campus-mail-btn:active{{transform:scale(.96)}}
+      .campus-empty-state{{grid-column:1/-1;text-align:center;padding:42px 20px;border:1px dashed rgba(255,255,255,.12);border-radius:22px;background:rgba(255,255,255,.025)}}
+      .campus-empty-icon{{width:50px;height:50px;margin:0 auto 12px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.06);font-size:22px}}
+      .campus-empty-state h3{{margin:0 0 7px}}
+      .campus-empty-state p{{margin:0;color:#9aa3ad;font-size:13px}}
+      .campus-no-results{{display:none;text-align:center;padding:28px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);color:#9aa3ad}}
+      @media(max-width:700px){{
+        .vybe-campus-wrap{{padding-bottom:12px}}
+        .campus-hero{{padding:22px 18px;border-radius:22px}}
+        .campus-hero-top{{gap:13px}}
+        .campus-hero-icon{{width:46px;height:46px;flex-basis:46px;border-radius:14px;font-size:21px}}
+        .campus-hero h1{{font-size:28px}}
+        .campus-faculty-grid{{grid-template-columns:1fr;gap:11px}}
+        .campus-faculty-card{{padding:14px;border-radius:18px}}
+        .campus-section-head{{margin-top:24px}}
+        .campus-section-head h2{{font-size:20px}}
+        .campus-tools-row{{display:block}}
+        .campus-search{{min-width:0;width:100%}}
+        .campus-note{{font-size:12px}}
+      }}
+    </style>
+    <section class="section vybe-campus-wrap">
+      <div class="campus-hero">
+        <div class="campus-hero-top">
+          <div class="campus-hero-icon">🏫</div>
+          <div>
+            <div class="badge">CAMPUS SUPPORT</div>
+            <h1>Report campus problems.</h1>
+            <p class="muted">Report all the campus problems directly to the faculty.</p>
+          </div>
+        </div>
+        <div class="campus-note">Choose a faculty member below and tap their email ID to contact them directly.</div>
+      </div>
+
+      <div class="campus-section-head">
+        <div><h2>Faculty &amp; Teachers</h2><p class="small">Find the right contact quickly.</p></div>
+        <span class="campus-count" id="campusFacultyCount">{len(faculty)} contacts</span>
+      </div>
+
+      <div class="campus-tools-row">
+        <label class="campus-search"><span>⌕</span><input id="campusFacultySearch" type="search" placeholder="Search by name or designation..." autocomplete="off"></label>
+      </div>
+
+      <div class="campus-faculty-grid" id="campusFacultyGrid">{faculty_cards}</div>
+      <div class="campus-no-results" id="campusNoResults">No matching faculty contact found.</div>
+    </section>
+    <script>
+      (function(){{
+        const input=document.getElementById('campusFacultySearch');
+        const grid=document.getElementById('campusFacultyGrid');
+        const empty=document.getElementById('campusNoResults');
+        const count=document.getElementById('campusFacultyCount');
+        if(!input||!grid) return;
+        const cards=Array.from(grid.querySelectorAll('.campus-faculty-card'));
+        function filter(){{
+          const q=(input.value||'').trim().toLowerCase(); let shown=0;
+          cards.forEach(function(card){{
+            const hay=(card.dataset.facultyName+' '+card.dataset.facultyRole).toLowerCase();
+            const ok=!q||hay.includes(q); card.style.display=ok?'flex':'none'; if(ok) shown++;
+          }});
+          if(count) count.textContent=shown+' contact'+(shown===1?'':'s');
+          if(empty) empty.style.display=shown?'none':'block';
+        }}
+        input.addEventListener('input',filter);
+      }})();
+    </script>'''
     return layout("Campus", body)
 
 
@@ -3138,7 +3275,13 @@ def _render_solution_card(row,my_student_id):
 @student_required
 def community():
     # Community is a clean launcher page. Chat and campus problems are separate pages.
-    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Pick one space and get straight to the thing you want to do.</p></section><section class="section community-choice-section"><div class="community-choice-grid"><a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">💬</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk normally using your name only. Reply, delete your own messages and receive notifications.</small></span><span class="community-choice-arrow">›</span></a><a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">🛠️</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Report an issue, post practical solutions, mark helpful answers and manage saved reports.</small></span><span class="community-choice-arrow">›</span></a>{f'<a class="community-choice-card" href="{esc(wa)}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">🟢</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Join the VYBE WhatsApp community.</small></span><span class="community-choice-arrow">›</span></a>' if valid_url(wa) else ''}</div></section><section class="section"><div class="student-ux-panel"><div class="badge">HOW IT WORKS</div><div class="student-steps"><div class="student-step"><b>1</b><span><strong>Want to talk?</strong><small>Open Chat with students.</small></span></div><div class="student-step"><b>2</b><span><strong>Found a problem?</strong><small>Open Solve campus problem and submit it.</small></span></div><div class="student-step"><b>3</b><span><strong>Know a solution?</strong><small>Open a problem and post your practical answer.</small></span></div></div></div></section>''' 
+    body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
+<section class="section community-choice-section">
+  <div class="community-choice-grid">
+    <a class="community-choice-card" href="/community/chat"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>Chat with students</strong><small>Talk with your campus community using your name only.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+    <a class="community-choice-card" href="/community/problems"><span class="community-choice-icon">&#128736;</span><span class="community-choice-copy"><strong>Solve campus problem</strong><small>Help students fix Wi-Fi, systems, classrooms and campus issues.</small></span><span class="community-choice-arrow">&#8250;</span></a>
+  </div>
+</section>'''
     return layout("Community", body)
 
 
