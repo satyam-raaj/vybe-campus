@@ -861,6 +861,7 @@ input,textarea,select{width:100%;padding:13px 14px;background:#09131e;color:#fff
 
 
 def layout(title, body, admin=False):
+    student_tools = ""
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/faculty">Faculty</a><a href="/admin/helpdesk">Help Desk</a><a href="/admin/clubs">Clubs</a><a href="/admin/emergency">Alerts</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
