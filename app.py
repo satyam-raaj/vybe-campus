@@ -2496,6 +2496,31 @@ def _enterprise_init():
             "CREATE TABLE IF NOT EXISTS backup_manifests (id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER REFERENCES universities(id) ON DELETE CASCADE, backup_type TEXT NOT NULL, record_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)"
         ]
     con.executescript(stmts)
+
+    # Schema migration for databases that already had a universities table.
+    # CREATE TABLE IF NOT EXISTS does not add columns to an existing table, so
+    # older VYBE/Supabase databases may be missing the enterprise fields.
+    if pg:
+        for sql in [
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS code TEXT",
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata'",
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'setup'",
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS created_at TEXT",
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS updated_at TEXT",
+        ]:
+            con.execute(sql)
+        stamp = now()
+        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id::text), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_code_unique_idx ON universities(code)")
+    else:
+        cols = {r['name'] for r in con.execute('PRAGMA table_info(universities)').fetchall()}
+        for name, definition in [('code','TEXT'),('timezone',"TEXT DEFAULT 'Asia/Kolkata'"),('status',"TEXT DEFAULT 'setup'"),('created_at','TEXT'),('updated_at','TEXT')]:
+            if name not in cols:
+                con.execute(f'ALTER TABLE universities ADD COLUMN {name} {definition}')
+        stamp = now()
+        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_code_unique_idx ON universities(code)")
+
     # Additive student fields used by the multi-university layer.
     if pg:
         for sql in [
