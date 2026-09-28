@@ -2507,19 +2507,22 @@ def _enterprise_init():
             "ALTER TABLE universities ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'setup'",
             "ALTER TABLE universities ADD COLUMN IF NOT EXISTS created_at TEXT",
             "ALTER TABLE universities ADD COLUMN IF NOT EXISTS updated_at TEXT",
+            "ALTER TABLE universities ADD COLUMN IF NOT EXISTS slug TEXT",
         ]:
             con.execute(sql)
         stamp = now()
-        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id::text), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
+        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id::text), slug=COALESCE(NULLIF(slug,''),'vybe-' || id::text), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_code_unique_idx ON universities(code)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_slug_unique_idx ON universities(slug)")
     else:
         cols = {r['name'] for r in con.execute('PRAGMA table_info(universities)').fetchall()}
-        for name, definition in [('code','TEXT'),('timezone',"TEXT DEFAULT 'Asia/Kolkata'"),('status',"TEXT DEFAULT 'setup'"),('created_at','TEXT'),('updated_at','TEXT')]:
+        for name, definition in [('code','TEXT'),('slug','TEXT'),('timezone',"TEXT DEFAULT 'Asia/Kolkata'"),('status',"TEXT DEFAULT 'setup'"),('created_at','TEXT'),('updated_at','TEXT')]:
             if name not in cols:
                 con.execute(f'ALTER TABLE universities ADD COLUMN {name} {definition}')
         stamp = now()
-        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
+        con.execute("UPDATE universities SET code=COALESCE(NULLIF(code,''),'VYBE-' || id), slug=COALESCE(NULLIF(slug,''),'vybe-' || id), timezone=COALESCE(NULLIF(timezone,''),'Asia/Kolkata'), status=COALESCE(NULLIF(status,''),'active'), created_at=COALESCE(created_at,?), updated_at=COALESCE(updated_at,?)", (stamp, stamp))
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_code_unique_idx ON universities(code)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_slug_unique_idx ON universities(slug)")
 
     # Additive student fields used by the multi-university layer.
     # Use PostgreSQL ALTER TABLE syntax on Render Postgres; PRAGMA is SQLite-only.
@@ -2538,7 +2541,7 @@ def _enterprise_init():
     row = con.execute("SELECT id FROM universities ORDER BY id LIMIT 1").fetchone()
     if not row:
         stamp = now()
-        con.execute("INSERT INTO universities(name,code,timezone,status,created_at,updated_at) VALUES(?,?,?,?,?,?)", ("VYBE Demo University", "VYBE", "Asia/Kolkata", "active", stamp, stamp))
+        con.execute("INSERT INTO universities(name,slug,code,timezone,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("VYBE Demo University", "vybe", "VYBE", "Asia/Kolkata", "active", stamp, stamp))
         row = con.execute("SELECT id FROM universities ORDER BY id LIMIT 1").fetchone()
     default_uni = row['id']
     set_setting(con, 'default_university_id', str(default_uni))
@@ -3113,3 +3116,4 @@ _enterprise_init()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
