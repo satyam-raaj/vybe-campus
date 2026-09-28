@@ -2854,7 +2854,14 @@ def admin_university():
     if request.method=='POST':
         name=request.form.get('name','').strip()[:180]; code=request.form.get('code','').strip().upper()[:40]; timezone_name=request.form.get('timezone','Asia/Kolkata').strip()[:80]
         if name and code:
-            try: con.execute("INSERT INTO universities(name,code,timezone,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",(name,code,timezone_name,'setup',now(),now())); con.commit(); flash('University created. Continue with onboarding.')
+            try:
+                slug_base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "university"
+                slug = slug_base
+                suffix = 2
+                while con.execute("SELECT id FROM universities WHERE slug=?", (slug,)).fetchone():
+                    slug = f"{slug_base}-{suffix}"
+                    suffix += 1
+                con.execute("INSERT INTO universities(name,slug,code,timezone,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(name,slug,code,timezone_name,'setup',now(),now())); con.commit(); flash('University created. Continue with onboarding.')
             except Exception: con.rollback(); flash('University code already exists.')
         con.close(); return redirect(url_for('admin_university'))
     rows=con.execute("SELECT * FROM universities ORDER BY id").fetchall(); con.close(); trs=''.join(f'<tr><td>{esc(x["name"])}</td><td>{esc(x["code"])}</td><td>{esc(x["timezone"])}</td><td>{esc(x["status"])}</td><td><a class="btn dark" href="/admin/university/select/{x["id"]}">Use</a></td></tr>' for x in rows); return layout('University Configuration',f'<section class="section"><div class="badge">UNIVERSITY CONFIGURATION</div><h1>University setup.</h1><div class="card"><form class="form"><input name="name" placeholder="University name" required><input name="code" placeholder="University code" required><input name="timezone" value="Asia/Kolkata" placeholder="Timezone"><button class="btn accent" type="submit" formaction="/admin/university" formmethod="post">Create university</button></form></div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Name</th><th>Code</th><th>Timezone</th><th>Status</th><th>Context</th></tr>{trs}</table></div></section>',admin=True)
@@ -3116,4 +3123,3 @@ _enterprise_init()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
