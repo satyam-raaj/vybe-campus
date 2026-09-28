@@ -2522,8 +2522,7 @@ def _enterprise_init():
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS universities_code_unique_idx ON universities(code)")
 
     # Additive student fields used by the multi-university layer.
-    if pg:
-        for sql in [
+    for sql in [
             "ALTER TABLE students ADD COLUMN IF NOT EXISTS university_id BIGINT",
             "ALTER TABLE students ADD COLUMN IF NOT EXISTS department_id BIGINT",
             "ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'",
