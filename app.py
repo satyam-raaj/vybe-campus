@@ -2315,6 +2315,197 @@ input[type="button"]{
 }
 
 
+/* ===== VYBE CARD ACTION SYSTEM — DESKTOP + PHONE ===== */
+/* Every interactive card remains a real link/button; this layer only improves
+   hit-area, feedback, focus states and mobile touch behavior. */
+a.home-action,
+a.academic-quick,
+a.academic-tool,
+a.community-choice-card,
+a.student-feature,
+a.student-mini,
+a.student-wide-link,
+a.campus-tool,
+a.card,
+a.student-link,
+a.academic-resource-card,
+a.academic-update-card{
+  position:relative!important;
+  pointer-events:auto!important;
+  cursor:pointer!important;
+  -webkit-tap-highlight-color:transparent!important;
+  touch-action:manipulation!important;
+  text-decoration:none!important;
+  overflow:hidden!important;
+  isolation:isolate!important;
+}
+
+/* Subtle premium shine without blocking clicks. */
+a.home-action::after,
+a.academic-quick::after,
+a.academic-tool::after,
+a.community-choice-card::after,
+a.student-feature::after,
+a.student-mini::after,
+a.student-wide-link::after,
+a.campus-tool::after,
+a.card::after{
+  content:"";
+  position:absolute!important;
+  inset:0 auto 0 -120%!important;
+  width:48%!important;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.34),transparent)!important;
+  transform:skewX(-18deg)!important;
+  transition:left .5s ease!important;
+  pointer-events:none!important;
+  z-index:0!important;
+}
+
+a.home-action:hover::after,
+a.academic-quick:hover::after,
+a.academic-tool:hover::after,
+a.community-choice-card:hover::after,
+a.student-feature:hover::after,
+a.student-mini:hover::after,
+a.student-wide-link:hover::after,
+a.campus-tool:hover::after,
+a.card:hover::after{left:145%!important}
+
+/* Keep the card contents above the visual shine. */
+a.home-action > *,
+a.academic-quick > *,
+a.academic-tool > *,
+a.community-choice-card > *,
+a.student-feature > *,
+a.student-mini > *,
+a.student-wide-link > *,
+a.campus-tool > *,
+a.card > *{position:relative;z-index:1}
+
+a.home-action,
+a.academic-quick,
+a.academic-tool,
+a.community-choice-card,
+a.student-feature,
+a.student-mini,
+a.student-wide-link,
+a.campus-tool,
+a.card{
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background-color .18s ease!important;
+}
+
+a.home-action:hover,
+a.academic-quick:hover,
+a.academic-tool:hover,
+a.community-choice-card:hover,
+a.student-feature:hover,
+a.student-mini:hover,
+a.student-wide-link:hover,
+a.campus-tool:hover,
+a.card:hover{
+  transform:translateY(-3px)!important;
+  box-shadow:0 14px 32px rgba(31,48,66,.12)!important;
+}
+
+a.home-action:active,
+a.academic-quick:active,
+a.academic-tool:active,
+a.community-choice-card:active,
+a.student-feature:active,
+a.student-mini:active,
+a.student-wide-link:active,
+a.campus-tool:active,
+a.card:active{
+  transform:translateY(-1px) scale(.992)!important;
+  transition-duration:.06s!important;
+}
+
+a.home-action:focus-visible,
+a.academic-quick:focus-visible,
+a.academic-tool:focus-visible,
+a.community-choice-card:focus-visible,
+a.student-feature:focus-visible,
+a.student-mini:focus-visible,
+a.student-wide-link:focus-visible,
+a.campus-tool:focus-visible,
+a.card:focus-visible{
+  outline:3px solid rgba(47,111,202,.22)!important;
+  outline-offset:3px!important;
+}
+
+/* Make the action label/arrow feel like a real button. */
+.home-action b,
+.community-choice-arrow,
+.academic-arrow,
+.student-arrow{
+  transition:transform .18s ease,color .18s ease!important;
+}
+a.home-action:hover b,
+a.community-choice-card:hover .community-choice-arrow,
+a.academic-tool:hover .academic-arrow,
+a.student-feature:hover .student-arrow,
+a.student-mini:hover > span:last-child,
+a.student-wide-link:hover .student-arrow{
+  transform:translateX(3px)!important;
+}
+
+/* Cards that contain an actual button/form control: keep the control clickable. */
+a.home-action button,
+a.academic-quick button,
+a.academic-tool button,
+a.community-choice-card button,
+a.student-feature button,
+a.student-mini button,
+a.student-wide-link button,
+a.campus-tool button,
+a.card button,
+a.card input,
+a.card select,
+a.card textarea{
+  position:relative!important;
+  z-index:5!important;
+  pointer-events:auto!important;
+}
+
+@media(max-width:850px){
+  a.home-action,
+  a.academic-quick,
+  a.academic-tool,
+  a.community-choice-card,
+  a.student-feature,
+  a.student-mini,
+  a.student-wide-link,
+  a.campus-tool,
+  a.card{
+    min-width:0!important;
+    max-width:100%!important;
+    -webkit-user-select:none!important;
+    user-select:none!important;
+  }
+  a.home-action:hover,
+  a.academic-quick:hover,
+  a.academic-tool:hover,
+  a.community-choice-card:hover,
+  a.student-feature:hover,
+  a.student-mini:hover,
+  a.student-wide-link:hover,
+  a.campus-tool:hover,
+  a.card:hover{transform:translateY(-1px)!important}
+}
+
+@media(hover:none){
+  a.home-action:hover::after,
+  a.academic-quick:hover::after,
+  a.academic-tool:hover::after,
+  a.community-choice-card:hover::after,
+  a.student-feature:hover::after,
+  a.student-mini:hover::after,
+  a.student-wide-link:hover::after,
+  a.campus-tool:hover::after,
+  a.card:hover::after{left:-120%!important}
+}
+
+
 """
 
 
