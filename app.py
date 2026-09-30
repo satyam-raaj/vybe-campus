@@ -2111,7 +2111,7 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        header = f'''<div class="navin student-nav-compact"><a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a><nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 <div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
@@ -2125,6 +2125,31 @@ def layout(title, body, admin=False):
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}
+  /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
+  @media(max-width:850px){{
+    html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
+    body{{padding-top:112px!important;padding-bottom:76px!important;box-sizing:border-box!important}}
+    .nav:has(.student-nav-compact){{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:5000!important;background:rgba(255,255,255,.98)!important;border-bottom:1px solid #dfe7df!important;box-shadow:0 4px 18px rgba(20,35,28,.08)!important;backdrop-filter:blur(14px)!important;-webkit-backdrop-filter:blur(14px)!important}}
+    .nav:has(.student-nav-compact) .navin{{width:100%!important;box-sizing:border-box!important}}
+    .nav:has(.student-nav-compact) .student-control-row{{width:100%!important;box-sizing:border-box!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;visibility:visible!important;opacity:1!important}}
+    .student-nav-compact .student-header-back{{display:none!important}}
+    .student-nav-compact .student-desktop-links{{display:none!important}}
+    .student-nav-compact .student-header-tools{{display:flex!important;margin-left:auto!important}}
+    .student-nav-compact .student-header-tools .student-menu{{display:none!important}}
+    .student-control-row{{display:block!important}}
+    .student-control-row .student-search{{display:block!important}}
+    .student-search input{{display:block!important}}
+    .student-search-suggestions,.search-suggestions,.search-dropdown{{z-index:6000!important}}
+    #vybeMobileNav.student-mobile-menu{{position:fixed!important;z-index:7000!important;top:108px!important;left:8px!important;right:auto!important;width:44vw!important;max-width:205px!important;min-width:160px!important}}
+    .student-bottom-nav{{position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:5000!important;width:100%!important;margin:0!important}}
+    .student-bottom-spacer{{display:none!important}}
+    .vybe-assistant-fab{{bottom:86px!important}}
+    .vybe-assistant-panel{{bottom:140px!important;max-width:calc(100vw - 24px)!important}}
+    .wrap{{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important}}
+    .vybe-footer,.footer{{display:none!important}}
+  }}
+
   /* ===== FINAL MOBILE VYBE HEADER / MENU CLEANUP ===== */
   @media(max-width:850px){{
     .student-nav-compact{{display:flex!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:54px!important;padding:8px 12px!important;box-sizing:border-box!important}}
@@ -5556,3 +5581,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
