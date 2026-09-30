@@ -1875,6 +1875,38 @@ main,.main,.wrap{position:relative}
 
 
 
+/* ===== VYBE COMPACT HEADER / NO FOOTER ===== */
+.student-nav-compact{max-width:1280px!important;min-height:58px!important;padding:7px 18px!important;gap:16px!important}
+.student-nav-compact .student-brand-compact{font-size:20px!important;min-width:76px!important}
+.student-desktop-links{display:flex;align-items:center;gap:4px;flex:0 1 auto}
+.student-desktop-links a{padding:9px 11px;border-radius:10px;color:#aebdca;font-size:13px;font-weight:700;white-space:nowrap;transition:.18s ease}
+.student-desktop-links a:hover{background:rgba(40,133,191,.12);color:#fff}
+.student-header-back{display:inline-flex;align-items:center;gap:7px;color:#dcefff;font-weight:750;font-size:13px;text-decoration:none;min-width:76px}
+.student-header-back:hover{color:#4cc2ff}
+.student-header-tools{margin-left:auto!important;display:flex!important;align-items:center!important}
+.student-header-tools .profile{display:none!important}
+.student-control-row{max-width:1280px!important;margin:0 auto!important;padding:0 18px 8px!important;border:0!important;background:transparent!important}
+.student-control-row .student-search{max-width:420px!important;margin-left:auto!important;height:38px!important}
+.student-control-row .student-search input{height:38px!important;border-radius:11px!important;font-size:13px!important}
+.vybe-footer,.footer{display:none!important}
+@media(max-width:850px){
+  .navin.student-nav-compact{min-height:54px!important;padding:7px 10px!important;justify-content:space-between!important}
+  .student-brand-compact{font-size:19px!important}
+  .student-desktop-links{display:none!important}
+  .student-nav-compact .student-header-tools{display:flex!important;margin-left:auto!important}
+  .student-header-back{min-width:0!important;font-size:13px!important;padding:7px 4px!important}
+  .student-control-row{padding:0 10px 7px!important}
+  .student-control-row .student-search{max-width:none!important;width:100%!important;height:38px!important}
+  .student-control-row .student-search input{height:38px!important}
+  .student-bottom-spacer{display:block!important;height:74px!important}
+}
+@media(min-width:851px){
+  .student-mobile-menu{top:58px!important;right:18px!important;left:auto!important;width:230px!important;border-radius:16px!important}
+  .student-mobile-menu.open{display:flex!important}
+  .student-bottom-nav{display:none!important}
+}
+
+
 """
 
 
@@ -1893,8 +1925,8 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><a class="student-header-icon profile" href="/profile" aria-label="Profile">Profile</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div></div>
-<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home"><span class="control-symbol">Home</span></a><a class="student-control" href="/academics" aria-label="Academic Hub"><span class="control-symbol">Academics</span></a><a class="student-control" href="/community" aria-label="Community"><span class="control-symbol">Community</span></a><a class="student-control" href="/issues" aria-label="Help Desk"><span class="control-symbol">Help Desk</span></a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
+        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div></div>
+<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>H</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>P</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -1908,7 +1940,7 @@ def layout(title, body, admin=False):
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu"></button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
-<main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}<footer class="footer vybe-footer"><div class="footer-inner"><div class="footer-brand"><strong>VYBE</strong><span>Your Campus. Your Community. Your Space.</span></div><nav class="footer-links" aria-label="Footer navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/profile">Profile</a></nav><div class="footer-copy">VYBE campus platform</div></div></footer>{assistant_widget}
+<main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
