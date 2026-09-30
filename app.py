@@ -1190,6 +1190,81 @@ body:has(.student-nav-compact){padding-top:112px!important;padding-bottom:78px!i
 .vybe-footer,.footer{display:none!important}.student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:68px!important;min-height:68px!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;margin:0!important;padding:7px 8px calc(7px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #d8e1e6!important;box-shadow:0 -5px 18px rgba(20,35,48,.10)!important;z-index:50000!important;box-sizing:border-box!important}.student-bottom-nav>*{width:100%!important;min-width:0!important;height:46px!important;margin:0!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important;border:1px solid #d3dde3!important;border-radius:9px!important;background:#fff!important;color:#405360!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;box-sizing:border-box!important}.student-bottom-nav .mobile-menu-nav{appearance:none!important;-webkit-appearance:none!important;cursor:pointer!important;font:inherit!important}.student-bottom-nav .mobile-menu-icon-lines{display:none!important}.student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important}.student-bottom-nav .mobile-home-nav.active,.student-bottom-nav>*:active{background:#eef3f6!important;border-color:#c7d3da!important;color:#263845!important}.student-bottom-spacer{height:78px!important;display:block!important}.vybe-assistant-fab{bottom:78px!important;right:12px!important}.vybe-assistant-panel{bottom:132px!important;right:10px!important;max-width:calc(100vw - 20px)!important}
 .wrap,.page-shell{width:100%!important;max-width:none!important;min-width:0!important;margin:0!important;padding-left:12px!important;padding-right:12px!important;overflow:visible!important}.section{width:100%!important;max-width:none!important;min-width:0!important}.card,.hero,.authbox,.academic-hero,.academic-section,.academic-app-card,.campus-hero,.campus-faculty-card{max-width:100%!important;min-width:0!important}.auth{width:100%!important;min-height:calc(100dvh - 56px)!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding:24px 0 30px!important}.authbox{width:100%!important;margin:0!important;padding:22px 17px!important;border-radius:18px!important}.authbox h1{font-size:28px!important;line-height:1.1!important}.form{width:100%!important;min-width:0!important}.form input,.form select,.form textarea,.password-wrap{width:100%!important;max-width:100%!important;min-width:0!important}.password-wrap input{padding-right:48px!important}.actions{width:100%!important;display:flex!important;flex-wrap:wrap!important;gap:8px!important}.actions .btn,.form>.btn{min-height:44px!important;flex:1 1 100%!important;width:100%!important}.hero{padding:28px 17px!important;border-radius:20px!important}.hero h1{font-size:clamp(34px,12vw,54px)!important}.grid{grid-template-columns:1fr!important;gap:12px!important}.grid>.card{width:100%!important}img,video,iframe,svg{max-width:100%;height:auto}table{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}input,select,textarea,button{max-width:100%}.btn{max-width:100%!important;white-space:normal!important}.flash{margin-left:0!important;margin-right:0!important}.academic-grid,.academic-resource-grid,.academic-app-grid,.updates-grid,.events-grid,.community-grid{grid-template-columns:1fr!important}
 }
+
+/* ===== VYBE MOBILE CLEAN FINAL SHELL ===== */
+@media (max-width:850px){
+  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%!important}
+  body{margin:0!important;padding-top:112px!important;padding-bottom:76px!important;min-width:0!important}
+
+  /* Student header: fixed, simple, two rows. */
+  .nav:has(.student-nav-compact){position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:112px!important;z-index:50000!important;background:#fff!important;border-bottom:1px solid #dce4e9!important;box-shadow:0 2px 12px rgba(20,35,48,.08)!important}
+  .nav:has(.student-nav-compact) .student-nav-compact{height:54px!important;min-height:54px!important;width:100%!important;padding:7px 10px!important;display:flex!important;align-items:center!important;gap:7px!important;box-sizing:border-box!important}
+  .student-nav-compact .student-header-back{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;height:34px!important;padding:0 8px!important;border:1px solid #d4dde3!important;border-radius:8px!important;background:#fff!important;color:#263845!important;font-size:12px!important;font-weight:800!important;text-decoration:none!important;white-space:nowrap!important}
+  .student-nav-compact .student-brand-compact{display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;flex:1 1 auto!important;text-decoration:none!important}
+  .student-nav-compact .student-brand-compact .brandmark{width:30px!important;height:30px!important;flex:0 0 30px!important;border-radius:8px!important;font-size:16px!important}
+  .student-nav-compact .student-brand-compact .brandtext{font-size:17px!important;font-weight:850!important;color:#182633!important}
+  .student-nav-compact .student-desktop-links,.student-nav-compact .student-menu{display:none!important}
+  .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;flex:0 0 auto!important;margin-left:auto!important}
+  .student-nav-compact .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:34px!important;padding:0 10px!important;border:1px solid #cfd9e0!important;border-radius:8px!important;background:#fff!important;color:#334754!important;font-size:12px!important;font-weight:800!important;text-decoration:none!important;box-shadow:none!important;white-space:nowrap!important}
+  .student-nav-compact .student-header-updates:hover,.student-nav-compact .student-header-updates:active{background:#f3f6f8!important;color:#243845!important}
+  .nav:has(.student-nav-compact) .student-control-row{height:58px!important;width:100%!important;padding:7px 10px 9px!important;margin:0!important;display:flex!important;align-items:center!important;box-sizing:border-box!important;background:#fff!important}
+  .student-control-row .student-search{position:relative!important;display:block!important;width:100%!important;max-width:none!important;height:42px!important;margin:0!important;overflow:visible!important}
+  .student-search input{display:block!important;width:100%!important;height:42px!important;box-sizing:border-box!important;margin:0!important;padding:0 13px!important;border:1px solid #d1dce3!important;border-radius:10px!important;background:#f7fafc!important;color:#182b37!important;font-size:13px!important;outline:none!important}
+  .student-search input:focus{background:#fff!important;border-color:#7695aa!important;box-shadow:0 0 0 3px rgba(73,115,145,.10)!important}
+
+  /* Search suggestions are always controlled here, not by old desktop rules. */
+  .student-search .mobile-direct-suggestions,.student-search .vybe-search-suggestions{position:absolute!important;left:0!important;right:0!important;top:46px!important;width:100%!important;z-index:99999!important;padding:5px!important;background:#fff!important;border:1px solid #d4dde3!important;border-radius:10px!important;box-shadow:0 16px 32px rgba(20,32,44,.18)!important;box-sizing:border-box!important}
+  .student-search .mobile-direct-suggestions{display:none!important}
+  .student-search .mobile-direct-suggestions.open{display:block!important}
+  .student-search:focus-within .mobile-direct-suggestions{display:block!important}
+  .student-search .mobile-direct-suggestions .vybe-search-suggestion{display:flex!important;align-items:center!important;justify-content:space-between!important;width:100%!important;min-height:40px!important;padding:8px 10px!important;border:0!important;border-radius:7px!important;background:#fff!important;color:#263845!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important;box-sizing:border-box!important}
+  .student-search .mobile-direct-suggestions .vybe-search-suggestion span:last-child{color:#7c8a94!important;font-size:10px!important;font-weight:650!important}
+  .student-search .mobile-direct-suggestions .vybe-search-suggestion:hover,.student-search .mobile-direct-suggestions .vybe-search-suggestion:active{background:#eef3f6!important}
+
+  /* One mobile drawer only. */
+  #vybeMobileNav.student-mobile-menu{display:none!important;position:fixed!important;top:112px!important;left:0!important;right:auto!important;bottom:76px!important;width:min(78vw,280px)!important;min-width:0!important;max-width:280px!important;height:auto!important;max-height:none!important;margin:0!important;padding:10px!important;overflow-y:auto!important;z-index:60000!important;background:#fff!important;border:0!important;border-right:1px solid #d8e1e6!important;border-radius:0 12px 12px 0!important;box-shadow:12px 0 32px rgba(18,35,48,.16)!important;box-sizing:border-box!important}
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:3px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:3px 3px 9px!important;border-bottom:1px solid #edf0ed!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:13px!important;font-weight:850!important;color:#1d2e3b!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:28px!important;padding:0 8px!important;border:1px solid #d4dee4!important;border-radius:7px!important;background:#fff!important;color:#425562!important;font-size:10px!important;font-weight:800!important}
+  #vybeMobileNav.student-mobile-menu>a{display:flex!important;align-items:center!important;width:100%!important;min-height:42px!important;margin:0!important;padding:9px 10px!important;border:0!important;border-radius:8px!important;background:#fff!important;color:#263845!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important;box-sizing:border-box!important}
+  #vybeMobileNav.student-mobile-menu>a:hover,#vybeMobileNav.student-mobile-menu>a:active{background:#eef3f6!important;color:#205f8d!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
+
+  /* Exactly three aligned bottom controls. */
+  .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:76px!important;min-height:76px!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:0!important;padding:7px 8px calc(7px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #d8e1e6!important;box-shadow:0 -5px 18px rgba(20,35,48,.10)!important;z-index:50000!important;box-sizing:border-box!important}
+  .student-bottom-nav>*{width:100%!important;min-width:0!important;height:46px!important;margin:0!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important;border:1px solid #d3dde3!important;border-radius:9px!important;background:#fff!important;color:#405360!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;box-sizing:border-box!important}
+  .student-bottom-nav button.mobile-menu-nav{appearance:none!important;-webkit-appearance:none!important;cursor:pointer!important;font:inherit!important;background:#fff!important;color:#405360!important;border:1px solid #d3dde3!important}
+  .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important}
+  .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-nav .mobile-home-nav.active{background:#eef3f6!important;border-color:#c7d3da!important;color:#263845!important}
+  .student-bottom-spacer{height:0!important;display:none!important}
+  .vybe-assistant-fab{bottom:86px!important;right:12px!important}
+  .vybe-assistant-panel{bottom:140px!important;right:10px!important;max-width:calc(100vw - 20px)!important}
+
+  /* All student page content must fit between the fixed bars. */
+  .wrap,.page-shell{width:100%!important;max-width:none!important;min-width:0!important;margin:0!important;padding-left:12px!important;padding-right:12px!important;box-sizing:border-box!important;overflow-x:hidden!important}
+  .section,.card,.hero,.academic-hero,.academic-section,.academic-app-card,.campus-hero,.campus-faculty-card,.authbox{max-width:100%!important;min-width:0!important}
+  img,video,iframe,svg{max-width:100%!important}
+  table{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important}
+
+  /* Public/auth pages: compact phone-safe header and forms. */
+  body:not(:has(.student-nav-compact)){padding-top:56px!important;padding-bottom:20px!important}
+  body:not(:has(.student-nav-compact)) .nav{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:56px!important;z-index:50000!important;background:#fff!important;border-bottom:1px solid #dce4e9!important}
+  body:not(:has(.student-nav-compact)) .navin{width:100%!important;height:56px!important;padding:7px 10px!important;box-sizing:border-box!important}
+  body:not(:has(.student-nav-compact)) .nav-toggle{display:flex!important;align-items:center!important;justify-content:center!important;width:40px!important;height:38px!important}
+  .auth{width:100%!important;min-height:calc(100dvh - 56px)!important;padding:22px 0 24px!important;display:flex!important;align-items:flex-start!important;justify-content:center!important}
+  .authbox{width:100%!important;margin:0!important;padding:20px 16px!important;border-radius:18px!important;box-sizing:border-box!important}
+  .authbox h1{font-size:28px!important;line-height:1.1!important}
+  .form,.form input,.form select,.form textarea,.password-wrap{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
+  .actions{width:100%!important;display:flex!important;flex-wrap:wrap!important;gap:8px!important}
+  .actions .btn,.form>.btn{width:100%!important;min-height:44px!important}
+  .grid,.grid2,.two,.campus-tools,.academic-grid,.academic-resource-grid,.academic-app-grid,.updates-grid,.events-grid,.community-grid{grid-template-columns:1fr!important}
+  .hero{padding:28px 16px!important}
+  .hero h1{font-size:clamp(34px,12vw,52px)!important}
+  .footer,.vybe-footer{display:none!important}
+}
+
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -2231,7 +2306,7 @@ def layout(title, body, admin=False):
     .student-desktop-links,.student-header-back{{display:none!important}}
     .student-header-tools{{display:flex!important;align-items:center!important;margin-left:auto!important;flex:0 0 auto!important}}
     .student-header-tools .student-menu{{display:none!important}}
-    .student-header-updates{{display:inline-flex!important;height:34px!important;padding:0 10px!important;border-radius:9px!important;background:#315f24!important;color:#fff!important;border:1px solid #315f24!important;font-size:11px!important;font-weight:850!important;white-space:nowrap!important}}
+    .student-header-updates{{display:inline-flex!important;height:34px!important;padding:0 10px!important;border-radius:9px!important;background:#fff!important;color:#334754!important;border:1px solid #cfd9e0!important;font-size:11px!important;font-weight:850!important;white-space:nowrap!important}}
     .student-control-row{{display:block!important;width:100%!important;padding:6px 12px 10px!important;box-sizing:border-box!important}}
     .student-control-row .student-search{{width:100%!important;max-width:none!important;margin:0!important}}
     .student-search{{position:relative!important}}
@@ -2373,8 +2448,8 @@ function setMenu(open){{
       }}).join('');
       form.appendChild(box);
     }}
-    function openSuggestions(){{ box.classList.add('open'); }}
-    function closeSuggestions(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)) box.classList.remove('open'); }},180); }}
+    function openSuggestions(){{ box.classList.add('open'); box.style.display='block'; }}
+    function closeSuggestions(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)){{ box.classList.remove('open'); box.style.display='none'; }} }},180); }}
     input.addEventListener('focus',openSuggestions);
     input.addEventListener('click',openSuggestions);
     input.addEventListener('input',function(){{ openSuggestions(); }});
