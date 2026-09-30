@@ -1249,35 +1249,32 @@ def _safe_500_page():
 }
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
+@app.errorhandler(HTTPException)
+def handle_http_exception(error):
+    code=getattr(error,"code",500) or 500
+    if code==404: title="Page not found."; message="The page you are looking for may have moved, been removed, or never existed."; label="404 · NOT FOUND"
+    elif code==403: title="Access restricted."; message="You don't have permission to open this VYBE page."; label="403 · FORBIDDEN"
+    elif code==405: title="Action not available."; message="That request cannot be used on this VYBE page."; label="405 · METHOD NOT ALLOWED"
+    elif code==429: title="Slow down for a moment."; message="VYBE received too many requests at once. Please try again shortly."; label="429 · TOO MANY REQUESTS"
+    elif code==503: title="VYBE is unavailable."; message="The service is temporarily unavailable. Please try again in a moment."; label="503 · UNAVAILABLE"
+    else: title="Something went wrong."; message="VYBE could not complete that request. Please try again."; label=f"{code} · VYBE ERROR"
+    app.logger.warning("VYBE HTTP %s: %s",code,getattr(error,"description",str(error)))
+    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">{label}</div><div class="vybe-status-mark">V</div><h1>{title}</h1><p>{message}</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>'''
+    return _vybe_public_shell(f"{code} · VYBE",body),code
+
 @app.errorhandler(Exception)
 def handle_unexpected_exception(error):
-    # Flask may wrap an underlying exception in Werkzeug's 500 error handler.
-    # Log the original exception and traceback so Render contains the real
-    # cause instead of only “InternalServerError: 500”.
-    if isinstance(error, HTTPException):
-        return error
-    app.logger.error(
-        "UNHANDLED VYBE EXCEPTION: %s: %s",
-        type(error).__name__,
-        str(error),
-        exc_info=(type(error), error, error.__traceback__),
-    )
-    return _safe_500_page(), 500
+    if isinstance(error,HTTPException): return handle_http_exception(error)
+    app.logger.error("UNHANDLED VYBE EXCEPTION: %s: %s",type(error).__name__,str(error),exc_info=(type(error),error,error.__traceback__))
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">500 · SERVER ERROR</div><div class="vybe-status-mark">V</div><h1>Something went wrong.</h1><p>VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>'''
+    return _vybe_public_shell("500 · VYBE",body),500
 
 @app.errorhandler(500)
 def handle_internal_server_error(error):
-    original = getattr(error, "original_exception", None)
-    if original is not None:
-        app.logger.error(
-            "VYBE ORIGINAL 500 EXCEPTION: %s: %s",
-            type(original).__name__,
-            str(original),
-            exc_info=(type(original), original, original.__traceback__),
-        )
-    else:
-        app.logger.error("VYBE 500 response: %s", error, exc_info=(type(error), error, error.__traceback__))
-    return _safe_500_page(), 500
-
+    original=getattr(error,"original_exception",None)
+    if original is not None: app.logger.error("VYBE ORIGINAL 500 EXCEPTION: %s: %s",type(original).__name__,str(original),exc_info=(type(original),original,original.__traceback__))
+    else: app.logger.error("VYBE 500 response: %s",error,exc_info=(type(error),error,error.__traceback__))
+    return handle_unexpected_exception(original or error)
 
 @app.after_request
 def security_headers(response):
@@ -3692,10 +3689,30 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
 </script></body></html>'''
 
 
+# ---------------------------------------------------------------------------
+# VYBE public entry / maintenance / error screens
+# ---------------------------------------------------------------------------
+
+def _vybe_public_shell(title, body):
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f"><title>{title} · VYBE</title><style>
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#f6f8fb;color:#17202b}}body{{overflow-x:hidden}}a{{color:inherit;text-decoration:none}}
+.vybe-public{{min-height:100vh;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 0%,rgba(47,111,202,.13),transparent 34%),linear-gradient(180deg,#fbfdff 0%,#f4f7fa 100%)}}.vybe-public::before{{content:"";position:absolute;width:620px;height:620px;border-radius:50%;left:50%;top:-340px;transform:translateX(-50%);background:radial-gradient(circle,rgba(47,111,202,.15),rgba(104,184,46,.035) 45%,transparent 70%);filter:blur(8px);pointer-events:none}}
+.vybe-top{{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;max-width:1180px;margin:auto;padding:24px 24px 0}}.vybe-brand{{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.04em;font-size:20px}}.vybe-brand-mark{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#163b69,#07111f);box-shadow:0 12px 30px rgba(7,17,31,.18);position:relative;overflow:hidden}}.vybe-brand-mark span{{position:relative;z-index:1}}.vybe-brand-mark::after{{content:"";position:absolute;inset:-20%;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.3),transparent 65%);animation:shine 3.8s linear infinite}}.vybe-admin-mini{{padding:10px 14px;border:1px solid rgba(7,17,31,.1);background:rgba(255,255,255,.72);backdrop-filter:blur(16px);border-radius:13px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(18,36,56,.06);transition:.22s ease}}.vybe-admin-mini:hover{{transform:translateY(-2px)}}
+.vybe-hero{{position:relative;z-index:2;max-width:1080px;margin:0 auto;padding:78px 24px 34px;text-align:center}}.vybe-logo-orbit{{width:164px;height:164px;margin:0 auto 30px;position:relative;display:grid;place-items:center;animation:float 5s ease-in-out infinite}}.vybe-logo-orbit::before,.vybe-logo-orbit::after{{content:"";position:absolute;border-radius:50%;inset:0;border:1px solid rgba(47,111,202,.15);animation:orbit 8s linear infinite}}.vybe-logo-orbit::after{{inset:14px;border-color:rgba(104,184,46,.16);animation-direction:reverse;animation-duration:11s}}.vybe-logo-core{{width:100px;height:100px;border-radius:30px;display:grid;place-items:center;color:#fff;font-size:47px;font-weight:900;letter-spacing:-.09em;background:linear-gradient(145deg,#1c4c83 0%,#07111f 78%);box-shadow:0 25px 60px rgba(7,17,31,.22),inset 0 1px 0 rgba(255,255,255,.2);position:relative;overflow:hidden;animation:logoIn .95s cubic-bezier(.16,1,.3,1) both}}.vybe-logo-core::before{{content:"";position:absolute;width:55%;height:150%;top:-25%;left:-80%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);transform:rotate(20deg);animation:logoSweep 3.5s ease-in-out .8s infinite}}.vybe-logo-core span{{position:relative;z-index:1}}
+.vybe-kicker{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.76);border:1px solid rgba(23,32,43,.08);box-shadow:0 8px 25px rgba(18,36,56,.05);font-size:12px;font-weight:800;color:#506071;animation:rise .8s .1s both}}.vybe-kicker i{{width:7px;height:7px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 5px rgba(104,184,46,.12);animation:pulse 2s infinite}}
+.vybe-hero h1{{font-size:clamp(58px,10vw,104px);line-height:.9;margin:22px 0 15px;letter-spacing:-.075em;font-weight:900;color:#101923;animation:rise .8s .18s both}}.vybe-hero h1 em{{font-style:normal;background:linear-gradient(100deg,#163b69,#2f6fca 48%,#68b82e);-webkit-background-clip:text;background-clip:text;color:transparent}}.vybe-hero p{{max-width:650px;margin:0 auto;color:#647180;font-size:clamp(16px,2vw,20px);line-height:1.6;animation:rise .8s .26s both}}
+.vybe-actions{{display:flex;justify-content:center;gap:11px;flex-wrap:wrap;margin:30px 0 0;animation:rise .8s .34s both}}.vybe-action{{min-width:145px;padding:13px 18px;border-radius:15px;font-weight:800;font-size:14px;border:1px solid rgba(23,32,43,.1);background:rgba(255,255,255,.78);box-shadow:0 12px 30px rgba(18,36,56,.06);transition:.22s ease;backdrop-filter:blur(14px)}}.vybe-action:hover{{transform:translateY(-3px);box-shadow:0 18px 38px rgba(18,36,56,.1)}}.vybe-action.primary{{background:#07111f;color:#fff;border-color:#07111f;box-shadow:0 15px 35px rgba(7,17,31,.18)}}.vybe-action.green{{background:#edf8e6;color:#315f18;border-color:#d7edc8}}
+.vybe-fake-row{{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin:34px auto 0;animation:rise .8s .43s both}}.vybe-fake{{font-size:11px;font-weight:800;color:#758292;padding:8px 11px;border-radius:999px;background:rgba(255,255,255,.58);border:1px solid rgba(23,32,43,.07);box-shadow:0 7px 20px rgba(18,36,56,.04);user-select:none;cursor:default}}.vybe-fake::before{{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;margin:0 7px 1px 0;background:#2f6fca;opacity:.7}}
+.vybe-showcase{{max-width:1020px;margin:30px auto 0;padding:0 24px 62px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;position:relative;z-index:2}}.vybe-show-card{{min-height:130px;padding:21px;border-radius:24px;background:rgba(255,255,255,.68);border:1px solid rgba(23,32,43,.075);box-shadow:0 18px 50px rgba(18,36,56,.06);backdrop-filter:blur(18px);text-align:left;transition:.25s ease;animation:cardIn .8s both}}.vybe-show-card:nth-child(2){{animation-delay:.08s}}.vybe-show-card:nth-child(3){{animation-delay:.16s}}.vybe-show-card:hover{{transform:translateY(-5px)}}.vybe-show-icon{{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:#edf3fb;color:#2f6fca;font-weight:900;margin-bottom:15px}}.vybe-show-card:nth-child(2) .vybe-show-icon{{background:#edf8e6;color:#5a9e29}}.vybe-show-card:nth-child(3) .vybe-show-icon{{background:#f0eefb;color:#6657b4}}.vybe-show-card h3{{margin:0 0 6px;font-size:16px}}.vybe-show-card p{{margin:0;color:#71808e;font-size:13px;line-height:1.5}}.vybe-footer{{position:relative;z-index:2;text-align:center;padding:0 20px 28px;color:#8a96a3;font-size:11px}}
+.vybe-status-wrap{{min-height:calc(100vh - 100px);display:grid;place-items:center;padding:40px 20px;position:relative;z-index:2}}.vybe-status-card{{width:min(620px,100%);text-align:center;padding:42px 34px;border-radius:30px;background:rgba(255,255,255,.76);border:1px solid rgba(23,32,43,.09);box-shadow:0 25px 80px rgba(18,36,56,.1);backdrop-filter:blur(22px);animation:rise .75s both}}.vybe-status-mark{{width:88px;height:88px;margin:0 auto 22px;border-radius:27px;display:grid;place-items:center;background:#07111f;color:#fff;font-size:35px;font-weight:900;box-shadow:0 20px 50px rgba(7,17,31,.2);animation:float 4s ease-in-out infinite}}.vybe-status-card .badge{{display:inline-block;font-size:11px;font-weight:900;letter-spacing:.08em;color:#5f6d7c;padding:7px 10px;border-radius:999px;background:#eef2f6}}.vybe-status-card h1{{font-size:clamp(38px,8vw,66px);letter-spacing:-.06em;margin:14px 0 10px;color:#101923}}.vybe-status-card p{{max-width:480px;margin:0 auto;color:#6d7a88;line-height:1.65;font-size:15px}}.status-actions{{display:flex;justify-content:center;gap:10px;margin-top:25px}}.vybe-error-code{{font-size:12px;font-weight:900;letter-spacing:.12em;color:#2f6fca;margin-bottom:8px}}
+@keyframes rise{{from{{opacity:0;transform:translateY(22px)}}to{{opacity:1;transform:none}}}}@keyframes cardIn{{from{{opacity:0;transform:translateY(28px) scale(.98)}}to{{opacity:1;transform:none}}}}@keyframes logoIn{{from{{opacity:0;transform:scale(.55) rotate(-10deg)}}to{{opacity:1;transform:none}}}}@keyframes logoSweep{{0%,30%{{left:-80%}}65%,100%{{left:125%}}}}@keyframes shine{{0%,45%{{transform:translateX(-130%)}}75%,100%{{transform:translateX(130%)}}}}@keyframes orbit{{to{{transform:rotate(360deg)}}}}@keyframes float{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-8px)}}}}@keyframes pulse{{0%,100%{{transform:scale(1);opacity:.8}}50%{{transform:scale(1.35);opacity:1}}}}
+@media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
+</style></head><body><main class="vybe-public">{body}</main></body></html>'''
+
 @app.route("/offline")
 def offline():
-    return layout("Offline", '''<section class="offline-page"><div><div class="badge">VYBE STATUS</div><h1> OFFLINE</h1><p class="muted">VYBE is temporarily unavailable. Please check back later.</p><p><a class="btn dark" href="/admin">Admin access</a></p></div></section>''')
-
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/offline"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-status-mark">V</div><span class="badge">VYBE STATUS</span><h1>We'll be right back.</h1><p>VYBE is temporarily offline while the campus system is being updated or maintained. Student access is paused for now.</p><div class="status-actions"><a class="vybe-action primary" href="/admin">Admin Login</a></div></div></section>'''
+    return _vybe_public_shell("Offline",body)
 
 @app.route("/")
 def home():
@@ -3703,9 +3720,8 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body = '''<section class="hero"><div><div class="badge">Student-powered campus operating system</div><h1>VYBE</h1><p>Your Campus. Your Community. Your Space.</p><div class="actions" style="justify-content:center"><a class="btn accent" href="/login">Enter VYBE →</a><a class="btn dark" href="/register">Request access</a><a class="btn dark" href="/admin">Admin Login</a></div></div></section><section class="grid"><div class="card"><div class="icon"></div><h2>Academics</h2><p class="muted">Notes, PYQs, syllabus, assignments and study material in one place.</p></div><div class="card"><div class="icon"></div><h2>Campus</h2><p class="muted">Report real campus problems and follow their status.</p></div><div class="card"><div class="icon"></div><h2>Community</h2><p class="muted">Students help students with immediate, visible solutions.</p></div></section>'''
-    return layout("Welcome", body)
-
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon">A</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">C</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
