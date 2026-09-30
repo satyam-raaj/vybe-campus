@@ -2327,6 +2327,265 @@ def layout(title, body, admin=False):
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}
+  /* ===== MOBILE PHONE CLEAN V4 ===== */
+  @media (max-width:850px) {{
+    html, body {{
+      width:100% !important;
+      max-width:100% !important;
+      min-width:0 !important;
+      overflow-x:hidden !important;
+      -webkit-text-size-adjust:100% !important;
+    }}
+
+    /* PUBLIC / AUTH PAGES: no fake top spacer, no desktop-sized layout */
+    body:not(:has(.student-nav-compact)) {{
+      margin:0 !important;
+      padding-top:56px !important;
+      padding-bottom:0 !important;
+      background:#f6f9fb !important;
+    }}
+    body:not(:has(.student-nav-compact)) .nav {{
+      position:fixed !important;
+      top:0 !important;
+      left:0 !important;
+      right:0 !important;
+      width:100% !important;
+      height:56px !important;
+      margin:0 !important;
+      padding:0 !important;
+      z-index:50000 !important;
+      background:#fff !important;
+      border-bottom:1px solid #dfe6eb !important;
+      box-shadow:0 2px 12px rgba(22,38,50,.08) !important;
+    }}
+    body:not(:has(.student-nav-compact)) .navin {{
+      width:100% !important;
+      height:56px !important;
+      min-height:56px !important;
+      margin:0 !important;
+      padding:7px 14px !important;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:space-between !important;
+      gap:10px !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .navin .brand {{
+      display:flex !important;
+      align-items:center !important;
+      min-width:0 !important;
+      flex:0 0 auto !important;
+      font-size:19px !important;
+      color:#172130 !important;
+      text-decoration:none !important;
+    }}
+    body:not(:has(.student-nav-compact)) .navin .brandmark {{
+      width:30px !important;
+      height:30px !important;
+      margin-right:7px !important;
+      border-radius:9px !important;
+      background:#62d928 !important;
+      color:#101b10 !important;
+      box-shadow:none !important;
+      font-size:16px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .navin .brandtext {{
+      display:inline !important;
+      color:#172130 !important;
+      font-size:19px !important;
+      font-weight:850 !important;
+      letter-spacing:-.04em !important;
+    }}
+    body:not(:has(.student-nav-compact)) .navin .nav-toggle {{
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      width:40px !important;
+      height:38px !important;
+      flex:0 0 40px !important;
+      margin:0 !important;
+      padding:0 !important;
+      border:1px solid #d3dde3 !important;
+      border-radius:10px !important;
+      background:#fff !important;
+      color:#263542 !important;
+      font-size:0 !important;
+      box-shadow:none !important;
+    }}
+    body:not(:has(.student-nav-compact)) .nav-toggle::before {{
+      content:'';
+      display:block !important;
+      width:18px !important;
+      height:2px !important;
+      background:#263542 !important;
+      border-radius:2px !important;
+      box-shadow:0 -6px 0 #263542,0 6px 0 #263542 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .mobile-nav {{
+      position:fixed !important;
+      top:56px !important;
+      right:10px !important;
+      left:auto !important;
+      width:min(78vw,280px) !important;
+      max-height:calc(100dvh - 70px) !important;
+      overflow-y:auto !important;
+      z-index:49000 !important;
+      padding:9px !important;
+      border:1px solid #d6e0e5 !important;
+      border-radius:0 0 12px 12px !important;
+      background:#fff !important;
+      box-shadow:0 16px 34px rgba(18,35,48,.16) !important;
+    }}
+    body:not(:has(.student-nav-compact)) .mobile-nav.open {{
+      display:grid !important;
+      gap:3px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .mobile-nav a {{
+      display:flex !important;
+      align-items:center !important;
+      min-height:42px !important;
+      padding:9px 11px !important;
+      border-radius:8px !important;
+      color:#263845 !important;
+      background:#fff !important;
+      font-size:12px !important;
+      font-weight:750 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .mobile-nav a:hover,
+    body:not(:has(.student-nav-compact)) .mobile-nav a:active {{
+      background:#eef3f6 !important;
+    }}
+
+    /* Public home: remove desktop hero height and oversized spacing. */
+    body:not(:has(.student-nav-compact)) .wrap {{
+      width:100% !important;
+      max-width:none !important;
+      margin:0 !important;
+      padding:14px 12px 28px !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero {{
+      width:100% !important;
+      min-height:0 !important;
+      height:auto !important;
+      margin:0 !important;
+      padding:36px 14px 30px !important;
+      display:block !important;
+      border-radius:20px !important;
+      box-sizing:border-box !important;
+      text-align:center !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero .badge {{
+      max-width:100% !important;
+      font-size:11px !important;
+      line-height:1.35 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero h1 {{
+      margin:20px 0 12px !important;
+      font-size:clamp(54px,18vw,78px) !important;
+      line-height:.9 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero p {{
+      margin:0 auto 22px !important;
+      max-width:330px !important;
+      font-size:16px !important;
+      line-height:1.45 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero .actions {{
+      width:100% !important;
+      margin:0 !important;
+      display:grid !important;
+      grid-template-columns:1fr !important;
+      gap:9px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .hero .actions .btn {{
+      width:100% !important;
+      min-height:48px !important;
+      margin:0 !important;
+    }}
+    body:not(:has(.student-nav-compact)) .grid,
+    body:not(:has(.student-nav-compact)) .grid2,
+    body:not(:has(.student-nav-compact)) .two {{
+      grid-template-columns:1fr !important;
+      gap:10px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .grid .card {{
+      padding:17px !important;
+      border-radius:16px !important;
+    }}
+
+    /* Login / register / recovery pages */
+    body:not(:has(.student-nav-compact)) .auth {{
+      width:100% !important;
+      min-height:calc(100dvh - 56px) !important;
+      margin:0 !important;
+      padding:18px 12px 30px !important;
+      display:flex !important;
+      align-items:flex-start !important;
+      justify-content:center !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox {{
+      width:100% !important;
+      max-width:480px !important;
+      margin:0 auto !important;
+      padding:20px 16px !important;
+      border-radius:18px !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox h1 {{
+      font-size:30px !important;
+      line-height:1.08 !important;
+      margin-top:10px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox .form {{
+      width:100% !important;
+      display:grid !important;
+      gap:12px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox input,
+    body:not(:has(.student-nav-compact)) .authbox select,
+    body:not(:has(.student-nav-compact)) .authbox textarea,
+    body:not(:has(.student-nav-compact)) .authbox .password-wrap {{
+      width:100% !important;
+      max-width:100% !important;
+      min-width:0 !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox .btn {{
+      width:100% !important;
+      min-height:46px !important;
+      box-sizing:border-box !important;
+    }}
+    body:not(:has(.student-nav-compact)) .authbox .actions {{
+      width:100% !important;
+      display:grid !important;
+      grid-template-columns:1fr !important;
+      gap:8px !important;
+    }}
+    body:not(:has(.student-nav-compact)) .footer,
+    body:not(:has(.student-nav-compact)) .vybe-footer {{ display:none !important; }}
+
+    /* Student pages: keep their existing dedicated shell. */
+    body:has(.student-nav-compact) {{
+      padding-top:112px !important;
+      padding-bottom:78px !important;
+    }}
+    body:has(.student-nav-compact) .nav {{
+      position:fixed !important;
+      top:0 !important;
+      left:0 !important;
+      right:0 !important;
+      height:112px !important;
+      width:100% !important;
+      z-index:50000 !important;
+    }}
+    body:has(.student-nav-compact) .student-header-back {{ display:inline-flex !important; }}
+    body:has(.student-nav-compact) .student-bottom-nav {{
+      grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+      gap:6px !important;
+    }}
+  }}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
