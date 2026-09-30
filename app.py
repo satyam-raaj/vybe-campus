@@ -1123,7 +1123,8 @@ def _safe_500_page():
   /* ===== SIMPLE FINAL PHONE NAV: DO NOT TOUCH DESKTOP ===== */
   @media(max-width:850px){
     html,body{width:100%!important;overflow-x:hidden!important}
-    body{padding-top:111px!important;padding-bottom:78px!important}
+    body{padding-bottom:0!important}
+    body:has(.student-nav-compact){padding-top:111px!important;padding-bottom:78px!important}
     .nav:has(.student-nav-compact){position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:9000!important;background:#fff!important;border-bottom:1px solid #dfe5df!important;box-shadow:0 3px 14px rgba(20,35,28,.08)!important}
     .nav:has(.student-nav-compact) .student-nav-compact{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:8px!important;box-sizing:border-box!important}
     .student-nav-compact .student-brand-compact,.student-nav-compact .student-header-back{flex:1 1 auto!important;min-width:0!important}
@@ -6236,4 +6237,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
