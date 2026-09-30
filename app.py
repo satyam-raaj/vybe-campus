@@ -2355,7 +2355,7 @@ def layout(title, body, admin=False):
     .student-bottom-nav .mobile-menu-label{{display:block!important;color:inherit!important}}
     .student-bottom-nav .mobile-menu-icon-lines{{display:none!important}}
     .student-bottom-spacer{{display:block!important;height:64px!important}}
-    body{{padding-top:112px!important;padding-bottom:70px!important}}
+    body{{padding-top:0!important;padding-bottom:70px!important}}
     .vybe-footer,.footer{{display:none!important}}
     .vybe-assistant-fab{{bottom:76px!important}}
     .vybe-assistant-panel{{bottom:130px!important}}
