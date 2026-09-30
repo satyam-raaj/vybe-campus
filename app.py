@@ -2162,9 +2162,9 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header_lead = ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')
+        header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
-<div class="student-control-row"><form class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
+<div class="student-control-row"><form class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -2236,6 +2236,44 @@ def layout(title, body, admin=False):
   }}
   @media(min-width:851px){{
     .student-control-row .student-search{{margin-left:auto!important;margin-right:auto!important}}
+  }}
+  /* ===== MOBILE NAV FINAL, SIMPLE AND DETERMINISTIC ===== */
+  @media(max-width:850px){{
+    .nav:has(.student-nav-compact){{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:108px!important;padding:0!important;margin:0!important;z-index:10000!important;background:#fff!important;border-bottom:1px solid #dfe4e8!important;box-shadow:0 3px 14px rgba(20,32,44,.10)!important;backdrop-filter:none!important}}
+    .nav:has(.student-nav-compact) .student-nav-compact{{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:7px!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;align-items:center!important;gap:6px!important;flex:0 0 auto!important}}
+    .student-nav-compact .student-brand-compact .brandmark{{width:28px!important;height:28px!important}}
+    .student-nav-compact .student-brand-compact .brandtext{{font-size:16px!important;font-weight:850!important}}
+    .student-nav-compact .student-header-back{{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:30px!important;padding:0 8px!important;margin-left:2px!important;border:1px solid #cfd8df!important;border-radius:8px!important;background:#fff!important;color:#263542!important;font-size:11px!important;font-weight:800!important;text-decoration:none!important}}
+    .student-nav-compact .student-desktop-links{{display:none!important}}
+    .student-nav-compact .student-header-tools{{display:flex!important;align-items:center!important;margin-left:auto!important}}
+    .student-nav-compact .student-header-updates{{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:32px!important;padding:0 10px!important;background:#fff!important;color:#263542!important;border:1px solid #cfd8df!important;border-radius:8px!important;font-size:11px!important;font-weight:800!important;box-shadow:none!important}}
+    .student-nav-compact .student-menu{{display:none!important}}
+    .nav:has(.student-nav-compact) .student-control-row{{display:block!important;height:54px!important;width:100%!important;padding:6px 12px 8px!important;box-sizing:border-box!important}}
+    .student-control-row .student-search{{display:block!important;position:relative!important;width:100%!important;height:40px!important;margin:0!important}}
+    .student-search input{{display:block!important;width:100%!important;height:40px!important;padding:0 13px!important;background:#f7fafc!important;border:1px solid #cfd8df!important;border-radius:10px!important;color:#1d2a35!important;font-size:13px!important;outline:none!important;box-sizing:border-box!important}}
+    .student-search input:focus{{background:#fff!important;border-color:#6a8294!important;box-shadow:0 0 0 3px rgba(73,103,126,.10)!important}}
+    .mobile-direct-suggestions{{display:none!important}}
+    .student-search:focus-within .mobile-direct-suggestions{{display:block!important}}
+    .mobile-direct-suggestions{{position:absolute!important;left:0!important;right:0!important;top:44px!important;z-index:20000!important;background:#fff!important;border:1px solid #d4dce2!important;border-radius:10px!important;padding:5px!important;box-shadow:0 14px 30px rgba(20,32,44,.16)!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion{{display:flex!important;min-height:38px!important;align-items:center!important;justify-content:space-between!important;padding:7px 9px!important;border-radius:7px!important;text-decoration:none!important;background:#fff!important;color:#263542!important;font-size:11px!important;font-weight:750!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion span:last-child{{font-size:9px!important;color:#84909a!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion:hover{{background:#f1f5f7!important}}
+    #vybeMobileNav.student-mobile-menu{{position:fixed!important;top:60px!important;left:8px!important;right:auto!important;width:210px!important;max-width:calc(100vw - 32px)!important;min-width:0!important;max-height:calc(100vh - 135px)!important;overflow-y:auto!important;z-index:30000!important;background:#fff!important;border:1px solid #d5dde2!important;border-radius:11px!important;padding:7px!important;box-shadow:0 16px 38px rgba(20,32,44,.20)!important}}
+    #vybeMobileNav.student-mobile-menu.open{{display:flex!important;flex-direction:column!important;gap:2px!important}}
+    #vybeMobileNav.student-mobile-menu > a{{display:flex!important;align-items:center!important;min-height:36px!important;padding:7px 9px!important;background:#fff!important;border:0!important;border-radius:7px!important;color:#263542!important;font-size:11px!important;font-weight:750!important;text-decoration:none!important}}
+    #vybeMobileNav.student-mobile-menu > a:hover{{background:#f1f5f7!important}}
+    .student-bottom-nav{{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:64px!important;min-height:64px!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:0!important;margin:0!important;padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #dfe4e8!important;box-shadow:0 -4px 16px rgba(20,32,44,.10)!important;z-index:10000!important;box-sizing:border-box!important}}
+    .student-bottom-nav > *{{width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;border:1px solid #d5dde2!important;border-radius:8px!important;background:#fff!important;color:#4b5b67!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important}}
+    .student-bottom-nav .mobile-home-nav.active{{background:#eef3f6!important;color:#263542!important;border-color:#cbd6dd!important}}
+    .student-bottom-nav button.mobile-menu-nav{{background:#fff!important;color:#263542!important;border-color:#cbd6dd!important;box-shadow:none!important}}
+    .student-bottom-nav .mobile-menu-label{{display:block!important;color:inherit!important}}
+    .student-bottom-nav .mobile-menu-icon-lines{{display:none!important}}
+    .student-bottom-spacer{{display:block!important;height:64px!important}}
+    body{{padding-top:112px!important;padding-bottom:70px!important}}
+    .vybe-footer,.footer{{display:none!important}}
+    .vybe-assistant-fab{{bottom:76px!important}}
+    .vybe-assistant-panel{{bottom:130px!important}}
   }}
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
