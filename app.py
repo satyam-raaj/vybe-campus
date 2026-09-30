@@ -3085,6 +3085,16 @@ def dashboard():
 <a class="home-action" href="/academics"><span class="home-action-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs, syllabus and study material.</small></span><b>›</b></a>
 <a class="home-action" href="/issues"><span class="home-action-icon">🏫</span><span><strong>Campus</strong><small>Contact faculty and report campus problems.</small></span><b>›</b></a>
 </div>
+<div class="home-section-label" style="margin-top:28px">CAMPUS SERVICES</div>
+<div class="home-action-grid">
+<a class="home-action" href="/calendar"><span class="home-action-icon">🗓️</span><span><strong>Campus Calendar</strong><small>Events and campus updates in one view.</small></span><b>›</b></a>
+<a class="home-action" href="/campus-search"><span class="home-action-icon">⌕</span><span><strong>Campus Search</strong><small>Find resources, events and clubs.</small></span><b>›</b></a>
+<a class="home-action" href="/clubs"><span class="home-action-icon">👥</span><span><strong>Clubs & Communities</strong><small>Discover and join campus groups.</small></span><b>›</b></a>
+<a class="home-action" href="/alerts"><span class="home-action-icon">!</span><span><strong>Campus Alerts</strong><small>See active emergency notices.</small></span><b>›</b></a>
+<a class="home-action" href="/saved-resources"><span class="home-action-icon">☆</span><span><strong>Saved Resources</strong><small>Open your saved study material.</small></span><b>›</b></a>
+<a class="home-action" href="/student/security"><span class="home-action-icon">⌁</span><span><strong>Security Center</strong><small>Review your account and session.</small></span><b>›</b></a>
+<a class="home-action" href="/student/id"><span class="home-action-icon">▣</span><span><strong>Digital Campus ID</strong><small>Open your VYBE campus ID.</small></span><b>›</b></a>
+</div>
 <div class="home-updates-head"><div><div class="home-section-label">STAY UPDATED</div><p>Keep up with what is happening on campus.</p></div></div>
 <div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all&nbsp;›</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all&nbsp;›</a></div>{event_html}</div></div>
 </section>'''
@@ -4044,6 +4054,7 @@ def admin_panel():
       <a class="card" href="/admin/assistant"><div class="kpi">🧠</div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
       <a class="card" href="/admin/timetable"><div class="kpi">🗓️</div><h3>Timetable</h3><p class="muted">Post and manage student timetables separately.</p></a>
       <a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
+      <a class="card" href="/admin/command-center"><div class="kpi">◎</div><h3>University Command Center</h3><p class="muted">University setup, faculty, departments, clubs, permissions, integrations, alerts and analytics.</p></a>
     </div>
     <section class="section grid2">
       <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
@@ -4905,6 +4916,326 @@ def admin_delete_all_login_history():
     finally:
         con.close()
     return redirect("/admin/login-history")
+
+# ---------------------------------------------------------------------------
+# VYBE enterprise feature extension. Additive only.
+# ---------------------------------------------------------------------------
+def _ent_now(): return now()
+def _ent_uid(con):
+    r=con.execute("SELECT id FROM universities ORDER BY id LIMIT 1").fetchone()
+    return r["id"] if r else None
+
+def _enterprise_init():
+    con=db(); pg=con.is_pg
+    defs = [
+      ("universities", "id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, code TEXT, description TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, code TEXT, description TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL"),
+      ("departments", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(university_id,name)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(university_id,name)"),
+      ("faculty_accounts", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, department_id BIGINT, name TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, designation TEXT NOT NULL DEFAULT 'Faculty', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_login TEXT, UNIQUE(university_id,email)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, department_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, designation TEXT NOT NULL DEFAULT 'Faculty', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_login TEXT, UNIQUE(university_id,email)"),
+      ("clubs", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Community', created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Community', created_at TEXT NOT NULL"),
+      ("club_members", "id BIGSERIAL PRIMARY KEY, club_id BIGINT NOT NULL, student_id BIGINT NOT NULL, joined_at TEXT NOT NULL, UNIQUE(club_id,student_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, club_id INTEGER NOT NULL, student_id INTEGER NOT NULL, joined_at TEXT NOT NULL, UNIQUE(club_id,student_id)"),
+      ("emergency_alerts", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'info', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL"),
+      ("targeted_announcements", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all', created_at TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all', created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1"),
+      ("saved_resources", "id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL, resource_id BIGINT NOT NULL, saved_at TEXT NOT NULL, UNIQUE(student_id,resource_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL, resource_id INTEGER NOT NULL, saved_at TEXT NOT NULL, UNIQUE(student_id,resource_id)"),
+      ("university_permissions", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, role TEXT NOT NULL, permission_key TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE(university_id,role,permission_key)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, role TEXT NOT NULL, permission_key TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, UNIQUE(university_id,role,permission_key)"),
+      ("integration_settings", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, provider TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TEXT NOT NULL, UNIQUE(university_id,provider)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, provider TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, UNIQUE(university_id,provider)"),
+      ("audit_events", "id BIGSERIAL PRIMARY KEY, university_id BIGINT, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, target TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, target TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL"),
+      ("onboarding_steps", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, step_key TEXT NOT NULL, completed BOOLEAN NOT NULL DEFAULT FALSE, UNIQUE(university_id,step_key)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, step_key TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE(university_id,step_key)"),
+      ("digital_ids", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, student_id BIGINT NOT NULL, campus_identifier TEXT NOT NULL, issued_at TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE(university_id,student_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, student_id INTEGER NOT NULL, campus_identifier TEXT NOT NULL, issued_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, UNIQUE(university_id,student_id)"),
+    ]
+    for name,cols in defs: con.execute("CREATE TABLE IF NOT EXISTS %s (%s)"%(name,cols))
+    u=con.execute("SELECT * FROM universities ORDER BY id LIMIT 1").fetchone()
+    if not u:
+        con.execute("INSERT INTO universities(name,slug,code,description,created_at,updated_at) VALUES(?,?,?,?,?,?)",("VYBE Campus","vybe-campus","VYBE","Default VYBE university workspace",_ent_now(),_ent_now()))
+        u=con.execute("SELECT * FROM universities ORDER BY id LIMIT 1").fetchone()
+    for key in ("university","departments","students","faculty","timetable","resources","permissions","launch"):
+        if not con.execute("SELECT id FROM onboarding_steps WHERE university_id=? AND step_key=?",(u["id"],key)).fetchone(): con.execute("INSERT INTO onboarding_steps(university_id,step_key) VALUES(?,?)",(u["id"],key))
+    con.commit(); con.close()
+
+_enterprise_init()
+
+def _ent_audit(con,action,target='',details='',role='admin'):
+    con.execute("INSERT INTO audit_events(university_id,actor_role,actor_id,action,target,details,created_at) VALUES(?,?,?,?,?,?,?)",(_ent_uid(con),role,str(session.get('student_db_id') or 'admin'),action,target,details,_ent_now()))
+
+@app.route('/admin/command-center')
+@admin_required
+def admin_command_center():
+    con=db(); uid=_ent_uid(con); u=con.execute("SELECT * FROM universities WHERE id=?",(uid,)).fetchone(); stats=[('Students',con.execute('SELECT COUNT(*) c FROM students').fetchone()['c']),('Faculty',con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c']),('Departments',con.execute('SELECT COUNT(*) c FROM departments WHERE university_id=?',(uid,)).fetchone()['c']),('Clubs',con.execute('SELECT COUNT(*) c FROM clubs WHERE university_id=?',(uid,)).fetchone()['c']),('Alerts',con.execute('SELECT COUNT(*) c FROM emergency_alerts WHERE university_id=? AND active=1',(uid,)).fetchone()['c']),('Help Desk',con.execute('SELECT COUNT(*) c FROM issues').fetchone()['c'])]; con.close()
+    links=[('/admin/university','University setup'),('/admin/departments','Departments'),('/admin/faculty','Faculty management'),('/admin/clubs','Clubs & communities'),('/admin/emergency','Emergency alerts'),('/admin/targeted-announcements','Targeted announcements'),('/admin/permissions','Permissions'),('/admin/integrations','Integration layer'),('/admin/enterprise-analytics','Analytics'),('/admin/audit','Security & audit')]
+    grid=''.join('<a class="card" href="%s"><div class="kpi">→</div><h3>%s</h3><p class="muted">Manage this area.</p></a>'%x for x in links)
+    metrics=''.join('<div class="card"><div class="kpi">%s</div><h3>%s</h3></div>'%(v,k) for k,v in stats)
+    return layout('University Command Center',f'<section class="section"><div class="badge">UNIVERSITY COMMAND CENTER</div><h1>{esc(u["name"])}.</h1><div class="grid">{metrics}</div><div class="grid">{grid}</div></section>',admin=True)
+
+@app.route('/admin/university',methods=['GET','POST'])
+@admin_required
+def admin_university_setup():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        name=request.form.get('name','').strip()[:160] or 'VYBE Campus'; code=request.form.get('code','').strip()[:40]; desc=request.form.get('description','').strip()[:1000]; slug=re.sub(r'[^a-z0-9]+','-',name.lower()).strip('-') or 'university'
+        if con.execute('SELECT id FROM universities WHERE slug=? AND id<>?',(slug,uid)).fetchone(): slug=slug+'-'+str(uid)
+        con.execute('UPDATE universities SET name=?,code=?,description=?,slug=?,updated_at=?,status=? WHERE id=?',(name,code,desc,slug,_ent_now(),'active',uid)); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='university'",(uid,)); _ent_audit(con,'university_updated','university',name); con.commit(); flash('University configuration saved.'); return redirect(url_for('admin_university_setup'))
+    u=con.execute('SELECT * FROM universities WHERE id=?',(uid,)).fetchone(); steps=con.execute('SELECT * FROM onboarding_steps WHERE university_id=? ORDER BY id',(uid,)).fetchall(); con.close(); checklist=''.join('<li>%s: <strong>%s</strong></li>'%(esc(x['step_key'].replace('_',' ').title()),'Complete' if x['completed'] else 'Pending') for x in steps)
+    return layout('University Setup',f'<section class="section"><div class="badge">ONBOARDING</div><h1>University configuration.</h1><div class="grid2"><div class="card"><form method="post" class="form"><input name="name" value="{esc(u["name"])}" placeholder="University name" required><input name="code" value="{esc(u["code"] or "")}" placeholder="University code"><textarea name="description" placeholder="Description">{esc(u["description"])}</textarea><button class="btn accent">Save configuration</button></form></div><div class="card"><h2>Launch checklist</h2><ul>{checklist}</ul></div></div></section>',admin=True)
+
+@app.route('/admin/departments',methods=['GET','POST'])
+@admin_required
+def admin_departments():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        n=request.form.get('name','').strip()[:120]; c=request.form.get('code','').strip()[:30]
+        if n:
+            try: con.execute('INSERT INTO departments(university_id,name,code,created_at) VALUES(?,?,?,?)',(uid,n,c,_ent_now())); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='departments'",(uid,)); _ent_audit(con,'department_created','department',n); con.commit(); flash('Department added.')
+            except Exception: con.rollback(); flash('That department already exists.')
+        return redirect(url_for('admin_departments'))
+    rows=con.execute('SELECT * FROM departments WHERE university_id=? ORDER BY name',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p></div>'%(esc(x['name']),esc(x['code'] or 'No code')) for x in rows) or '<div class="empty">No departments yet.</div>'
+    return layout('Departments',f'<section class="section"><div class="badge">DEPARTMENTS</div><h1>Departments.</h1><div class="card"><form method="post" class="form two"><input name="name" placeholder="Department name" required><input name="code" placeholder="Code"><button class="btn accent">Add department</button></form></div><div class="grid">{cards}</div></section>',admin=True)
+
+@app.route('/admin/faculty',methods=['GET','POST'])
+@admin_required
+def admin_faculty_management():
+    con=db(); uid=_ent_uid(con); deps=con.execute('SELECT id,name FROM departments WHERE university_id=? ORDER BY name',(uid,)).fetchall()
+    if request.method=='POST':
+        n=request.form.get('name','').strip()[:120]; email=request.form.get('email','').strip().lower()[:160]; pw=request.form.get('password','') or secrets.token_urlsafe(10); dep=request.form.get('department_id') or None; des=request.form.get('designation','').strip()[:100] or 'Faculty'
+        try: con.execute('INSERT INTO faculty_accounts(university_id,department_id,name,email,password_hash,designation,status,created_at) VALUES(?,?,?,?,?,?,?,?)',(uid,dep,n,email,hash_password(pw),des,'active',_ent_now())); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='faculty'",(uid,)); _ent_audit(con,'faculty_created','faculty',email); con.commit(); flash('Faculty account created. Temporary password: '+pw)
+        except Exception: con.rollback(); flash('Could not create that faculty account. The email may already exist.')
+        return redirect(url_for('admin_faculty_management'))
+    rows=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.university_id=? ORDER BY f.name',(uid,)).fetchall(); con.close(); opts=''.join('<option value="%s">%s</option>'%(x['id'],esc(x['name'])) for x in deps); cards=''.join('<div class="card"><h3>%s</h3><p>%s · %s</p><p class="muted">%s</p></div>'%(esc(x['name']),esc(x['designation']),esc(x['department_name'] or 'No department'),esc(x['email'])) for x in rows) or '<div class="empty">No faculty accounts yet.</div>'
+    body=f'<section class="section"><div class="badge">FACULTY MANAGEMENT</div><h1>Faculty accounts.</h1><div class="card"><form method="post" class="form"><div class="two"><input name="name" placeholder="Full name" required><input name="email" type="email" placeholder="Faculty email" required></div><div class="two"><input name="designation" placeholder="Designation"><input name="password" placeholder="Temporary password"></div><select name="department_id"><option value="">No department</option>{opts}</select><button class="btn accent">Create faculty account</button></form></div><div class="grid">{cards}</div></section>'
+    return layout('Faculty Management',body,admin=True)
+
+def faculty_required(fn):
+    @wraps(fn)
+    def wrap(*a,**kw):
+        fid=session.get('faculty_account_id')
+        if not fid: return redirect(url_for('faculty_login'))
+        con=db(); ok=con.execute("SELECT id FROM faculty_accounts WHERE id=? AND status='active'",(fid,)).fetchone(); con.close()
+        if not ok: session.pop('faculty_account_id',None); return redirect(url_for('faculty_login'))
+        return fn(*a,**kw)
+    return wrap
+
+@app.route('/faculty/login',methods=['GET','POST'])
+def faculty_login():
+    if request.method=='POST':
+        email=request.form.get('email','').strip().lower(); pw=request.form.get('password',''); con=db(); r=con.execute("SELECT * FROM faculty_accounts WHERE email=? AND status='active'",(email,)).fetchone()
+        if r and check_password(pw,r['password_hash']): con.execute('UPDATE faculty_accounts SET last_login=? WHERE id=?',(_ent_now(),r['id'])); con.commit(); con.close(); session.clear(); session['faculty_account_id']=r['id']; return redirect(url_for('faculty_dashboard'))
+        con.close(); flash('Invalid faculty email or password.')
+    return layout('Faculty Login','<section class="section narrow"><div class="badge">FACULTY PORTAL</div><h1>Faculty sign in.</h1><div class="card"><form method="post" class="form"><input name="email" type="email" placeholder="Faculty email" required><input name="password" type="password" placeholder="Password" required><button class="btn accent">Sign in</button></form></div></section>')
+
+@app.route('/faculty/dashboard')
+@faculty_required
+def faculty_dashboard():
+    con=db(); f=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.id=?',(session['faculty_account_id'],)).fetchone(); con.close(); links=[('/faculty/timetable','Personal timetable'),('/faculty/classes','Classes'),('/faculty/materials','Study materials'),('/faculty/questions','Student questions'),('/faculty/announcements','Announcements'),('/faculty/profile','Faculty profile')]; grid=''.join('<a class="card" href="%s"><div class="kpi">→</div><h3>%s</h3><p class="muted">Open faculty area.</p></a>'%x for x in links); return layout('Faculty Dashboard',f'<section class="section"><div class="badge">FACULTY PORTAL</div><h1>Welcome, {esc(f["name"])}.</h1><p class="muted">{esc(f["designation"])} · {esc(f["department_name"] or "Department access")}</p><div class="grid">{grid}</div></section>')
+
+@app.route('/faculty')
+def faculty_root(): return redirect(url_for('faculty_dashboard'))
+@app.route('/faculty/logout')
+def faculty_logout(): session.pop('faculty_account_id',None); return redirect(url_for('faculty_login'))
+@app.route('/faculty/timetable')
+@faculty_required
+def faculty_timetable():
+    con=db(); rows=con.execute('SELECT title,original_name,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 20').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p><p>%s</p></div>'%(esc(x['title']),esc(x['original_name'] or ''),esc((x['assistant_text'] or '')[:600])) for x in rows) or '<div class="empty">No timetable uploaded.</div>'; return layout('Faculty Timetable',f'<section class="section"><div class="badge">TIMETABLE</div><h1>Personal timetable.</h1><div class="grid">{cards}</div></section>')
+@app.route('/faculty/classes')
+@faculty_required
+def faculty_classes():
+    con=db(); rows=con.execute('SELECT id,name,code FROM departments ORDER BY name').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">Department class area · %s</p></div>'%(esc(x['name']),esc(x['code'])) for x in rows) or '<div class="empty">No departments configured.</div>'; return layout('Faculty Classes',f'<section class="section"><div class="badge">CLASSES</div><h1>Classes.</h1><div class="grid">{cards}</div></section>')
+@app.route('/faculty/materials')
+@faculty_required
+def faculty_materials():
+    con=db(); rows=con.execute('SELECT id,title,course,semester,subject FROM resources ORDER BY id DESC LIMIT 100').fetchall(); con.close(); cards=''.join('<a class="card" href="/resource/%s"><h3>%s</h3><p class="muted">%s · %s · %s</p></a>'%(x['id'],esc(x['title']),esc(x['subject']),esc(x['course']),esc(x['semester'])) for x in rows) or '<div class="empty">No materials available.</div>'; return layout('Faculty Materials',f'<section class="section"><div class="badge">STUDY MATERIALS</div><h1>Materials.</h1><div class="grid">{cards}</div></section>')
+@app.route('/faculty/questions')
+@faculty_required
+def faculty_questions():
+    con=db(); rows=con.execute('SELECT i.title,i.description,i.status,s.name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 100').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p></div>'%(esc(x['title']),esc(x['description']),esc(x['name']),esc(x['status'])) for x in rows) or '<div class="empty">No student questions yet.</div>'; return layout('Student Questions',f'<section class="section"><div class="badge">QUESTIONS</div><h1>Student questions.</h1><div class="grid">{cards}</div></section>')
+@app.route('/faculty/announcements')
+@faculty_required
+def faculty_announcements():
+    con=db(); rows=con.execute('SELECT * FROM announcements ORDER BY id DESC LIMIT 50').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['body'] if 'body' in x.keys() else x['message'] if 'message' in x.keys() else '')) for x in rows) or '<div class="empty">No announcements yet.</div>'; return layout('Faculty Announcements',f'<section class="section"><div class="badge">ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid">{cards}</div></section>')
+@app.route('/faculty/profile')
+@faculty_required
+def faculty_profile():
+    con=db(); x=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.id=?',(session['faculty_account_id'],)).fetchone(); con.close(); return layout('Faculty Profile',f'<section class="section"><div class="badge">PROFILE</div><h1>{esc(x["name"])}</h1><div class="card"><p>Email: {esc(x["email"])}</p><p>Designation: {esc(x["designation"])}</p><p>Department: {esc(x["department_name"] or "Not assigned")}</p></div></section>')
+
+@app.route('/admin/clubs',methods=['GET','POST'])
+@admin_required
+def admin_clubs():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        n=request.form.get('name','').strip()[:120]; d=request.form.get('description','').strip()[:800]; c=request.form.get('category','').strip()[:60] or 'Community'
+        if n: con.execute('INSERT INTO clubs(university_id,name,description,category,created_at) VALUES(?,?,?,?,?)',(uid,n,d,c,_ent_now())); _ent_audit(con,'club_created','club',n); con.commit(); flash('Club created.')
+        return redirect(url_for('admin_clubs'))
+    rows=con.execute('SELECT c.*,COUNT(cm.id) members FROM clubs c LEFT JOIN club_members cm ON cm.club_id=c.id WHERE c.university_id=? GROUP BY c.id ORDER BY c.name',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s members</p></div>'%(esc(x['name']),esc(x['category']),esc(x['description']),x['members']) for x in rows) or '<div class="empty">No clubs yet.</div>'; body=f'<section class="section"><div class="badge">CLUBS</div><h1>Clubs & communities.</h1><div class="card"><form method="post" class="form"><input name="name" placeholder="Club name" required><input name="category" placeholder="Category"><textarea name="description" placeholder="Description"></textarea><button class="btn accent">Create club</button></form></div><div class="grid">{cards}</div></section>'; return layout('Clubs',body,admin=True)
+
+@app.route('/clubs')
+@student_required
+def student_clubs():
+    con=db(); uid=_ent_uid(con); sid=session['student_db_id']; rows=con.execute('SELECT c.*,COUNT(cm.id) members FROM clubs c LEFT JOIN club_members cm ON cm.club_id=c.id WHERE c.university_id=? GROUP BY c.id ORDER BY c.name',(uid,)).fetchall(); joined={x['club_id'] for x in con.execute('SELECT club_id FROM club_members WHERE student_id=?',(sid,)).fetchall()}; con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s · %s members</p><p class="muted">%s</p><form method="post" action="/clubs/%s/join"><button class="btn dark">%s</button></form></div>'%(esc(x['name']),esc(x['category']),x['members'],esc(x['description']),x['id'],'Joined' if x['id'] in joined else 'Join club') for x in rows) or '<div class="empty">No clubs yet.</div>'; return layout('Clubs & Communities',f'<section class="section"><div class="badge">COMMUNITIES</div><h1>Clubs & communities.</h1><div class="grid">{cards}</div></section>')
+@app.route('/clubs/<int:club_id>/join',methods=['POST'])
+@student_required
+def student_join_club(club_id):
+    con=db()
+    try: con.execute('INSERT INTO club_members(club_id,student_id,joined_at) VALUES(?,?,?)',(club_id,session['student_db_id'],_ent_now())); con.commit()
+    except Exception: con.rollback()
+    con.close(); return redirect(url_for('student_clubs'))
+
+@app.route('/admin/emergency',methods=['GET','POST'])
+@admin_required
+def admin_emergency():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        t=request.form.get('title','').strip()[:180]; m=request.form.get('message','').strip()[:2000]; sev=request.form.get('severity','info')[:20]
+        if t and m: con.execute('INSERT INTO emergency_alerts(university_id,title,message,severity,active,created_at) VALUES(?,?,?,?,?,?)',(uid,t,m,sev,True,_ent_now())); _ent_audit(con,'emergency_alert_created','alert',t); con.commit(); flash('Emergency alert published.')
+        return redirect(url_for('admin_emergency'))
+    rows=con.execute('SELECT * FROM emergency_alerts WHERE university_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p><form method="post" action="/admin/emergency/%s/toggle"><button class="btn dark">Toggle active</button></form></div>'%(esc(x['title']),esc(x['message']),esc(x['severity']),'Active' if x['active'] else 'Inactive',x['id']) for x in rows) or '<div class="empty">No alerts.</div>'; body=f'<section class="section"><div class="badge">EMERGENCY ALERTS</div><h1>Emergency campus alerts.</h1><div class="card"><form method="post" class="form"><input name="title" placeholder="Alert title" required><textarea name="message" placeholder="Alert message" required></textarea><select name="severity"><option>info</option><option>warning</option><option>critical</option></select><button class="btn accent">Publish alert</button></form></div><div class="grid">{cards}</div></section>'; return layout('Emergency Alerts',body,admin=True)
+@app.route('/admin/emergency/<int:alert_id>/toggle',methods=['POST'])
+@admin_required
+def admin_emergency_toggle(alert_id):
+    con=db(); con.execute('UPDATE emergency_alerts SET active=CASE WHEN active THEN FALSE ELSE TRUE END WHERE id=?',(alert_id,)); con.commit(); con.close(); return redirect(url_for('admin_emergency'))
+@app.route('/alerts')
+@student_required
+def student_alerts():
+    con=db(); rows=con.execute('SELECT * FROM emergency_alerts WHERE university_id=? AND active=1 ORDER BY id DESC',(_ent_uid(con),)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['severity']),esc(x['created_at'])) for x in rows) or '<div class="empty">No active emergency alerts.</div>'; return layout('Emergency Alerts',f'<section class="section"><div class="badge">CAMPUS ALERTS</div><h1>Emergency alerts.</h1><div class="grid">{cards}</div></section>')
+
+@app.route('/admin/targeted-announcements',methods=['GET','POST'])
+@admin_required
+def admin_targeted_announcements():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        t=request.form.get('title','').strip()[:180]; m=request.form.get('message','').strip()[:3000]; a=request.form.get('audience','all')[:120]
+        if t and m: con.execute('INSERT INTO targeted_announcements(university_id,title,message,audience,created_at,active) VALUES(?,?,?,?,?,?)',(uid,t,m,a,_ent_now(),True)); _ent_audit(con,'targeted_announcement_created','announcement',t); con.commit(); flash('Targeted announcement published.')
+        return redirect(url_for('admin_targeted_announcements'))
+    rows=con.execute('SELECT * FROM targeted_announcements WHERE university_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">Audience: %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['audience'])) for x in rows) or '<div class="empty">No targeted announcements.</div>'; body=f'<section class="section"><div class="badge">TARGETED COMMUNICATION</div><h1>Targeted announcements.</h1><div class="card"><form method="post" class="form"><input name="title" placeholder="Title" required><textarea name="message" placeholder="Message" required><select name="audience"><option value="all">All students</option><option value="department">Department</option><option value="year">Year / batch</option></select><button class="btn accent">Publish</button></form></div><div class="grid">{cards}</div></section>'; return layout('Targeted Announcements',body,admin=True)
+@app.route('/announcements/targeted')
+@student_required
+def student_targeted_announcements():
+    con=db(); rows=con.execute('SELECT * FROM targeted_announcements WHERE university_id=? AND active=1 ORDER BY id DESC',(_ent_uid(con),)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">Target: %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['audience'])) for x in rows) or '<div class="empty">No targeted announcements right now.</div>'; return layout('Targeted Announcements',f'<section class="section"><div class="badge">FOR YOU</div><h1>Targeted announcements.</h1><div class="grid">{cards}</div></section>')
+
+@app.route('/campus-search')
+@student_required
+def campus_search():
+    q=request.args.get('q','').strip()[:100]; con=db(); out=[]
+    if q:
+        like='%'+q+'%'; out += [('Resource',x['title'],'/resource/%s'%x['id'],x['description'] or x['subject']) for x in con.execute('SELECT id,title,description,subject FROM resources WHERE title LIKE ? OR subject LIKE ? OR description LIKE ? LIMIT 30',(like,like,like)).fetchall()]; out += [('Event',x['title'],'/events','Campus event') for x in con.execute('SELECT * FROM events WHERE title LIKE ? LIMIT 20',(like,)).fetchall()]; out += [('Club',x['name'],'/clubs',x['description']) for x in con.execute('SELECT name,description FROM clubs WHERE name LIKE ? OR description LIKE ? LIMIT 20',(like,like)).fetchall()]
+    con.close(); cards=''.join('<a class="card" href="%s"><div class="small">%s</div><h3>%s</h3><p class="muted">%s</p></a>'%(esc(u),esc(t),esc(n),esc(d or '')) for t,n,u,d in out) or ('<div class="empty">No matching campus results.</div>' if q else '<div class="empty">Search resources, events and clubs.</div>'); return layout('Campus Search',f'<section class="section"><div class="badge">CAMPUS SEARCH</div><h1>Search campus.</h1><div class="card"><form method="get" class="form"><input name="q" value="{esc(q)}" placeholder="Search campus..."><button class="btn accent">Search</button></form></div><div class="grid">{cards}</div></section>')
+
+@app.route('/calendar')
+@student_required
+def campus_calendar():
+    con=db(); ev=con.execute('SELECT * FROM events ORDER BY id DESC LIMIT 100').fetchall(); an=con.execute('SELECT * FROM announcements ORDER BY id DESC LIMIT 50').fetchall(); con.close(); ec=''.join('<div class="card"><div class="small">EVENT</div><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['event_date'] if 'event_date' in x.keys() else 'Date TBA')) for x in ev); ac=''.join('<div class="card"><div class="small">ANNOUNCEMENT</div><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['body'] if 'body' in x.keys() else x['message'] if 'message' in x.keys() else '')) for x in an); return layout('Campus Calendar',f'<section class="section"><div class="badge">CAMPUS CALENDAR</div><h1>Smart campus calendar.</h1><div class="grid">{ec or "<div class=empty>No events.</div>"}{ac or "<div class=empty>No announcements.</div>"}</div></section>')
+
+@app.route('/student/security')
+@student_required
+def student_security_center():
+    con=db(); s=con.execute('SELECT name,student_id,status,last_login,last_seen FROM students WHERE id=?',(session['student_db_id'],)).fetchone(); con.close(); return layout('Security Center',f'<section class="section"><div class="badge">ACCOUNT & SECURITY</div><h1>Security center.</h1><div class="grid2"><div class="card"><h3>Account</h3><p>{esc(s["name"])} · {esc(s["student_id"])}</p><p>Status: {esc(s["status"])}</p></div><div class="card"><h3>Session</h3><p>Last login: {esc(s["last_login"] or "—")}</p><p>Last active: {esc(s["last_seen"] or "—")}</p><a class="btn dark" href="/change-password">Change password</a></div></div></section>')
+
+@app.route('/student/id')
+@student_required
+def student_digital_id():
+    con=db(); uid=_ent_uid(con); sid=session['student_db_id']; r=con.execute('SELECT d.*,s.name,s.student_id FROM digital_ids d JOIN students s ON s.id=d.student_id WHERE d.university_id=? AND d.student_id=?',(uid,sid)).fetchone()
+    if not r:
+        ident='VYBE-%s-%s-%s'%(uid,sid,secrets.token_hex(3).upper()); con.execute('INSERT INTO digital_ids(university_id,student_id,campus_identifier,issued_at,active) VALUES(?,?,?,?,?)',(uid,sid,ident,_ent_now(),True)); con.commit(); r=con.execute('SELECT d.*,s.name,s.student_id FROM digital_ids d JOIN students s ON s.id=d.student_id WHERE d.university_id=? AND d.student_id=?',(uid,sid)).fetchone()
+    con.close(); return layout('Digital Campus ID',f'<section class="section narrow"><div class="badge">DIGITAL CAMPUS ID</div><h1>Campus ID foundation.</h1><div class="card"><h2>{esc(r["name"])}</h2><p>Student ID: {esc(r["student_id"])}</p><p>Campus identifier: <strong>{esc(r["campus_identifier"])}</strong></p><p class="muted">Issued {esc(r["issued_at"])}.</p></div></section>')
+
+@app.route('/admin/permissions',methods=['GET','POST'])
+@admin_required
+def admin_permissions():
+    con=db(); uid=_ent_uid(con)
+    if request.method=='POST':
+        role=request.form.get('role','student')[:40]; key=request.form.get('permission_key','').strip()[:100]; enabled=request.form.get('enabled')=='1'
+        if con.is_pg: con.execute('INSERT INTO university_permissions(university_id,role,permission_key,enabled) VALUES(?,?,?,?) ON CONFLICT(university_id,role,permission_key) DO UPDATE SET enabled=EXCLUDED.enabled',(uid,role,key,enabled))
+        else: con.execute('INSERT INTO university_permissions(university_id,role,permission_key,enabled) VALUES(?,?,?,?) ON CONFLICT(university_id,role,permission_key) DO UPDATE SET enabled=excluded.enabled',(uid,role,key,enabled))
+        con.commit(); return redirect(url_for('admin_permissions'))
+    rows=con.execute('SELECT * FROM university_permissions WHERE university_id=? ORDER BY role,permission_key',(uid,)).fetchall(); con.close(); trs=''.join('<tr><td>%s</td><td>%s</td><td>%s</td></tr>'%(esc(x['role']),esc(x['permission_key']),'Enabled' if x['enabled'] else 'Disabled') for x in rows) or '<tr><td colspan="3">No custom permissions.</td></tr>'; return layout('Permissions',f'<section class="section"><div class="badge">ROLE BASED ACCESS</div><h1>Permissions.</h1><div class="card"><form method="post" class="form two"><select name="role"><option>student</option><option>faculty</option><option>admin</option></select><input name="permission_key" placeholder="permission.key" required><select name="enabled"><option value="1">Enabled</option><option value="0">Disabled</option></select><button class="btn accent">Save</button></form></div><div class="card tablewrap"><table><tr><th>Role</th><th>Permission</th><th>Status</th></tr>{trs}</table></div></section>',admin=True)
+
+@app.route('/admin/integrations',methods=['GET','POST'])
+@admin_required
+def admin_integrations():
+    con=db(); uid=_ent_uid(con); providers=['API','SSO','ERP','LMS','Google','Microsoft']
+    if request.method=='POST':
+        p=request.form.get('provider','API')[:40]; cfg=request.form.get('config_json','{}')[:5000]; enabled=request.form.get('enabled')=='1'
+        try: json.loads(cfg or '{}')
+        except Exception: cfg='{}'
+        if con.is_pg: con.execute('INSERT INTO integration_settings(university_id,provider,config_json,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(university_id,provider) DO UPDATE SET config_json=EXCLUDED.config_json,enabled=EXCLUDED.enabled,updated_at=EXCLUDED.updated_at',(uid,p,cfg,enabled,_ent_now()))
+        else: con.execute('INSERT INTO integration_settings(university_id,provider,config_json,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(university_id,provider) DO UPDATE SET config_json=excluded.config_json,enabled=excluded.enabled,updated_at=excluded.updated_at',(uid,p,cfg,enabled,_ent_now()))
+        con.commit(); return redirect(url_for('admin_integrations'))
+    rows={x['provider']:x for x in con.execute('SELECT * FROM integration_settings WHERE university_id=?',(uid,)).fetchall()}; con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p><form method="post" class="form"><input type="hidden" name="provider" value="%s"><textarea name="config_json">%s</textarea><select name="enabled"><option value="1">Enable</option><option value="0">Disable</option></select><button class="btn dark">Save</button></form></div>'%(p,'Enabled' if p in rows and rows[p]['enabled'] else 'Not enabled',p,esc(rows[p]['config_json'] if p in rows else '{}')) for p in providers); return layout('Integrations',f'<section class="section"><div class="badge">INTEGRATION LAYER</div><h1>API, SSO and ecosystem readiness.</h1><p class="muted">Configuration foundation for university systems. Provider-specific authentication can be connected later without changing the VYBE data model.</p><div class="grid2">{cards}</div></section>',admin=True)
+
+@app.route('/admin/enterprise-analytics')
+@admin_required
+def enterprise_analytics():
+    con=db(); uid=_ent_uid(con); vals=[('Active students',con.execute("SELECT COUNT(*) c FROM students WHERE status='approved'").fetchone()['c']),('Faculty',con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c']),('Departments',con.execute('SELECT COUNT(*) c FROM departments WHERE university_id=?',(uid,)).fetchone()['c']),('Help desk',con.execute('SELECT COUNT(*) c FROM issues').fetchone()['c']),('Community activity',con.execute('SELECT COUNT(*) c FROM community_messages').fetchone()['c']),('Resources',con.execute('SELECT COUNT(*) c FROM resources').fetchone()['c']),('Events',con.execute('SELECT COUNT(*) c FROM events').fetchone()['c']),('Club memberships',con.execute('SELECT COUNT(*) c FROM club_members').fetchone()['c'])]; con.close(); grid=''.join('<div class="card"><div class="kpi">%s</div><h3>%s</h3></div>'%(v,k) for k,v in vals); return layout('University Analytics',f'<section class="section"><div class="badge">ANALYTICS</div><h1>University analytics.</h1><p class="muted">Live operational counts from VYBE data. These records can be aggregated into daily and weekly trends.</p><div class="grid">{grid}</div></section>',admin=True)
+
+@app.route('/admin/audit')
+@admin_required
+def admin_enterprise_audit():
+    con=db(); rows=con.execute('SELECT * FROM audit_events ORDER BY id DESC LIMIT 100').fetchall(); con.close(); trs=''.join('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'%(esc(x['created_at']),esc(x['actor_role']),esc(x['action']),esc(x['target'] or '')) for x in rows) or '<tr><td colspan="4">No enterprise audit events yet.</td></tr>'; return layout('Security Audit',f'<section class="section"><div class="badge">SECURITY & AUDIT</div><h1>Command-center audit.</h1><div class="card tablewrap"><table><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr>{trs}</table></div></section>',admin=True)
+
+@app.route('/admin/import',methods=['GET','POST'])
+@admin_required
+def admin_bulk_import():
+    if request.method=='POST':
+        kind=request.form.get('kind','students'); f=request.files.get('file')
+        if not f or not f.filename.lower().endswith('.csv'): flash('Upload a CSV file.'); return redirect(url_for('admin_bulk_import'))
+        import csv
+        text=f.stream.read().decode('utf-8-sig','replace'); rows=list(csv.DictReader(io.StringIO(text))); con=db(); uid=_ent_uid(con); count=0
+        try:
+            if kind=='students':
+                for r in rows:
+                    name=(r.get('name') or r.get('Name') or '').strip()[:80]; sid=(r.get('student_id') or r.get('Student ID') or r.get('id') or '').strip()[:80]; pw=r.get('password') or r.get('Password') or secrets.token_urlsafe(9)
+                    if name and sid:
+                        try: con.execute('INSERT INTO students(name,student_id,password_hash,status,created_at) VALUES(?,?,?,?,?)',(name,sid,hash_password(pw),'approved',_ent_now())); count+=1
+                        except Exception: pass
+            else:
+                for r in rows:
+                    name=(r.get('name') or r.get('Name') or '').strip()[:120]; email=(r.get('email') or r.get('Email') or '').strip().lower()[:160]; pw=r.get('password') or r.get('Password') or secrets.token_urlsafe(9)
+                    if name and email:
+                        try: con.execute('INSERT INTO faculty_accounts(university_id,name,email,password_hash,designation,status,created_at) VALUES(?,?,?,?,?,?,?)',(uid,name,email,hash_password(pw),r.get('designation') or 'Faculty','active',_ent_now())); count+=1
+                        except Exception: pass
+            con.commit(); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key=?",(uid,'students' if kind=='students' else 'faculty')); flash('%s %s imported.'%(count,kind))
+        except Exception: con.rollback(); flash('Import failed. No partial changes were committed.')
+        con.close(); return redirect(url_for('admin_bulk_import'))
+    body='<section class="section"><div class="badge">BULK IMPORT</div><h1>University data import.</h1><div class="grid2"><div class="card"><h2>Students</h2><p class="muted">CSV columns: name, student_id, password. Password is optional and generated if omitted.</p><form method="post" enctype="multipart/form-data" class="form"><input type="hidden" name="kind" value="students"><input type="file" name="file" accept=".csv" required><button class="btn accent">Import students</button></form></div><div class="card"><h2>Faculty</h2><p class="muted">CSV columns: name, email, password, designation.</p><form method="post" enctype="multipart/form-data" class="form"><input type="hidden" name="kind" value="faculty"><input type="file" name="file" accept=".csv" required><button class="btn accent">Import faculty</button></form></div></div></section>'
+    return layout('Bulk Import',body,admin=True)
+
+@app.route('/admin/export')
+@admin_required
+def admin_enterprise_export():
+    con=db(); uid=_ent_uid(con); data={}
+    for table,where in [('universities','id=?'),('departments','university_id=?'),('faculty_accounts','university_id=?'),('clubs','university_id=?'),('emergency_alerts','university_id=?'),('targeted_announcements','university_id=?'),('university_permissions','university_id=?'),('audit_events','university_id=?')]:
+        try: data[table]=[dict(x) for x in con.execute('SELECT * FROM '+table+' WHERE '+where,(uid,)).fetchall()]
+        except Exception: data[table]=[]
+    con.close(); return jsonify(exported_at=_ent_now(),university_id=uid,data=data)
+
+@app.route('/admin/backup')
+@admin_required
+def admin_backup():
+    return redirect(url_for('admin_enterprise_export'))
+
+@app.route('/admin/data-management',methods=['GET','POST'])
+@admin_required
+def admin_data_management():
+    if request.method=='POST' and request.form.get('confirm')=='DELETE-ENTERPRISE-DATA':
+        con=db(); uid=_ent_uid(con)
+        for table in ('club_members','clubs','emergency_alerts','targeted_announcements','university_permissions','integration_settings','audit_events','onboarding_steps','digital_ids','faculty_accounts','departments'):
+            try: con.execute('DELETE FROM '+table+' WHERE '+('student_id IN (SELECT id FROM students)' if table=='club_members' else 'university_id=?'),(uid,))
+            except Exception: pass
+        con.commit(); con.close(); flash('Enterprise tenant data was deleted. Existing legacy VYBE student/resource data was left untouched.'); return redirect(url_for('admin_data_management'))
+    return layout('Data Management','<section class="section"><div class="badge">DATA MANAGEMENT</div><h1>Export and deletion.</h1><div class="grid2"><div class="card"><h2>Export</h2><p class="muted">Export university-scoped command-center records as JSON.</p><a class="btn accent" href="/admin/export">Export data</a></div><div class="card"><h2>Delete enterprise data</h2><p class="muted">Deletes the new enterprise workspace only. Existing VYBE legacy tables are not touched.</p><form method="post" class="form"><input name="confirm" placeholder="Type DELETE-ENTERPRISE-DATA"><button class="btn danger">Delete enterprise data</button></form></div></div></section>',admin=True)
+
+@app.route('/admin/integrations/api-token',methods=['POST'])
+@admin_required
+def admin_create_api_token():
+    con=db(); uid=_ent_uid(con); raw='vybe_'+secrets.token_urlsafe(32); digest=hashlib.sha256(raw.encode()).hexdigest()
+    con.execute('CREATE TABLE IF NOT EXISTS api_tokens (id %s PRIMARY KEY, university_id %s NOT NULL, token_hash TEXT UNIQUE NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, active %s NOT NULL)'%((('BIGSERIAL' if con.is_pg else 'INTEGER'),('BIGINT' if con.is_pg else 'INTEGER'),('BOOLEAN DEFAULT TRUE' if con.is_pg else 'INTEGER DEFAULT 1'))))
+    con.execute('INSERT INTO api_tokens(university_id,token_hash,label,created_at,active) VALUES(?,?,?,?,?)',(uid,digest,'Integration',_ent_now(),True)); con.commit(); con.close(); return jsonify(token=raw,message='Store this token securely. It will not be shown again.')
+
+@app.route('/api/v1/campus/summary')
+def campus_api_summary():
+    token=request.headers.get('Authorization','').replace('Bearer ','',1).strip()
+    if not token: return jsonify(error='Bearer token required'),401
+    digest=hashlib.sha256(token.encode()).hexdigest(); con=db()
+    try: row=con.execute('SELECT * FROM api_tokens WHERE token_hash=? AND active=1',(digest,)).fetchone()
+    except Exception: row=None
+    if not row: con.close(); return jsonify(error='Invalid API token'),403
+    uid=row['university_id']; out={'university':dict(con.execute('SELECT id,name,slug,code FROM universities WHERE id=?',(uid,)).fetchone()),'departments':[dict(x) for x in con.execute('SELECT id,name,code FROM departments WHERE university_id=?',(uid,)).fetchall()],'faculty_count':con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c'],'clubs':[dict(x) for x in con.execute('SELECT id,name,category FROM clubs WHERE university_id=?',(uid,)).fetchall()]}; con.close(); return jsonify(data=out)
 
 
 if __name__ == "__main__":
