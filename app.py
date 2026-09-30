@@ -2124,8 +2124,44 @@ def layout(title, body, admin=False):
     assistant_widget = ""
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu"></button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}
+  /* ===== FINAL MOBILE VYBE HEADER / MENU CLEANUP ===== */
+  @media(max-width:850px){{
+    .student-nav-compact{{display:flex!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:54px!important;padding:8px 12px!important;box-sizing:border-box!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;align-items:center!important;gap:7px!important;flex:0 0 auto!important;min-width:max-content!important}}
+    .student-nav-compact .student-brand-compact .brandtext{{font-size:16px!important;font-weight:850!important}}
+    .student-nav-compact .student-brand-compact .brandmark{{width:29px!important;height:29px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}}
+    .student-desktop-links,.student-header-back{{display:none!important}}
+    .student-header-tools{{display:flex!important;align-items:center!important;margin-left:auto!important;flex:0 0 auto!important}}
+    .student-header-tools .student-menu{{display:none!important}}
+    .student-header-updates{{display:inline-flex!important;height:34px!important;padding:0 10px!important;border-radius:9px!important;background:#315f24!important;color:#fff!important;border:1px solid #315f24!important;font-size:11px!important;font-weight:850!important;white-space:nowrap!important}}
+    .student-control-row{{display:block!important;width:100%!important;padding:6px 12px 10px!important;box-sizing:border-box!important}}
+    .student-control-row .student-search{{width:100%!important;max-width:none!important;margin:0!important}}
+    .student-search{{position:relative!important}}
+    .student-search input{{width:100%!important;height:42px!important;padding:0 14px!important;border-radius:11px!important;font-size:13px!important;box-sizing:border-box!important}}
+    .student-search:focus-within input{{border-color:#5f8f3b!important;box-shadow:0 0 0 3px rgba(95,143,59,.12)!important}}
+    /* Only one set of menu entries. */
+    #vybeMobileNav.student-mobile-menu > a{{display:flex!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{display:none!important}}
+    #vybeMobileNav.student-mobile-menu{{left:8px!important;right:auto!important;top:62px!important;width:44vw!important;max-width:205px!important;min-width:160px!important;height:auto!important;max-height:calc(100vh - 145px)!important;overflow-y:auto!important;box-sizing:border-box!important;padding:8px!important;border-radius:14px!important;background:#fff!important;border:1px solid #dbe5d9!important;box-shadow:0 18px 42px rgba(25,42,33,.22)!important}}
+    #vybeMobileNav.student-mobile-menu.open{{display:flex!important;flex-direction:column!important;gap:3px!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-head{{display:flex!important}}
+    #vybeMobileNav.student-mobile-menu > a{{min-height:34px!important;padding:7px 9px!important;border-radius:8px!important;background:#fff!important;color:#24302a!important;font-size:11px!important;font-weight:750!important;line-height:1.2!important;text-decoration:none!important}}
+    #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu > a:focus{{background:#edf6e8!important;color:#315f24!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-close{{display:inline-flex!important}}
+    .student-bottom-nav{{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;align-items:stretch!important;gap:6px!important;height:auto!important;min-height:58px!important;padding:6px 10px calc(6px + env(safe-area-inset-bottom))!important;box-sizing:border-box!important;background:rgba(255,255,255,.98)!important;border-top:1px solid #dfe8df!important;box-shadow:0 -8px 24px rgba(25,42,33,.08)!important}}
+    .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{{width:100%!important;min-width:0!important;height:46px!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:10px!important;box-sizing:border-box!important}}
+    .student-bottom-nav button.mobile-menu-nav{{background:#172033!important;color:#fff!important;border:1px solid #172033!important;visibility:visible!important;opacity:1!important;font-size:12px!important;font-weight:850!important}}
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{{display:block!important;color:#fff!important}}
+    .student-bottom-nav .mobile-menu-icon-lines{{display:none!important}}
+    .student-bottom-nav a{{font-size:12px!important;font-weight:750!important}}
+    .student-bottom-spacer{{height:72px!important}}
+  }}
+  @media(min-width:851px){{
+    .student-control-row .student-search{{margin-left:auto!important;margin-right:auto!important}}
+  }}
+</style></head><body>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
