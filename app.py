@@ -2018,6 +2018,81 @@ main,.main,.wrap{position:relative}
 @media(min-width:851px){#vybeMobileNav.student-mobile-menu{left:auto!important;right:18px!important;width:260px!important}}
 
 
+/* ===== FINAL PHONE LAYOUT POLISH ===== */
+@media(max-width:850px){
+  html,body{width:100%;max-width:100%;overflow-x:hidden!important}
+  .nav{width:100%!important;position:relative!important;z-index:5000!important}
+  .navin.student-nav-compact{
+    width:100%!important;box-sizing:border-box!important;
+    min-height:54px!important;padding:7px 12px!important;
+    display:flex!important;align-items:center!important;gap:8px!important;
+  }
+  .student-brand-compact{display:flex!important;align-items:center!important;min-width:0!important;flex:1 1 auto!important;gap:8px!important;overflow:hidden!important}
+  .student-brand-compact .brandmark{width:36px!important;height:36px!important;flex:0 0 36px!important;border-radius:11px!important}
+  .student-brand-compact .brandtext{font-size:18px!important;white-space:nowrap!important}
+  /* Phone header: logo + Updates only. Menu lives exclusively in the bottom bar. */
+  .student-header-tools{margin-left:auto!important;flex:0 0 auto!important;gap:0!important}
+  .student-header-tools .student-menu{display:none!important}
+  .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:35px!important;padding:0 11px!important;border-radius:9px!important;background:#172033!important;color:#fff!important;border:0!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
+  .student-header-back{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;padding:7px 8px!important;margin-right:1px!important;border-radius:9px!important;font-size:12px!important}
+  /* Keep the search directly below the header and make it full-width on every page. */
+  .student-control-row{width:100%!important;box-sizing:border-box!important;padding:6px 12px 9px!important;display:flex!important;justify-content:center!important;background:#fff!important}
+  .student-control-row .student-search{width:100%!important;max-width:none!important;margin:0!important}
+  .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;border-radius:11px!important;font-size:13px!important}
+  .vybe-search-suggestions{left:0!important;right:0!important;top:calc(100% + 6px)!important;max-height:52vh!important;overflow:auto!important;border-radius:12px!important}
+  .vybe-search-suggestion{min-height:42px!important;padding:10px 11px!important;font-size:12px!important}
+  .vybe-search-suggestion span:last-child{font-size:10px!important}
+
+  /* One clean bottom navigation: Menu / Home / Profile. */
+  .student-bottom-nav{
+    position:fixed!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;
+    width:100%!important;max-width:none!important;height:68px!important;box-sizing:border-box!important;
+    display:flex!important;align-items:center!important;justify-content:stretch!important;
+    padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
+    gap:7px!important;background:rgba(255,255,255,.98)!important;
+    border-top:1px solid #dfe7df!important;box-shadow:0 -10px 28px rgba(31,48,66,.10)!important;
+    z-index:9000!important;overflow:visible!important;
+  }
+  .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{
+    flex:1 1 0!important;width:0!important;min-width:0!important;height:48px!important;
+    margin:0!important;padding:0 5px!important;box-sizing:border-box!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    border-radius:12px!important;font-size:12px!important;font-weight:800!important;
+  }
+  .student-bottom-nav a{color:#5d6874!important;background:transparent!important;border:0!important;text-decoration:none!important}
+  .student-bottom-nav a.active{background:#eef6e8!important;color:#4e7f25!important}
+  .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border:1px solid #172033!important;box-shadow:0 6px 16px rgba(23,32,51,.16)!important;visibility:visible!important;opacity:1!important}
+  .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{display:block!important;color:#fff!important;font-size:12px!important;font-weight:850!important}
+  .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-spacer{display:block!important;height:78px!important}
+
+  /* Phone drawer: left side, clearly separated from the page, under half the screen. */
+  #vybeMobileNav.student-mobile-menu{
+    display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:60px!important;
+    width:44vw!important;max-width:220px!important;min-width:170px!important;
+    max-height:calc(100vh - 82px)!important;overflow:auto!important;
+    padding:8px!important;box-sizing:border-box!important;z-index:10000!important;
+    border-radius:14px!important;background:rgba(255,255,255,.99)!important;
+    border:1px solid #dfe7df!important;box-shadow:0 18px 45px rgba(31,48,66,.18)!important;
+  }
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:4px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:5px 6px 8px!important;border-bottom:1px solid #edf0ec!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:27px!important;height:27px!important;border:1px solid #dce5dc!important;border-radius:8px!important;background:#f4f7f3!important;color:#172033!important}
+  #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{min-height:36px!important;padding:8px 9px!important;border-radius:9px!important;background:#fff!important;border:0!important;color:#26323e!important;font-size:11px!important;font-weight:750!important;line-height:1.2!important;text-decoration:none!important}
+  #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#f1f7eb!important;color:#4e7f25!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:flex!important;flex-direction:column!important;gap:4px!important}
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
+
+  /* Prevent wide cards/tables/forms from breaking the phone viewport. */
+  .wrap,.page-shell,.clean-home,.academic-hero,.academic-detail,.community-chat-page-section,.community-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important}
+  .wrap{padding-left:12px!important;padding-right:12px!important}
+  img,video,iframe,table{max-width:100%!important}
+  .card,.panel,.academic-detail,.academic-update-card,.academic-resource-card,.home-update-panel{box-sizing:border-box!important;max-width:100%!important}
+  input,select,textarea,button{max-width:100%!important;box-sizing:border-box!important}
+}
+
+
 """
 
 
