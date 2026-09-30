@@ -4250,6 +4250,106 @@ def issues():
     font-weight:800 !important;
     line-height:1 !important;
   }
+
+  /* ===== FINAL MOBILE GLASS OVERRIDE ===== */
+  @media(max-width:850px){{
+    .nav:has(.student-nav-compact){{
+      background:rgba(2,10,18,.58)!important;
+      border-bottom:1px solid rgba(120,190,230,.18)!important;
+      box-shadow:0 8px 30px rgba(0,0,0,.22)!important;
+      backdrop-filter:blur(24px) saturate(150%)!important;
+      -webkit-backdrop-filter:blur(24px) saturate(150%)!important;
+    }}
+    .nav:has(.student-nav-compact) .student-nav-compact,
+    .nav:has(.student-nav-compact) .student-control-row{{
+      background:transparent!important;
+    }}
+    .student-nav-compact .student-header-back,
+    .student-nav-compact .student-header-updates{{
+      background:rgba(20,48,70,.48)!important;
+      border:1px solid rgba(125,195,235,.25)!important;
+      color:#e5f4ff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 18px rgba(0,0,0,.12)!important;
+      backdrop-filter:blur(14px)!important;
+      -webkit-backdrop-filter:blur(14px)!important;
+    }}
+    .student-search input{{
+      background:rgba(7,25,42,.48)!important;
+      border:1px solid rgba(91,165,215,.25)!important;
+      color:#fff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
+      backdrop-filter:blur(16px)!important;
+      -webkit-backdrop-filter:blur(16px)!important;
+    }}
+    .student-search input:focus{{
+      background:rgba(10,34,55,.62)!important;
+      border-color:rgba(80,184,245,.55)!important;
+      box-shadow:0 0 0 3px rgba(40,160,225,.10),inset 0 1px rgba(255,255,255,.05)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu{{
+      background:rgba(4,17,29,.58)!important;
+      border:1px solid rgba(108,178,220,.25)!important;
+      box-shadow:0 20px 55px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.055)!important;
+      backdrop-filter:blur(26px) saturate(155%)!important;
+      -webkit-backdrop-filter:blur(26px) saturate(155%)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu > a,
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+      background:rgba(18,45,66,.42)!important;
+      border:1px solid rgba(110,178,218,.20)!important;
+      color:#e6f4ff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu > a:hover,
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover{{
+      background:rgba(40,91,126,.55)!important;
+      border-color:rgba(93,190,242,.42)!important;
+      color:#fff!important;
+    }}
+    .student-bottom-nav{{
+      background:rgba(2,10,18,.62)!important;
+      background-image:none!important;
+      border-top:1px solid rgba(105,177,220,.22)!important;
+      box-shadow:0 -12px 34px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.045)!important;
+      backdrop-filter:blur(26px) saturate(160%)!important;
+      -webkit-backdrop-filter:blur(26px) saturate(160%)!important;
+    }}
+    .student-bottom-nav > .mobile-menu-nav,
+    .student-bottom-nav > .mobile-home-nav,
+    .student-bottom-nav > .mobile-profile-nav{{
+      background:rgba(14,39,59,.42)!important;
+      border:1px solid rgba(102,175,218,.22)!important;
+      color:#bcd7ea!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.045)!important;
+      backdrop-filter:blur(12px)!important;
+      -webkit-backdrop-filter:blur(12px)!important;
+    }}
+    .student-bottom-nav > .mobile-home-nav.active{{
+      background:rgba(10,73,108,.58)!important;
+      color:#6fd0ff!important;
+      border-color:rgba(62,190,248,.48)!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 20px rgba(0,110,180,.16)!important;
+    }}
+    .student-bottom-nav > .mobile-menu-nav:hover,
+    .student-bottom-nav > .mobile-profile-nav:hover{{
+      background:rgba(34,72,99,.52)!important;
+      color:#eaf8ff!important;
+      border-color:rgba(107,190,232,.38)!important;
+    }}
+    .mobile-direct-suggestions,
+    .vybe-search-suggestions{{
+      background:rgba(4,17,29,.72)!important;
+      border-color:rgba(105,177,220,.25)!important;
+      box-shadow:0 18px 45px rgba(0,0,0,.38)!important;
+      backdrop-filter:blur(22px)!important;
+      -webkit-backdrop-filter:blur(22px)!important;
+    }}
+    .mobile-direct-suggestions .vybe-search-suggestion{{
+      background:rgba(18,45,66,.35)!important;
+      color:#e6f4ff!important;
+    }}
+    .mobile-direct-suggestions .vybe-search-suggestion:hover{{background:rgba(40,91,126,.48)!important}}
+  }}
 </style>
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
