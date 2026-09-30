@@ -2684,6 +2684,114 @@ def layout(title, body, admin=False):
     .vybe-assistant-fab{{bottom:76px!important}}
     .vybe-assistant-panel{{bottom:130px!important}}
   }}
+<style>
+/* FINAL MOBILE HOME FIX: one deterministic student bottom bar */
+@media (max-width:850px){
+  body:has(.student-nav-compact){
+    overflow-x:hidden!important;
+    padding-bottom:0!important;
+  }
+  body:has(.student-nav-compact) .wrap{
+    width:100%!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+    padding-left:12px!important;
+    padding-right:12px!important;
+    padding-bottom:96px!important;
+  }
+  body:has(.student-nav-compact) .page-shell.page-dashboard{
+    padding-bottom:100px!important;
+  }
+  body:has(.student-nav-compact) .student-home{
+    width:100%!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+    margin:0!important;
+    padding:18px 0 100px!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav{
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    transform:none!important;
+    width:100%!important;
+    height:68px!important;
+    min-height:68px!important;
+    max-height:68px!important;
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    grid-auto-flow:column!important;
+    gap:6px!important;
+    margin:0!important;
+    padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
+    box-sizing:border-box!important;
+    align-items:stretch!important;
+    justify-items:stretch!important;
+    background:#fff!important;
+    border-top:1px solid #d8e1e6!important;
+    box-shadow:0 -5px 18px rgba(20,35,48,.10)!important;
+    z-index:50000!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav > button.mobile-menu-nav,
+  body:has(.student-nav-compact) .student-bottom-nav > a.mobile-home-nav,
+  body:has(.student-nav-compact) .student-bottom-nav > a.mobile-profile-nav{
+    position:static!important;
+    float:none!important;
+    grid-column:auto!important;
+    grid-row:1!important;
+    order:initial!important;
+    flex:none!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    height:46px!important;
+    min-height:46px!important;
+    margin:0!important;
+    padding:0!important;
+    box-sizing:border-box!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    text-align:center!important;
+    border:1px solid #d3dde3!important;
+    border-radius:9px!important;
+    background:#fff!important;
+    color:#405360!important;
+    font:800 12px/1 Arial,Helvetica,sans-serif!important;
+    text-decoration:none!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav > button.mobile-menu-nav{
+    appearance:none!important;
+    -webkit-appearance:none!important;
+    cursor:pointer!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav .mobile-menu-label{
+    display:block!important;
+    width:auto!important;
+    color:inherit!important;
+    font:inherit!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav .mobile-menu-icon-lines{
+    display:none!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-nav .mobile-home-nav.active{
+    background:#eef3f6!important;
+    color:#263542!important;
+    border-color:#cbd6dd!important;
+  }
+  body:has(.student-nav-compact) .student-bottom-spacer{
+    display:none!important;
+    height:0!important;
+  }
+  body:has(.student-nav-compact) .vybe-assistant-fab{
+    bottom:78px!important;
+  }
+  body:has(.student-nav-compact) .vybe-assistant-panel{
+    bottom:136px!important;
+    max-width:calc(100vw - 24px)!important;
+  }
+}
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
