@@ -1788,6 +1788,26 @@ input:focus,textarea:focus,select:focus{border-color:#75a2d9!important;box-shado
 .academic-link{color:var(--vybe-ui-blue)!important;font-weight:700!important}
 /* Mobile: keep buttons comfortably tappable */
 @media(max-width:700px){.btn,.button,.academic-btn,.academic-search button,.academic-filter-form button{min-height:44px!important;padding:10px 15px!important}.actions .btn{flex:0 0 auto}.home-action{border-radius:13px!important}.academic-quick,.academic-tool{border-radius:12px!important}}
+/* ===== VYBE soft blue-white-green background ===== */
+html{background:#f2f7f8!important}
+body{
+  background:
+    radial-gradient(circle at 8% 8%, rgba(83,154,220,.16), transparent 30%),
+    radial-gradient(circle at 92% 16%, rgba(111,190,76,.12), transparent 28%),
+    radial-gradient(circle at 50% 100%, rgba(73,151,211,.10), transparent 34%),
+    linear-gradient(135deg,#f4f8fb 0%,#f7faf8 48%,#f1f8f3 100%)!important;
+  background-attachment:fixed!important;
+  color:var(--vybe-ui-text)!important;
+}
+.nav{background:rgba(255,255,255,.90)!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important}
+main,.main,.wrap{position:relative}
+.section{position:relative}
+.academic-hero{background:linear-gradient(180deg,rgba(255,255,255,.40),rgba(236,246,251,.20))!important;border-radius:24px}
+.card,.panel,.student-feature,.student-mini,.student-link,.feed-item,.stat-chip,.top-stat,.top-tool,.academic-resource-card,.academic-update-card,.academic-detail,.academic-app-card{background:rgba(255,255,255,.90)!important}
+.home-action,.home-update-panel,.academic-quick,.academic-tool,.academic-filter-panel{background:rgba(255,255,255,.88)!important}
+.home-action-primary{background:linear-gradient(135deg,rgba(238,246,255,.96),rgba(242,250,246,.96))!important}
+.academic-quick-green{background:linear-gradient(135deg,#f5fbf0,#f4f9ff)!important}
+
 
 """
 
