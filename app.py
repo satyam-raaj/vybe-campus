@@ -810,7 +810,16 @@ def init_db():
         "digital_ids": [("university_id", "BIGINT"), ("status", "TEXT NOT NULL DEFAULT 'issued'"), ("issued_at", "TEXT NOT NULL DEFAULT ''"), ("expires_at", "TEXT")],
         "security_audit_logs": [("university_id", "BIGINT"), ("actor_role", "TEXT NOT NULL DEFAULT 'admin'"), ("actor_id", "BIGINT"), ("details", "TEXT NOT NULL DEFAULT ''"), ("created_at", "TEXT NOT NULL DEFAULT ''"), ("ip_address", "TEXT NOT NULL DEFAULT ''")],
         "integration_configs": [("university_id", "BIGINT"), ("endpoint", "TEXT NOT NULL DEFAULT ''"), ("enabled", "BOOLEAN NOT NULL DEFAULT FALSE"), ("created_at", "TEXT NOT NULL DEFAULT ''"), ("updated_at", "TEXT NOT NULL DEFAULT ''")],
-        "api_tokens": [("university_id", "BIGINT"), ("name", "TEXT NOT NULL DEFAULT ''"), ("token_hash", "TEXT"), ("active", "BOOLEAN NOT NULL DEFAULT TRUE"), ("created_at", "TEXT NOT NULL DEFAULT ''")]
+        "api_tokens": [("university_id", "BIGINT"), ("name", "TEXT NOT NULL DEFAULT ''"), ("token_hash", "TEXT"), ("active", "BOOLEAN NOT NULL DEFAULT TRUE"), ("created_at", "TEXT NOT NULL DEFAULT ''")],
+        # These tables may already exist on a Render database from an earlier
+        # VYBE build. CREATE TABLE IF NOT EXISTS does not alter those tables,
+        # so every tenant-scoped column used below must also be reconciled here.
+        "enterprise_calendar_events": [("university_id", "BIGINT"), ("description", "TEXT NOT NULL DEFAULT ''"), ("event_date", "TEXT NOT NULL DEFAULT ''"), ("location", "TEXT NOT NULL DEFAULT ''"), ("created_at", "TEXT NOT NULL DEFAULT ''")],
+        "faculty_materials": [("university_id", "BIGINT"), ("faculty_id", "BIGINT"), ("title", "TEXT NOT NULL DEFAULT ''"), ("description", "TEXT NOT NULL DEFAULT ''"), ("created_at", "TEXT NOT NULL DEFAULT ''")],
+        "faculty_questions": [("university_id", "BIGINT"), ("student_id", "BIGINT"), ("title", "TEXT NOT NULL DEFAULT ''"), ("question", "TEXT NOT NULL DEFAULT ''"), ("status", "TEXT NOT NULL DEFAULT 'open'"), ("created_at", "TEXT NOT NULL DEFAULT ''")],
+        "faculty_timetable": [("university_id", "BIGINT"), ("faculty_id", "BIGINT"), ("day_of_week", "TEXT NOT NULL DEFAULT ''"), ("start_time", "TEXT NOT NULL DEFAULT ''"), ("end_time", "TEXT NOT NULL DEFAULT ''"), ("course", "TEXT NOT NULL DEFAULT ''"), ("room", "TEXT NOT NULL DEFAULT ''")],
+        "faculty_announcements": [("university_id", "BIGINT"), ("title", "TEXT NOT NULL DEFAULT ''"), ("message", "TEXT NOT NULL DEFAULT ''"), ("created_at", "TEXT NOT NULL DEFAULT ''")],
+        "faculty_assignments": [("university_id", "BIGINT"), ("faculty_id", "BIGINT"), ("title", "TEXT NOT NULL DEFAULT ''"), ("description", "TEXT NOT NULL DEFAULT ''"), ("due_date", "TEXT NOT NULL DEFAULT ''"), ("created_at", "TEXT NOT NULL DEFAULT ''")]
     }
     for table, cols in enterprise_columns.items():
         if con.is_pg:
