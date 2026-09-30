@@ -1809,6 +1809,72 @@ main,.main,.wrap{position:relative}
 .academic-quick-green{background:linear-gradient(135deg,#f5fbf0,#f4f9ff)!important}
 
 
+/* ===== VYBE LIVE UI / PAGE PERSONALITY ===== */
+.page-shell{min-height:calc(100vh - 150px)}
+/* Each major page gets a subtle identity tint without changing the overall VYBE palette. */
+.page-academics .section:first-child,.page-papers .section:first-child{background:linear-gradient(135deg,rgba(232,243,255,.70),rgba(239,250,241,.55));border:1px solid rgba(83,137,199,.13);border-radius:24px;padding:28px}
+.page-community .section:first-child,.page-chat .section:first-child{background:linear-gradient(135deg,rgba(236,250,238,.72),rgba(235,246,255,.55));border:1px solid rgba(96,164,91,.13);border-radius:24px;padding:28px}
+.page-issues .section:first-child,.page-help-desk .section:first-child{background:linear-gradient(135deg,rgba(236,246,255,.72),rgba(244,250,239,.58));border:1px solid rgba(70,132,194,.13);border-radius:24px;padding:28px}
+.page-events .section:first-child,.page-updates .section:first-child{background:linear-gradient(135deg,rgba(239,250,232,.72),rgba(236,246,255,.52));border:1px solid rgba(100,166,70,.13);border-radius:24px;padding:28px}
+.page-profile .section:first-child,.page-security .section:first-child{background:linear-gradient(135deg,rgba(236,246,255,.72),rgba(248,250,243,.58));border:1px solid rgba(70,132,194,.12);border-radius:24px;padding:28px}
+/* Search bar feels alive: animated caret/glow and a soft rotating suggestion. */
+.student-search,.academic-search{position:relative}
+.student-search:focus-within,.academic-search:focus-within{box-shadow:0 0 0 4px rgba(47,111,202,.08),0 12px 30px rgba(47,111,202,.08)!important}
+.student-search input,.academic-search input{transition:border-color .2s ease,box-shadow .2s ease,background .2s ease!important}
+.student-search input::placeholder,.academic-search input::placeholder{transition:opacity .22s ease!important}
+.vybe-live-caret{display:inline-block;width:2px;height:16px;background:#4f91d6;vertical-align:-3px;margin-left:3px;border-radius:2px;animation:vybeCaret 1s steps(1,end) infinite}
+@keyframes vybeCaret{50%{opacity:0}}
+/* Better compact controls: real words, not single-letter placeholders. */
+.student-control{min-width:76px!important;height:42px!important;padding:0 13px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:7px!important;border-radius:11px!important;font-weight:750!important;font-size:12px!important;letter-spacing:.01em!important}
+.student-control .control-symbol{display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.student-control.active .control-symbol{font-weight:800}
+.student-header-icon.profile,.student-menu{min-width:78px!important;padding:0 13px!important;border-radius:10px!important;font-size:12px!important;font-weight:750!important;letter-spacing:.01em!important}
+.student-menu{cursor:pointer!important}
+/* Desktop menu is a single dropdown. The mobile drawer is completely hidden on desktop until opened. */
+@media(min-width:851px){
+  #vybeMobileNav.student-mobile-menu{display:none!important;position:absolute!important;top:72px!important;right:18px!important;left:auto!important;width:260px!important;height:auto!important;padding:10px!important;z-index:6000!important;border-radius:16px!important;background:rgba(255,255,255,.98)!important;border:1px solid #dfe5ea!important;box-shadow:0 18px 45px rgba(31,48,66,.14)!important;backdrop-filter:blur(18px)!important}
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:5px!important}
+  #vybeMobileNav.student-mobile-menu > a{display:flex!important;align-items:center!important;padding:11px 12px!important;border-radius:10px!important;text-decoration:none!important;color:#33404d!important;font-weight:650!important}
+  #vybeMobileNav.student-mobile-menu > a:hover{background:#eef5ff!important;color:#2f6fca!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head,.mobile-only-menu-links{display:none!important}
+}
+/* Mobile keeps the existing bottom navigation. */
+@media(max-width:850px){
+  .student-header-icon.profile,.student-menu{min-width:0!important}
+  .student-control{min-width:0!important;font-size:11px!important;padding:0 8px!important}
+  .student-control-row{gap:7px!important}
+  .student-search{flex:1 1 auto!important}
+  .page-shell{padding-bottom:12px}
+}
+/* Make small action buttons visually distinct instead of looking like one generic rectangle. */
+.actions .btn,.card .btn,.form .btn{white-space:nowrap}
+.btn:not(.accent):not(.danger):not(.good):not(.dark){background:#26323e!important}
+.btn.good{font-weight:800!important}.btn.danger{font-weight:800!important}
+
+/* ===== VYBE HOME / SIMPLE NAV / LIVE FOOTER ===== */
+.home-live-hero{position:relative;display:grid;grid-template-columns:minmax(0,1.35fr) 300px;align-items:center;min-height:390px;padding:48px 52px;margin:8px 0 34px;overflow:hidden;border:1px solid #dce8f0;border-radius:30px;background:linear-gradient(135deg,#ffffff 0%,#f1f8ff 58%,#f2faef 100%);box-shadow:0 24px 70px rgba(42,75,105,.10)}
+.home-live-copy{position:relative;z-index:2}.home-live-copy h1{font-size:clamp(42px,6vw,76px);line-height:.96;letter-spacing:-.065em;margin:16px 0 12px;color:#101827}.home-live-copy p{max-width:620px;color:#667484;font-size:17px;line-height:1.6;margin:0}.home-hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.home-hero-actions .btn{min-height:46px}
+.home-live-glow{position:absolute;border-radius:50%;filter:blur(3px);pointer-events:none}.home-live-glow-one{width:280px;height:280px;right:140px;top:-100px;background:rgba(48,115,202,.13);animation:homeFloat 7s ease-in-out infinite}.home-live-glow-two{width:230px;height:230px;right:-50px;bottom:-80px;background:rgba(82,164,62,.12);animation:homeFloat 8s ease-in-out infinite reverse}.home-live-orbit{position:relative;width:250px;height:250px;margin:auto;border-radius:50%;border:1px solid rgba(47,111,202,.18);background:radial-gradient(circle,#fff 0 20%,rgba(255,255,255,.72) 21% 42%,rgba(47,111,202,.06) 43% 100%);box-shadow:0 20px 55px rgba(47,111,202,.12);animation:homePulse 5s ease-in-out infinite}.home-live-orbit:before,.home-live-orbit:after{content:"";position:absolute;inset:26px;border:1px solid rgba(76,139,203,.13);border-radius:50%}.home-live-orbit:after{inset:52px;border-color:rgba(81,159,73,.16)}.orbit-core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:76px;height:76px;border-radius:22px;background:#101827;color:#fff;font-size:31px;font-weight:900;box-shadow:0 16px 35px rgba(16,24,39,.20)}.orbit-dot{position:absolute;width:12px;height:12px;border-radius:50%;z-index:2}.orbit-dot-a{top:29px;right:61px;background:#3279ce;box-shadow:0 0 0 7px rgba(50,121,206,.10)}.orbit-dot-b{bottom:45px;left:38px;background:#62a74d;box-shadow:0 0 0 7px rgba(98,167,77,.10)}
+@keyframes homeFloat{50%{transform:translate3d(12px,18px,0) scale(1.05)}}@keyframes homePulse{50%{transform:scale(1.025);box-shadow:0 25px 65px rgba(47,111,202,.16)}}
+.home-action-grid.live-home-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.live-home-grid .home-action{min-height:154px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:13px;padding:18px;border-radius:21px;background:#fff;border:1px solid #dfe7ed;box-shadow:0 10px 28px rgba(39,62,82,.055);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.live-home-grid .home-action:hover{transform:translateY(-4px);border-color:#bdd6e8;box-shadow:0 18px 38px rgba(39,83,119,.10)}.live-home-grid .home-action b{font-size:11px;color:#4c82bb;text-transform:uppercase;letter-spacing:.06em}.live-home-grid .home-action-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#eef5ff;color:#2f6fca;font-size:13px;font-weight:850}.live-home-grid .home-action:nth-child(2n) .home-action-icon{background:#f0f8ec;color:#5b8f35}.live-home-grid .home-action:nth-child(3n) .home-action-icon{background:#f3f5f7;color:#43515f}.live-home-grid .home-action-primary{background:linear-gradient(145deg,#f4f9ff,#fff)!important;border-color:#cfe0ef!important}.live-home-grid .home-action span:nth-child(2){min-width:0}.live-home-grid .home-action strong{display:block;font-size:15px;color:#172130;margin-bottom:4px}.live-home-grid .home-action small{display:block;color:#748292;line-height:1.4}
+.home-updates-head{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:40px 0 14px}.home-updates-head p{margin:4px 0 0;color:#7a8794}.home-live-status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #d7e8d0;border-radius:999px;background:#f4faef;color:#56833a;font-size:11px;font-weight:800;letter-spacing:.05em}.home-live-status span{width:7px;height:7px;border-radius:50%;background:#57a53f;box-shadow:0 0 0 5px rgba(87,165,63,.10);animation:statusBlink 1.8s ease-in-out infinite}@keyframes statusBlink{50%{opacity:.35;transform:scale(.8)}}
+.vybe-footer{margin-top:40px!important;background:#f8fafb!important;border-top:1px solid #dfe7ed!important;text-align:left!important;color:#66717e!important}.footer-inner{max-width:1400px;margin:auto;padding:26px 20px;display:flex;align-items:center;gap:28px;justify-content:space-between}.footer-brand{display:flex;flex-direction:column;gap:4px}.footer-brand strong{font-size:18px;color:#182230}.footer-brand span,.footer-copy{font-size:12px;color:#7b8792}.footer-links{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}.footer-links a{padding:9px 12px;border:1px solid #dce4ea;border-radius:10px;background:#fff;color:#42505d;font-size:12px;font-weight:700;transition:.2s ease}.footer-links a:hover{border-color:#b9d3e8;background:#eef6ff;color:#2f6fca}.footer-copy{text-align:right}
+@media(max-width:1000px){.home-live-hero{grid-template-columns:1fr 220px;padding:38px}.home-live-orbit{width:200px;height:200px}.home-action-grid.live-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){.home-live-hero{display:block;min-height:0;padding:30px 22px;border-radius:24px}.home-live-copy h1{font-size:43px}.home-live-copy p{font-size:15px}.home-live-orbit{width:145px;height:145px;margin:28px 0 0 auto}.orbit-core{width:52px;height:52px;border-radius:16px;font-size:22px}.home-live-orbit:before{inset:18px}.home-live-orbit:after{inset:35px}.orbit-dot-a{top:18px;right:35px}.orbit-dot-b{bottom:27px;left:22px}.home-action-grid.live-home-grid{grid-template-columns:1fr;gap:10px}.live-home-grid .home-action{min-height:94px;grid-template-columns:auto 1fr auto}.home-updates-head{align-items:start}.footer-inner{padding:22px 14px 100px;display:grid;gap:15px}.footer-links{justify-content:flex-start}.footer-copy{text-align:left}.footer-links a{flex:1 1 auto;text-align:center}.home-hero-actions .btn{flex:1 1 180px}.student-control-row{overflow-x:auto;scrollbar-width:none}.student-control-row::-webkit-scrollbar{display:none}.student-control{flex:0 0 auto!important}.student-search{min-width:180px!important}}
+/* ===== FLOATING VYBE ASSISTANT ===== */
+.vybe-assistant-fab{position:fixed;right:24px;bottom:24px;z-index:7000;display:flex;align-items:center;gap:9px;border:1px solid #b9d6ed;background:#101827;color:#fff;border-radius:16px;padding:12px 16px;min-height:48px;box-shadow:0 16px 40px rgba(16,24,39,.20);font-weight:800;font-size:13px;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
+.vybe-assistant-fab:hover{transform:translateY(-3px);box-shadow:0 20px 46px rgba(16,24,39,.25);background:#172238}
+.vybe-assistant-fab .fab-mark{display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:#eaf3ff;color:#2f6fca;font-size:11px;font-weight:900}
+.vybe-assistant-panel{position:fixed;right:24px;bottom:84px;width:min(390px,calc(100vw - 32px));z-index:6999;background:rgba(255,255,255,.98);border:1px solid #d8e2ea;border-radius:22px;box-shadow:0 24px 70px rgba(29,48,67,.20);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);overflow:hidden;opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.vybe-assistant-panel.open{opacity:1;transform:none;pointer-events:auto}
+.vybe-assistant-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 17px;border-bottom:1px solid #e4ebf0;background:linear-gradient(135deg,#f5f9ff,#f5faf2)}
+.vybe-assistant-head strong{font-size:15px;color:#182230}.vybe-assistant-head small{display:block;margin-top:2px;color:#748292;font-size:11px}.vybe-assistant-close{border:1px solid #dce5eb;background:#fff;color:#4a5967;width:34px;height:34px;border-radius:10px;font-size:18px;cursor:pointer}
+.vybe-assistant-body{padding:15px}.vybe-assistant-suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:13px}.vybe-assistant-suggestion{display:flex;align-items:center;justify-content:flex-start;min-height:42px;padding:9px 11px;border:1px solid #dce6ed;border-radius:11px;background:#fff;color:#344452;text-decoration:none;font-size:12px;font-weight:750;transition:.18s ease}.vybe-assistant-suggestion:hover{background:#eef6ff;border-color:#bcd7ed;color:#2867ae;transform:translateY(-1px)}
+.vybe-assistant-form{display:flex;gap:8px;align-items:stretch}.vybe-assistant-form input{min-width:0;flex:1;height:44px;border:1px solid #d5e0e7;border-radius:11px;padding:0 12px;background:#fff;color:#1e2935;outline:none}.vybe-assistant-form input:focus{border-color:#77aeda;box-shadow:0 0 0 4px rgba(47,111,202,.08)}.vybe-assistant-form button{height:44px;padding:0 14px;border:0;border-radius:11px;background:#101827;color:#fff;font-weight:800;cursor:pointer}.vybe-assistant-note{font-size:10px;color:#87929d;margin:10px 2px 0;line-height:1.4}
+@media(max-width:850px){.vybe-assistant-fab{right:14px;bottom:82px;border-radius:14px;padding:10px 13px;min-height:45px}.vybe-assistant-panel{right:10px;bottom:136px;width:calc(100vw - 20px);border-radius:20px}.vybe-assistant-suggestions{grid-template-columns:1fr 1fr}.vybe-assistant-form input{font-size:14px}}
+
+
+
 """
 
 
@@ -1817,7 +1883,7 @@ def layout(title, body, admin=False):
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div>'
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">Menu</button></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -1827,8 +1893,8 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><div class="student-notification-panel" id="vybeNotificationPanel" hidden><div class="student-notification-panel-head"><strong>Notifications</strong><button type="button" id="vybeNotificationsReadAll">Mark all read</button></div><div id="vybeNotificationList"><div class="student-notification-empty">No new notifications.</div></div></div></div><a class="student-header-icon profile" href="/profile" aria-label="Profile">P</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
-<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">P</a><a class="student-control" href="/issues" aria-label="Campus">C</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><a class="student-header-icon profile" href="/profile" aria-label="Profile">Profile</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div></div>
+<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home"><span class="control-symbol">Home</span></a><a class="student-control" href="/academics" aria-label="Academic Hub"><span class="control-symbol">Academics</span></a><a class="student-control" href="/community" aria-label="Community"><span class="control-symbol">Community</span></a><a class="student-control" href="/issues" aria-label="Help Desk"><span class="control-symbol">Help Desk</span></a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>H</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>P</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -1837,9 +1903,12 @@ def layout(title, body, admin=False):
         header = f'<div class="navin">{brand}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
+    assistant_widget = ""
+    if student:
+        assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu"></button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
-<main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
+<main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}<footer class="footer vybe-footer"><div class="footer-inner"><div class="footer-brand"><strong>VYBE</strong><span>Your Campus. Your Community. Your Space.</span></div><nav class="footer-links" aria-label="Footer navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/profile">Profile</a></nav><div class="footer-copy">VYBE campus platform</div></div></footer>{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
@@ -1851,7 +1920,7 @@ function setMenu(open){{
   menu.classList.toggle("open",isOpen);
   if(toggle){{
     toggle.setAttribute("aria-expanded",isOpen?"true":"false");
-    toggle.textContent=isOpen?"":"☰";
+    toggle.textContent=isOpen?"Close":"Menu";
   }}
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
@@ -1859,6 +1928,36 @@ function setMenu(open){{
     if(icon) icon.classList.toggle("is-open",isOpen);
   }}
 }}
+
+
+/* Live search suggestions: no external service, no fake data, just helpful UI prompts. */
+(function(){{
+  const fields=document.querySelectorAll('.student-search input, .academic-search input, input[name="q"]');
+  const suggestions=[
+    'Search notes, papers, subjects...',
+    'Search announcements and events...',
+    'Search timetable and campus help...',
+    'Search study material and PDFs...',
+    'Search your VYBE campus...'
+  ];
+  fields.forEach(function(input){{
+    if(input.dataset.vybeSuggestReady==='1') return;
+    input.dataset.vybeSuggestReady='1';
+    let i=0, timer=null, focused=false;
+    function rotate(){{
+      if(focused || input.value) return;
+      input.style.opacity='0.35';
+      setTimeout(function(){{
+        if(!focused && !input.value){{ input.placeholder=suggestions[i%suggestions.length]; i++; }}
+        input.style.opacity='1';
+      }},180);
+    }}
+    input.placeholder=input.placeholder||suggestions[0];
+    timer=setInterval(rotate,2600);
+    input.addEventListener('focus',function(){{focused=true;input.style.opacity='1'}});
+    input.addEventListener('blur',function(){{focused=false}});
+  }});
+}})();
 
 const notificationBell=document.getElementById("vybeNotificationBell");
 const notificationBadge=document.getElementById("vybeNotificationBadge");
@@ -1993,6 +2092,24 @@ document.querySelectorAll(".password-error input").forEach(function(el){{
     if(wrap)wrap.classList.remove("password-error");
   }});
 }});
+
+const assistantFab=document.getElementById("vybeAssistantFab");
+const assistantPanel=document.getElementById("vybeAssistantPanel");
+const assistantClose=document.getElementById("vybeAssistantClose");
+function setAssistant(open){{
+  if(!assistantPanel)return;
+  assistantPanel.classList.toggle("open",!!open);
+  if(assistantFab)assistantFab.setAttribute("aria-expanded",open?"true":"false");
+  if(open){{
+    const input=assistantPanel.querySelector('input[name="question"]');
+    if(input)setTimeout(function(){{input.focus();}},120);
+  }}
+}}
+if(assistantFab)assistantFab.addEventListener("click",function(e){{e.preventDefault();e.stopPropagation();setAssistant(!assistantPanel.classList.contains("open"));}});
+if(assistantClose)assistantClose.addEventListener("click",function(e){{e.preventDefault();setAssistant(false);}});
+if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPropagation();}});
+document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
+document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();</script></script></body></html>'''
 
 
@@ -3130,9 +3247,9 @@ def profile():
     initials="".join(x[0] for x in st["name"].split()[:2]).upper() or "V"
     accepted_html="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted" style="white-space:pre-wrap">{esc(x["solution_text"])}</p><p class="small">Accepted from {esc(x["solver_name"])} · {esc(x["accepted_at"])}</p></div>' for x in accepted)
     card_label=esc(st["admit_card_original_name"]) if st["admit_card_original_name"] else "No admit card uploaded yet."
-    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(st["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip" id="points">P {st["reputation_points"]} VYBE points</span><span class="stat-chip" id="helpful"> {st["helpful_answers"]} helpful answers</span><span class="stat-chip"> {st["accepted_solutions"]} accepted solutions</span></div></div></section>
+    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(st["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip">{st["helpful_answers"]} helpful answers</span><span class="stat-chip">{st["accepted_solutions"]} accepted solutions</span></div></div></section>
 <section class="section grid2"><div class="card"><h2>About you.</h2><form class="form" method="post"><input type="hidden" name="action" value="profile"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(st["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(st["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form></div><div class="card"><h2> Password</h2><p class="muted">Change your student password from your profile area.</p><a class="btn dark" href="/account/password">Open password settings →</a></div></section>
-<section class="section"><div class="card"><h2> Admit card</h2><p class="muted">Optional and private. Upload your admit card in any file format up to 15 MB.</p><p class="small">Current file: <strong>{card_label}</strong></p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="admit_card"><input type="file" name="admit_card" required><button class="btn accent">Save admit card →</button></form></div></section>
+<section class="section" id="admit-card"><div class="card"><h2> Admit card</h2><p class="muted">Optional and private. Upload your admit card in any file format up to 15 MB.</p><p class="small">Current file: <strong>{card_label}</strong></p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="admit_card"><input type="file" name="admit_card" required><button class="btn accent">Save admit card →</button></form></div></section>
 <section class="section"><div class="card"><h2> Accepted solutions</h2><p class="muted">Solutions you personally accepted stay here even after their community chat is removed.</p><div class="feed-list">{accepted_html or '<div class="empty">No accepted solutions yet.</div>'}</div></div></section>'''
     return layout("Profile",body)
 
@@ -3213,22 +3330,25 @@ def dashboard():
         ann_html = '<div class="home-empty">No new announcements right now.</div>'
     if not event_html:
         event_html = '<div class="home-empty">No upcoming events right now.</div>'
-    body = f'''<section class="student-home clean-home">
-<div class="student-home-head clean-home-head"><div class="student-space-pill">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p>Your campus, academics and community in one place.</p></div>
-<div class="home-section-label">ACADEMIC ACCESS</div>
-<div class="home-action-grid">
-<a class="home-action home-action-primary" href="/academics"><span class="home-action-icon">A</span><span><strong>Academic Hub</strong><small>Notes, study material, SLM PDFs and previous papers.</small></span><b>›</b></a>
-<a class="home-action" href="/updates"><span class="home-action-icon">U</span><span><strong>Academic Updates</strong><small>Results, date sheets, admit cards and exam forms.</small></span><b>›</b></a>
-<a class="home-action" href="/apps"><span class="home-action-icon">SG</span><span><strong>Study Apps</strong><small>SGPA calculator and academic shortcuts.</small></span><b>›</b></a>
-<a class="home-action" href="/timetable"><span class="home-action-icon">T</span><span><strong>Timetable</strong><small>Open the latest timetable and class information.</small></span><b>›</b></a>
-<a class="home-action" href="/assistant"><span class="home-action-icon">AI</span><span><strong>VYBE AI</strong><small>Ask about your campus, resources and timetable.</small></span><b>›</b></a>
-<a class="home-action" href="/community"><span class="home-action-icon">C</span><span><strong>Community</strong><small>Chat, ask questions and help other students.</small></span><b>›</b></a>
-<a class="home-action" href="/issues"><span class="home-action-icon">HD</span><span><strong>Campus Help Desk</strong><small>Report campus problems and follow their status.</small></span><b>›</b></a>
-<a class="home-action" href="/announcements"><span class="home-action-icon">N</span><span><strong>Announcements</strong><small>Important notices and targeted campus updates.</small></span><b>›</b></a>
-<a class="home-action" href="/events"><span class="home-action-icon">E</span><span><strong>Events</strong><small>Upcoming campus activities and schedules.</small></span><b>›</b></a>
+    body = f'''<section class="student-home clean-home live-home">
+<div class="home-live-hero">
+  <div class="home-live-glow home-live-glow-one"></div><div class="home-live-glow home-live-glow-two"></div>
+  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(s["name"])}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/academics">Open Academic Hub</a></div></div>
+  <div class="home-live-orbit"><span class="orbit-dot orbit-dot-a"></span><span class="orbit-dot orbit-dot-b"></span><div class="orbit-core">V</div></div>
 </div>
-<div class="home-updates-head"><div><div class="home-section-label">LATEST CAMPUS INFORMATION</div><p>Recent announcements and upcoming events.</p></div></div>
-<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all ›</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all ›</a></div>{event_html}</div></div>
+<div class="home-section-label">QUICK ACCESS</div>
+<div class="home-action-grid live-home-grid">
+<a class="home-action home-action-primary" href="/academics"><span class="home-action-icon">A</span><span><strong>Academic Hub</strong><small>Notes, study material, SLM PDFs and previous papers.</small></span><b>Open</b></a>
+<a class="home-action" href="/updates"><span class="home-action-icon">U</span><span><strong>Academic Updates</strong><small>Results, date sheets, admit cards and exam forms.</small></span><b>Open</b></a>
+<a class="home-action" href="/timetable"><span class="home-action-icon">T</span><span><strong>Timetable</strong><small>Your latest class schedule and timetable.</small></span><b>Open</b></a>
+
+<a class="home-action" href="/community"><span class="home-action-icon">C</span><span><strong>Community</strong><small>Talk, ask questions and help other students.</small></span><b>Open</b></a>
+<a class="home-action" href="/issues"><span class="home-action-icon">HD</span><span><strong>Help Desk</strong><small>Report campus problems and follow their status.</small></span><b>Open</b></a>
+<a class="home-action" href="/announcements"><span class="home-action-icon">N</span><span><strong>Announcements</strong><small>Important notices and campus updates.</small></span><b>View</b></a>
+<a class="home-action" href="/events"><span class="home-action-icon">E</span><span><strong>Events</strong><small>Upcoming campus activities and schedules.</small></span><b>View</b></a>
+</div>
+<div class="home-updates-head"><div><div class="home-section-label">WHAT'S HAPPENING</div><p>Live campus information from VYBE.</p></div><div class="home-live-status"><span></span> VYBE LIVE</div></div>
+<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all</a></div>{event_html}</div></div>
 </section>'''
     return layout("Dashboard", body)
 
