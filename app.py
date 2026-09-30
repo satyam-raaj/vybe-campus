@@ -4618,6 +4618,83 @@ def academics():
 .academic-hub-page .academic-resource-unavailable{opacity:.78!important}
 @media(max-width:1100px){.academic-hub-page .academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-hub-page .academic-filter-form{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-hub-page .academic-filter-form input{grid-column:1/-1}.academic-hub-page .academic-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:720px){.academic-hub-page{padding:12px 12px 35px!important}.academic-hub-page .academic-hero{padding:24px 18px!important;border-radius:20px!important}.academic-hub-page .academic-hero h1{font-size:36px!important}.academic-hub-page .academic-search{grid-template-columns:1fr!important}.academic-hub-page .academic-search button{width:100%!important}.academic-hub-page .academic-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.academic-hub-page .academic-quick{min-height:96px!important}.academic-hub-page .academic-tool-grid,.academic-hub-page .academic-resource-grid{grid-template-columns:1fr!important}.academic-hub-page .academic-filter-form{grid-template-columns:1fr!important}.academic-hub-page .academic-filter-form input{grid-column:auto}.academic-hub-page .academic-filter-form button,.academic-hub-page .academic-reset{width:100%!important}.academic-hub-page .academic-section-heading{align-items:flex-start!important}.academic-hub-page .academic-section-heading h2{font-size:24px!important}.academic-hub-page .academic-outline{min-height:34px!important}}
+</style>""" + r"""<style>
+/* Final desktop alignment pass — scoped only to Academic Hub */
+.academic-hub-page{
+  width:min(calc(100% - 48px),1180px)!important;
+  max-width:1180px!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+  padding:0 0 52px!important;
+  box-sizing:border-box!important;
+}
+.academic-hub-page > .academic-hero{
+  width:100%!important;
+  max-width:none!important;
+  margin:0 0 26px!important;
+  padding:42px 42px 30px!important;
+  text-align:center!important;
+  box-sizing:border-box!important;
+}
+.academic-hub-page > .academic-hero .academic-kicker{
+  display:block!important;
+  text-align:center!important;
+}
+.academic-hub-page > .academic-hero h1{
+  max-width:900px!important;
+  margin:12px auto 12px!important;
+  text-align:center!important;
+}
+.academic-hub-page > .academic-hero .academic-lead{
+  max-width:780px!important;
+  margin:0 auto!important;
+  text-align:center!important;
+}
+.academic-hub-page > .academic-hero .academic-search{
+  width:100%!important;
+  max-width:860px!important;
+  margin:28px auto 24px!important;
+  grid-template-columns:minmax(0,1fr) 150px!important;
+  align-items:center!important;
+}
+.academic-hub-page > .academic-hero .academic-search input,
+.academic-hub-page > .academic-hero .academic-search button{
+  width:100%!important;
+  min-width:0!important;
+}
+.academic-hub-page > .academic-hero .academic-quick-grid{
+  width:100%!important;
+  max-width:none!important;
+  margin:0 auto!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:14px!important;
+  text-align:left!important;
+}
+.academic-hub-page > .academic-hero .academic-quick{
+  min-height:118px!important;
+  padding:16px!important;
+  justify-content:center!important;
+}
+.academic-hub-page > .academic-hero .academic-quick strong{font-size:14px!important}
+.academic-hub-page > .academic-hero .academic-quick small{font-size:11px!important}
+.academic-hub-page > .academic-tools-section{
+  width:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+}
+@media(max-width:1100px){
+  .academic-hub-page{width:min(calc(100% - 32px),100%)!important}
+  .academic-hub-page > .academic-hero .academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}
+@media(max-width:720px){
+  .academic-hub-page{width:calc(100% - 24px)!important;padding:0 0 35px!important}
+  .academic-hub-page > .academic-hero{padding:28px 18px 22px!important;margin-bottom:20px!important}
+  .academic-hub-page > .academic-hero h1{font-size:36px!important}
+  .academic-hub-page > .academic-hero .academic-search{grid-template-columns:1fr!important;margin:22px auto 20px!important}
+  .academic-hub-page > .academic-hero .academic-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+  .academic-hub-page > .academic-hero .academic-quick{min-height:100px!important}
+}
 </style>""" + body
     return layout("Academic Hub", body)
 
