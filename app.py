@@ -2164,78 +2164,133 @@ main,.main,.wrap{position:relative}
 @media(min-width:851px){#vybeMobileNav.student-mobile-menu{left:auto!important;right:18px!important;width:260px!important}}
 
 
-/* ===== FINAL PHONE LAYOUT POLISH ===== */
+/* ===== ONE MOBILE VYBE LAYOUT ===== */
 @media(max-width:850px){
   html,body{width:100%;max-width:100%;overflow-x:hidden!important}
-  .nav{width:100%!important;position:relative!important;z-index:5000!important}
-  .navin.student-nav-compact{
-    width:100%!important;box-sizing:border-box!important;
-    min-height:54px!important;padding:7px 12px!important;
-    display:flex!important;align-items:center!important;gap:8px!important;
-  }
-  .student-brand-compact{display:flex!important;align-items:center!important;min-width:0!important;flex:1 1 auto!important;gap:8px!important;overflow:hidden!important}
-  .student-brand-compact .brandmark{width:36px!important;height:36px!important;flex:0 0 36px!important;border-radius:11px!important}
-  .student-brand-compact .brandtext{font-size:18px!important;white-space:nowrap!important}
-  /* Phone header: logo + Updates only. Menu lives exclusively in the bottom bar. */
-  .student-header-tools{margin-left:auto!important;flex:0 0 auto!important;gap:0!important}
-  .student-header-tools .student-menu{display:none!important}
-  .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:35px!important;padding:0 11px!important;border-radius:9px!important;background:#172033!important;color:#fff!important;border:0!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
-  .student-header-back{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;padding:7px 8px!important;margin-right:1px!important;border-radius:9px!important;font-size:12px!important}
-  /* Keep the search directly below the header and make it full-width on every page. */
-  .student-control-row{width:100%!important;box-sizing:border-box!important;padding:6px 12px 9px!important;display:flex!important;justify-content:center!important;background:#fff!important}
-  .student-control-row .student-search{width:100%!important;max-width:none!important;margin:0!important}
-  .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;border-radius:11px!important;font-size:13px!important}
-  .vybe-search-suggestions{left:0!important;right:0!important;top:calc(100% + 6px)!important;max-height:52vh!important;overflow:auto!important;border-radius:12px!important}
-  .vybe-search-suggestion{min-height:42px!important;padding:10px 11px!important;font-size:12px!important}
-  .vybe-search-suggestion span:last-child{font-size:10px!important}
+  body{padding-bottom:0!important}
 
-  /* One clean bottom navigation: Menu / Home / Profile. */
-  .student-bottom-nav{
-    position:fixed!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;
-    width:100%!important;max-width:none!important;height:68px!important;box-sizing:border-box!important;
-    display:flex!important;align-items:center!important;justify-content:stretch!important;
-    padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
-    gap:7px!important;background:rgba(255,255,255,.98)!important;
-    border-top:1px solid #dfe7df!important;box-shadow:0 -10px 28px rgba(31,48,66,.10)!important;
-    z-index:9000!important;overflow:visible!important;
+  /* Student phone shell */
+  .nav:has(.student-nav-compact){
+    position:fixed!important;top:0!important;left:0!important;right:0!important;
+    width:100%!important;height:112px!important;margin:0!important;padding:0!important;
+    z-index:10000!important;background:#fff!important;border-bottom:1px solid #dfe4e8!important;
+    box-shadow:0 3px 14px rgba(20,32,44,.10)!important;
   }
-  .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{
-    flex:1 1 0!important;width:0!important;min-width:0!important;height:48px!important;
-    margin:0!important;padding:0 5px!important;box-sizing:border-box!important;
-    display:flex!important;align-items:center!important;justify-content:center!important;
-    border-radius:12px!important;font-size:12px!important;font-weight:800!important;
+  .nav:has(.student-nav-compact) .student-nav-compact{
+    height:54px!important;min-height:54px!important;width:100%!important;
+    padding:7px 10px!important;display:flex!important;align-items:center!important;
+    gap:6px!important;box-sizing:border-box!important;
   }
-  .student-bottom-nav a{color:#5d6874!important;background:transparent!important;border:0!important;text-decoration:none!important}
-  .student-bottom-nav a.active{background:#eef6e8!important;color:#4e7f25!important}
-  .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border:1px solid #172033!important;box-shadow:0 6px 16px rgba(23,32,51,.16)!important;visibility:visible!important;opacity:1!important}
-  .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{display:block!important;color:#fff!important;font-size:12px!important;font-weight:850!important}
-  .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{display:none!important}
-  .student-bottom-spacer{display:block!important;height:78px!important}
+  .student-nav-compact .student-header-back{
+    display:inline-flex!important;flex:0 0 auto!important;align-items:center!important;
+    justify-content:center!important;height:32px!important;padding:0 8px!important;
+    border:1px solid #cfd8df!important;border-radius:8px!important;background:#fff!important;
+    color:#263542!important;font-size:11px!important;font-weight:800!important;
+    text-decoration:none!important;
+  }
+  .student-nav-compact .student-brand-compact{
+    display:flex!important;align-items:center!important;gap:6px!important;
+    flex:0 0 auto!important;min-width:0!important;
+  }
+  .student-nav-compact .student-brand-compact .brandmark{width:28px!important;height:28px!important;margin:0!important}
+  .student-nav-compact .student-brand-compact .brandtext{font-size:16px!important;white-space:nowrap!important}
+  .student-nav-compact .student-desktop-links{display:none!important}
+  .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;margin-left:auto!important;flex:0 0 auto!important}
+  .student-nav-compact .student-menu{display:none!important}
+  .student-nav-compact .student-header-updates{
+    display:inline-flex!important;align-items:center!important;justify-content:center!important;
+    height:32px!important;padding:0 10px!important;border:1px solid #cfd8df!important;
+    border-radius:8px!important;background:#fff!important;color:#263542!important;
+    font-size:11px!important;font-weight:800!important;white-space:nowrap!important;box-shadow:none!important;
+  }
+  .nav:has(.student-nav-compact) .student-control-row{
+    display:block!important;width:100%!important;height:58px!important;
+    padding:7px 10px 9px!important;box-sizing:border-box!important;background:#fff!important;
+  }
+  .student-control-row .student-search{display:block!important;position:relative!important;width:100%!important;height:42px!important;margin:0!important}
+  .student-search input{
+    display:block!important;width:100%!important;height:42px!important;padding:0 13px!important;
+    box-sizing:border-box!important;border:1px solid #cfd8df!important;border-radius:10px!important;
+    background:#f7fafc!important;color:#1d2a35!important;font-size:13px!important;outline:none!important;
+  }
+  .student-search input:focus{background:#fff!important;border-color:#6a8294!important;box-shadow:0 0 0 3px rgba(73,103,126,.10)!important}
 
-  /* Phone drawer: left side, clearly separated from the page, under half the screen. */
+  /* Direct search destinations. Visible on focus, click and typing. */
+  .student-search .mobile-direct-suggestions{
+    display:none!important;position:absolute!important;left:0!important;right:0!important;top:46px!important;
+    z-index:40000!important;padding:5px!important;background:#fff!important;
+    border:1px solid #d4dce2!important;border-radius:10px!important;
+    box-shadow:0 14px 30px rgba(20,32,44,.16)!important;
+  }
+  .student-search:focus-within .mobile-direct-suggestions,
+  .student-search .mobile-direct-suggestions.open{display:block!important}
+  .mobile-direct-suggestions .vybe-search-suggestion{
+    display:flex!important;align-items:center!important;justify-content:space-between!important;
+    min-height:40px!important;padding:8px 9px!important;border-radius:7px!important;
+    background:#fff!important;color:#263542!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important;
+  }
+  .mobile-direct-suggestions .vybe-search-suggestion span:last-child{font-size:9px!important;color:#84909a!important}
+  .mobile-direct-suggestions .vybe-search-suggestion:hover{background:#f1f5f7!important}
+
+  /* Exactly one mobile menu, opened from the left. */
   #vybeMobileNav.student-mobile-menu{
-    display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:60px!important;
-    width:44vw!important;max-width:220px!important;min-width:170px!important;
-    max-height:calc(100vh - 82px)!important;overflow:auto!important;
-    padding:8px!important;box-sizing:border-box!important;z-index:10000!important;
-    border-radius:14px!important;background:rgba(255,255,255,.99)!important;
-    border:1px solid #dfe7df!important;box-shadow:0 18px 45px rgba(31,48,66,.18)!important;
+    position:fixed!important;display:none!important;top:60px!important;left:8px!important;right:auto!important;
+    width:210px!important;max-width:calc(100vw - 32px)!important;min-width:0!important;
+    max-height:calc(100vh - 135px)!important;overflow-y:auto!important;z-index:30000!important;
+    padding:7px!important;box-sizing:border-box!important;background:#fff!important;
+    border:1px solid #d5dde2!important;border-radius:11px!important;box-shadow:0 16px 38px rgba(20,32,44,.20)!important;
   }
-  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:4px!important}
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:2px!important}
   #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:5px 6px 8px!important;border-bottom:1px solid #edf0ec!important}
   #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:27px!important;height:27px!important;border:1px solid #dce5dc!important;border-radius:8px!important;background:#f4f7f3!important;color:#172033!important}
-  #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{min-height:36px!important;padding:8px 9px!important;border-radius:9px!important;background:#fff!important;border:0!important;color:#26323e!important;font-size:11px!important;font-weight:750!important;line-height:1.2!important;text-decoration:none!important}
-  #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#f1f7eb!important;color:#4e7f25!important}
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:flex!important;flex-direction:column!important;gap:4px!important}
-  #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:27px!important;height:27px!important;border:1px solid #d5dde2!important;border-radius:8px!important;background:#fff!important;color:#263542!important}
+  #vybeMobileNav.student-mobile-menu > a{display:flex!important;align-items:center!important;min-height:36px!important;padding:7px 9px!important;background:#fff!important;border:0!important;border-radius:7px!important;color:#263542!important;font-size:11px!important;font-weight:750!important;text-decoration:none!important}
+  #vybeMobileNav.student-mobile-menu > a:hover{background:#f1f5f7!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
 
-  /* Prevent wide cards/tables/forms from breaking the phone viewport. */
-  .wrap,.page-shell,.clean-home,.academic-hero,.academic-detail,.community-chat-page-section,.community-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important}
-  .wrap{padding-left:12px!important;padding-right:12px!important}
-  img,video,iframe,table{max-width:100%!important}
-  .card,.panel,.academic-detail,.academic-update-card,.academic-resource-card,.home-update-panel{box-sizing:border-box!important;max-width:100%!important}
+  /* Exactly three equal bottom controls. */
+  .student-bottom-nav{
+    position:fixed!important;left:0!important;right:0!important;bottom:0!important;
+    width:100%!important;height:64px!important;min-height:64px!important;
+    display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;
+    margin:0!important;padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;
+    box-sizing:border-box!important;background:#fff!important;border-top:1px solid #dfe4e8!important;
+    box-shadow:0 -4px 16px rgba(20,32,44,.10)!important;z-index:10000!important;
+  }
+  .student-bottom-nav > *{
+    width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    box-sizing:border-box!important;border:1px solid #d5dde2!important;border-radius:8px!important;
+    background:#fff!important;color:#4b5b67!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;
+  }
+  .student-bottom-nav .mobile-home-nav.active{background:#eef3f6!important;color:#263542!important;border-color:#cbd6dd!important}
+  .student-bottom-nav button.mobile-menu-nav{background:#fff!important;color:#263542!important;border-color:#cbd6dd!important;box-shadow:none!important}
+  .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important}
+  .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-spacer{display:block!important;height:70px!important}
+
+  /* All pages: no horizontal overflow and comfortable phone forms/cards. */
+  .wrap,.page-shell,.auth,.authbox,.card,.hero,.section,.grid,.grid2,.two,.academic-grid,.academic-resource-grid,.academic-app-grid,.updates-grid,.events-grid,.community-grid{max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
+  .wrap{width:100%!important;padding-left:12px!important;padding-right:12px!important}
+  .auth{width:100%!important;min-height:calc(100dvh - 20px)!important;padding:20px 0 24px!important;display:flex!important;align-items:flex-start!important;justify-content:center!important}
+  .authbox{width:100%!important;margin:0!important;padding:20px 16px!important;border-radius:18px!important}
+  .authbox h1{font-size:28px!important;line-height:1.1!important;word-break:break-word!important}
+  .form,.form input,.form select,.form textarea,.password-wrap{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important}
+  .actions{width:100%!important;display:flex!important;flex-direction:column!important;gap:8px!important}
+  .actions .btn,.form>.btn{width:100%!important;min-height:44px!important}
+  img,video,iframe,svg{max-width:100%!important;height:auto!important}
+  table{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
   input,select,textarea,button{max-width:100%!important;box-sizing:border-box!important}
+
+  /* Student content starts below the fixed header and ends above the fixed bottom bar. */
+  body:has(.student-nav-compact){padding-top:112px!important;padding-bottom:70px!important}
+  body:has(.student-nav-compact) .vybe-footer,body:has(.student-nav-compact) .footer{display:none!important}
+  body:has(.student-nav-compact) .vybe-assistant-fab{bottom:76px!important}
+  body:has(.student-nav-compact) .vybe-assistant-panel{bottom:130px!important}
+
+  /* Generic public/auth pages remain simple and fully usable on phone. */
+  body:not(:has(.student-nav-compact)) .navin{padding:10px 12px!important;min-height:48px!important;gap:8px!important}
+  body:not(:has(.student-nav-compact)) .navlinks{display:none!important}
 }
 
 
