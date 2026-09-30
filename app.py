@@ -2164,8 +2164,8 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
-<div class="student-control-row"><form class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
+<div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
+        bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -2176,7 +2176,70 @@ def layout(title, body, admin=False):
     assistant_widget = ""
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}
+    mobile_runtime_css = r'''
+/* ===== SINGLE MOBILE STUDENT SHELL ===== */
+@media (max-width:850px){
+  #vybeStudentBottomNav{
+    position:fixed!important;left:0!important;right:0!important;bottom:0!important;
+    width:100vw!important;height:68px!important;min-height:68px!important;
+    display:grid!important;grid-template-columns:repeat(3,1fr)!important;
+    gap:6px!important;margin:0!important;padding:6px 10px!important;
+    padding-bottom:calc(6px + env(safe-area-inset-bottom))!important;
+    box-sizing:border-box!important;background:#172033!important;
+    border-top:1px solid #2d3b4d!important;box-shadow:0 -8px 24px rgba(0,0,0,.20)!important;
+    z-index:2147483000!important;transform:none!important;
+  }
+  #vybeStudentBottomNav > #vybeBottomMenuButton,
+  #vybeStudentBottomNav > .mobile-home-nav,
+  #vybeStudentBottomNav > .mobile-profile-nav{
+    width:100%!important;min-width:0!important;height:50px!important;
+    margin:0!important;padding:0!important;box-sizing:border-box!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    border:1px solid #435166!important;border-radius:10px!important;
+    background:#263246!important;color:#fff!important;
+    text-decoration:none!important;font-size:13px!important;font-weight:800!important;
+    line-height:1!important;visibility:visible!important;opacity:1!important;
+    position:relative!important;left:auto!important;right:auto!important;top:auto!important;
+    transform:none!important;order:initial!important;
+  }
+  #vybeStudentBottomNav > #vybeBottomMenuButton{background:#101827!important;border-color:#536176!important;cursor:pointer!important}
+  #vybeStudentBottomNav > .mobile-home-nav.active{background:#33445a!important;border-color:#64758a!important}
+  #vybeStudentBottomNav > .mobile-profile-nav{background:#263246!important}
+  #vybeStudentBottomNav .mobile-menu-label{display:block!important;color:#fff!important;font-size:13px!important;font-weight:800!important}
+  #vybeStudentBottomNav .mobile-menu-icon-lines{display:none!important}
+  #vybeStudentBottomNav + .student-bottom-spacer{display:block!important;height:76px!important}
+
+  #vybeStudentSearchForm{
+    position:relative!important;display:block!important;width:100%!important;
+    max-width:none!important;margin:0!important;overflow:visible!important;
+    z-index:2147482000!important;
+  }
+  #vybeStudentSearchForm input{width:100%!important;box-sizing:border-box!important}
+  #vybeStudentSearchSuggestions{
+    position:absolute!important;left:0!important;right:0!important;top:calc(100% + 6px)!important;
+    display:none!important;z-index:2147483640!important;
+    background:#fff!important;color:#263542!important;
+    border:1px solid #cbd6df!important;border-radius:12px!important;padding:6px!important;
+    box-shadow:0 18px 40px rgba(15,30,45,.25)!important;box-sizing:border-box!important;
+  }
+  #vybeStudentSearchForm:focus-within #vybeStudentSearchSuggestions,
+  #vybeStudentSearchSuggestions.open{display:block!important}
+  #vybeStudentSearchSuggestions .vybe-search-suggestion{
+    display:flex!important;width:100%!important;min-height:42px!important;
+    align-items:center!important;justify-content:space-between!important;
+    box-sizing:border-box!important;padding:9px 11px!important;margin:0!important;
+    background:#fff!important;color:#263542!important;border:0!important;border-radius:8px!important;
+    text-decoration:none!important;font-size:12px!important;font-weight:800!important;
+  }
+  #vybeStudentSearchSuggestions .vybe-search-suggestion:hover,
+  #vybeStudentSearchSuggestions .vybe-search-suggestion:focus{background:#eef4f8!important;color:#1f5f8e!important}
+
+  .nav:has(.student-nav-compact){z-index:2147482000!important;overflow:visible!important}
+  .nav:has(.student-nav-compact) .student-control-row{position:relative!important;z-index:2147482001!important;overflow:visible!important}
+  body{padding-bottom:84px!important;overflow-x:hidden!important}
+}
+'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}{mobile_runtime_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
