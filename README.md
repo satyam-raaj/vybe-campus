@@ -1,46 +1,23 @@
-# VYBE 2.0 build
+# VYBE final academic-portal build
 
-This package is based on the existing VYBE Flask application and adds the VYBE 2.0 foundation.
+This package replaces the old VYBE application files with one `app.py` plus the deployment files required by Render.
 
-## Included
+## What changed
 
-- Student experience foundation
-- Faculty accounts and faculty portal
-- Faculty resource uploads
-- University Help Desk and admin ticket management
-- Campus Clubs and membership
-- Campus calendar using existing Events
-- Emergency campus alerts
-- Account security/session foundation
-- University and department schema foundation for future multi-university isolation
-- Privacy Policy and Terms & Conditions draft pages
-- Custom VYBE favicon
-- Production launch gate
-- Restrained dark blue/black UI with no purple gradients, fake metrics, fake reviews, emoji iconography, cursor animations, or pill-shaped buttons
-- No external college website ingestion option in the new product surface
+- VYBE keeps its existing student, community, campus, timetable, announcements, events, profile, admin, password reset, passkey, resources and VYBE AI functionality.
+- Academic Hub is integrated into the student experience.
+- Academic resources follow the supplied reference-site structure: Study Notes, Study Materials, SLM/PDF resources, Previous Year Papers, Results, Date Sheets, Admit Cards, Exam Forms, Online Classes, Recorded Lectures, E-Books, Academic Portals, Academic Search and Updates.
+- Student dashboard is reorganized around academic access plus VYBE's unique AI, Community, Campus Help Desk, Timetable, Announcements and Events features.
+- UI uses a clean white/black/green/blue/grey system inspired by the supplied screenshots.
+- Emoji-style navigation glyphs were removed.
+- A SQLite migration bug that could execute PostgreSQL-style `BYTEA` syntax on SQLite was removed.
+- PostgreSQL startup migration for legacy admin login-log `success` types was made safer.
+- The source compiles and the SQLite database initializer was run twice successfully to verify idempotent startup schema creation.
 
-## Launch lock
+## Render
 
-`VYBE_LAUNCH_READY=0` is intentional. Do not set it to `1` until:
+Use `app.py` as the application entry point. The included `render.yaml` uses Gunicorn.
 
-1. The final custom domain is connected and HTTPS is working.
-2. The favicon is visible on that domain.
-3. Any platform-generated "made with AI" branding is removed.
-4. The Privacy Policy and Terms & Conditions have been reviewed and finalized by the deploying institution.
-5. All major routes, permissions, uploads, authentication and mobile layouts have been tested.
-6. Production secrets and database backups are configured.
-7. A final smoke test is completed.
+Keep your existing Render environment variables, especially `DATABASE_URL` and `VYBE_SECRET_KEY`.
 
-## Run locally
-
-```bash
-python -m pip install -r requirements.txt
-set VYBE_LAUNCH_READY=0
-python vybe_app.py
-```
-
-For a production deployment, configure the environment variables from `.env.example` in the hosting provider.
-
-## Important
-
-The custom domain cannot be registered or connected by this source package itself. That is a DNS/hosting step. The launch gate is intentionally kept closed until that external step is completed.
+The code was statically checked in this environment. A live Render deployment cannot be executed from this environment, so after pushing, check the Render deploy log once.
