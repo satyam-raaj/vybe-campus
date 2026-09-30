@@ -929,9 +929,248 @@ def global_online_gate():
 
 
 def _safe_500_page():
-    # Keep the error response independent of VYBE layout/CSS/DB code.
-    return """<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>VYBE Error</title><style>body{margin:0;background:#f6f9fb;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:28px;border:1px solid #dce4e9;border-radius:18px;background:#fff;box-shadow:0 18px 50px rgba(20,32,44,.10)}.muted{color:#647480;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:9px;background:#172033;color:#fff;text-decoration:none;font-weight:700}</style></head><body><div class=\"box\"><div>VYBE</div><h1>Something went wrong.</h1><p class=\"muted\">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class=\"btn\" href=\"javascript:history.back()\">Go back</a></div></body></html>"""
+    # Keep the 500 response independent of the database/layout system so the
+    # error handler itself can never cause a second exception.
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}
+/* VYBE: mobile student navigation — sketch-style left menu */
+.student-header-tools .student-menu{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;}
+@media (min-width:851px){
+  .student-header-tools .student-menu{display:grid!important;}
+}
+@media (max-width:850px){
+  .student-header-tools{display:none!important}
+  .student-menu{display:none!important}
 
+  .student-bottom-nav{
+    position:fixed!important;left:0!important;right:0!important;bottom:0!important;
+    height:68px!important;display:flex!important;align-items:center!important;
+    justify-content:space-around!important;z-index:220!important;padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
+    background:rgba(2,8,14,.98)!important;
+    border-top:1px solid rgba(58,126,175,.28)!important;
+    backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;
+    box-shadow:0 -12px 35px rgba(0,0,0,.38)!important;
+  }
+  .student-bottom-nav a,
+  .student-bottom-nav button.mobile-menu-nav{
+    flex:1!important;min-width:0!important;display:flex!important;flex-direction:column!important;
+    align-items:center!important;justify-content:center!important;gap:2px!important;
+    text-decoration:none!important;max-width:120px!important;color:#91a9c0!important;
+    font-size:11px!important;
+  }
+  .student-bottom-nav a span,
+  .student-bottom-nav button.mobile-menu-nav span{
+    font-size:23px!important;line-height:1!important;
+  }
+  .student-bottom-nav button.mobile-menu-nav{
+    border:0!important;background:transparent!important;color:#91a9c0!important;
+    font:inherit!important;cursor:pointer!important;padding:0!important;
+  }\n  /* Mobile-only Menu icon: use the exact same hamburger glyph treatment as desktop. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:auto!important;height:auto!important;display:block!important;\n    border:0!important;border-radius:0!important;background:transparent!important;\n    box-shadow:none!important;\n    font-family:Arial,Helvetica,sans-serif!important;\n    font-size:24px!important;line-height:1!important;letter-spacing:normal!important;\n    font-weight:400!important;color:#e5f4ff!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:transparent!important;border:0!important;color:#22aef2!important;\n  }\n  .student-bottom-nav a.active,
+  .student-bottom-nav a:active,
+  .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
+  .student-bottom-nav .mobile-menu-nav{order:1}
+  .student-bottom-nav .mobile-home-nav{order:2}
+  .student-bottom-nav .mobile-profile-nav{order:3}
+  .student-bottom-nav .mobile-back-nav{order:4}
+  .student-bottom-spacer{height:82px!important}
+
+  /* The drawer is a narrow vertical menu attached directly to the left edge,
+     matching the user's hand-drawn mobile layout. */
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
+    display:flex!important;flex-direction:column!important;
+    position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
+    width:min(48vw,180px)!important;min-width:0!important;
+    z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
+    border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
+    border-radius:0!important;
+    background:rgba(2,9,17,.30)!important;
+    box-shadow:12px 0 35px rgba(0,0,0,.42)!important;
+    backdrop-filter:blur(25px)!important;-webkit-backdrop-filter:blur(25px)!important;
+    overflow-y:auto!important;
+  }
+
+  /* Hide the title/close row — the bottom Menu button is the control for this drawer. */
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:none!important}
+
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a{
+    box-sizing:border-box!important;
+    width:100%!important;min-height:72px!important;
+    display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+    gap:5px!important;padding:9px 6px!important;margin:0 0 10px!important;
+    border:1px solid rgba(75,146,195,.30)!important;
+    border-radius:12px!important;
+    background:rgba(8,25,40,.72)!important;
+    color:#d9eaf6!important;font-size:12px!important;font-weight:650!important;
+    text-align:center!important;text-decoration:none!important;
+    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
+  }
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:hover,
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:active{
+    background:rgba(22,91,139,.38)!important;
+    border-color:rgba(73,173,235,.58)!important;
+    color:#fff!important;
+  }
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{
+    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
+    font-size:21px!important;line-height:1!important;
+    color:#54b9ee!important;
+  }
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:last-child{
+    margin-top:auto!important;
+    margin-bottom:0!important;
+  }
+}
+
+
+@media (max-width:850px){
+  /* Mobile only: hide the desktop header controls. Desktop keeps Profile + Menu. */
+  .student-header-tools,
+  .student-control-row .student-menu{
+    display:none!important;
+    visibility:hidden!important;
+    width:0!important;
+    height:0!important;
+    min-width:0!important;
+    min-height:0!important;
+    margin:0!important;
+    padding:0!important;
+    pointer-events:none!important;
+  }
+}
+
+/* ===== VYBE MOBILE-ONLY NAVIGATION OVERRIDE =====
+   Desktop is intentionally untouched. */
+@media (max-width:850px){
+  /* Remove the Profile + Menu controls from the TOP of the mobile student header only. */
+  .student-header-tools .student-header-icon.profile,
+  .student-header-tools .student-menu{
+    display:none!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+  }
+
+  /* Mobile bottom bar: Menu LEFT, Home CENTER, Profile RIGHT. */
+  .student-bottom-nav{
+    display:flex!important;
+    align-items:stretch!important;
+    justify-content:stretch!important;
+    left:0!important;
+    right:0!important;
+    width:100%!important;
+    transform:none!important;
+    padding-left:8px!important;
+    padding-right:8px!important;
+  }
+  .student-bottom-nav .mobile-menu-nav{order:1!important}
+  .student-bottom-nav .mobile-home-nav{order:2!important}
+  .student-bottom-nav .mobile-profile-nav{order:3!important}
+  .student-bottom-nav .mobile-back-nav{order:4!important}
+
+  .student-bottom-nav .mobile-menu-nav,
+  .student-bottom-nav .mobile-home-nav,
+  .student-bottom-nav .mobile-profile-nav,
+  .student-bottom-nav .mobile-back-nav{
+    flex:1 1 0!important;
+    max-width:none!important;
+    min-width:0!important;
+  }
+
+  /* Left-edge menu drawer, mobile only. */
+  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
+    display:flex!important;
+    position:fixed!important;
+    left:0!important;
+    right:auto!important;
+    top:0!important;
+    bottom:68px!important;
+    width:min(48vw,180px)!important;
+    z-index:1000!important;
+  }
+}
+
+/* Desktop: no rules changed here. */
+
+/* VYBE: mobile drawer only. Desktop menu keeps the original links/layout. */
+.mobile-only-menu-links{display:none}
+@media (max-width:850px){
+  #vybeMobileNav.student-mobile-menu > a{display:none!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
+    display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    box-sizing:border-box!important;
+    width:100%!important;min-height:54px!important;
+    display:flex!important;align-items:center!important;justify-content:flex-start!important;
+    gap:12px!important;padding:11px 14px!important;margin:0!important;
+    border:1px solid rgba(75,146,195,.30)!important;
+    border-radius:14px!important;
+    background:rgba(8,25,40,.72)!important;
+    color:#d9eaf6!important;font-size:13px!important;font-weight:650!important;
+    text-decoration:none!important;
+    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+    background:rgba(22,91,139,.38)!important;
+    border-color:rgba(73,173,235,.58)!important;
+    color:#fff!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links .student-menu-icon{
+    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
+    flex:0 0 30px!important;font-size:20px!important;line-height:1!important;color:#54b9ee!important;
+  }
+}
+
+  /* ===== SIMPLE FINAL PHONE NAV: DO NOT TOUCH DESKTOP ===== */
+  @media(max-width:850px){
+    html,body{width:100%!important;overflow-x:hidden!important}
+    body{padding-top:111px!important;padding-bottom:78px!important}
+    .nav:has(.student-nav-compact){position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:9000!important;background:#fff!important;border-bottom:1px solid #dfe5df!important;box-shadow:0 3px 14px rgba(20,35,28,.08)!important}
+    .nav:has(.student-nav-compact) .student-nav-compact{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:8px!important;box-sizing:border-box!important}
+    .student-nav-compact .student-brand-compact,.student-nav-compact .student-header-back{flex:1 1 auto!important;min-width:0!important}
+    .student-nav-compact .student-brand-compact{display:flex!important;align-items:center!important;gap:7px!important;text-decoration:none!important}
+    .student-nav-compact .student-brand-compact .brandmark{width:32px!important;height:32px!important;border-radius:10px!important;font-size:17px!important}
+    .student-nav-compact .student-brand-compact .brandtext{font-size:18px!important;font-weight:850!important;color:#172033!important}
+    .student-nav-compact .student-header-back{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:7px 9px!important;border:1px solid #dce4dc!important;border-radius:9px!important;background:#f6f8f5!important;color:#172033!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
+    .student-nav-compact .student-desktop-links,.student-nav-compact .student-menu{display:none!important}
+    .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;flex:0 0 auto!important;margin-left:auto!important}
+    .student-nav-compact .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:34px!important;padding:0 11px!important;border:1px solid #cfd9e2!important;border-radius:9px!important;background:#fff!important;color:#263746!important;font-size:12px!important;font-weight:800!important;text-decoration:none!important;box-shadow:none!important}
+    .student-nav-compact .student-header-updates:hover{background:#f3f7fa!important;border-color:#b9c9d6!important;color:#1f5f8e!important}
+    .nav:has(.student-nav-compact) .student-control-row{height:57px!important;box-sizing:border-box!important;padding:6px 12px 9px!important;margin:0!important;background:#fff!important;border:0!important;display:flex!important;align-items:center!important;justify-content:center!important}
+    .student-control-row .student-search{width:100%!important;max-width:none!important;height:42px!important;margin:0!important;position:relative!important}
+    .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;padding:0 13px!important;border:1px solid #d6e0e7!important;border-radius:11px!important;background:#f8fafb!important;color:#172033!important;font-size:13px!important;outline:none!important}
+    .student-search input:focus{background:#fff!important;border-color:#78a9cf!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
+
+    /* Real, visible direct suggestions under the search field. */
+    .vybe-search-suggestions{display:none!important;position:absolute!important;left:0!important;right:0!important;top:48px!important;z-index:10001!important;background:#fff!important;border:1px solid #d9e2e8!important;border-radius:12px!important;padding:5px!important;box-shadow:0 14px 35px rgba(24,42,58,.16)!important}
+    .vybe-search-suggestions.open{display:block!important}
+    .vybe-search-suggestion{display:flex!important;align-items:center!important;justify-content:space-between!important;min-height:40px!important;padding:8px 10px!important;border-radius:8px!important;color:#253746!important;background:#fff!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important}
+    .vybe-search-suggestion:hover,.vybe-search-suggestion:focus{background:#eef5fa!important;color:#205f8d!important;outline:none!important}
+
+    /* Exactly three aligned footer controls. */
+    .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:70px!important;box-sizing:border-box!important;z-index:9000!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;align-items:center!important;gap:6px!important;padding:6px 10px calc(6px + env(safe-area-inset-bottom))!important;background:rgba(255,255,255,.98)!important;border-top:1px solid #dfe5df!important;box-shadow:0 -6px 22px rgba(20,35,28,.08)!important}
+    .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:10px!important;border:1px solid transparent!important;background:transparent!important;color:#596875!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important}
+    .student-bottom-nav a.active{background:#eef4f8!important;color:#245f88!important;border-color:#d8e5ee!important}
+    .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border-color:#172033!important;box-shadow:none!important}
+    .student-bottom-nav button.mobile-menu-nav:hover{background:#243247!important;color:#fff!important}
+    .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important;font-size:12px!important;font-weight:800!important}
+    .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+    .student-bottom-spacer{display:none!important}
+
+    /* Left drawer, no duplicate second menu. */
+    #vybeMobileNav.student-mobile-menu{display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:62px!important;width:min(44vw,205px)!important;min-width:155px!important;max-height:calc(100vh - 145px)!important;overflow:auto!important;padding:8px!important;z-index:10000!important;box-sizing:border-box!important;background:#fff!important;border:1px solid #dce5df!important;border-radius:12px!important;box-shadow:0 16px 40px rgba(24,42,58,.18)!important}
+    #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:3px!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:3px 4px 7px!important;border-bottom:1px solid #edf0ed!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:27px!important;padding:0 8px!important;border:1px solid #d9e1dc!important;border-radius:7px!important;background:#f7f9f7!important;color:#26323e!important;font-size:10px!important}
+    #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{display:flex!important;align-items:center!important;min-height:34px!important;padding:7px 8px!important;border:0!important;border-radius:8px!important;background:#fff!important;color:#26323e!important;text-decoration:none!important;font-size:10.5px!important;font-weight:700!important;line-height:1.15!important}
+    #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#eef5fa!important;color:#205f8d!important}
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
+    .vybe-assistant-fab{bottom:80px!important}
+    .vybe-assistant-panel{bottom:132px!important}
+    .footer,.vybe-footer{display:none!important}
+  }
+
+</style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(error):
@@ -1251,6 +1490,201 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
     align-items:center!important;
     gap:8px!important;
   }
+
+  /* Bottom bar: Menu | Home | Profile.
+     Back is added as a fourth item only on subpages. */
+  .student-bottom-nav{
+    display:flex!important;
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    width:100%!important;
+    height:70px!important;
+    transform:none!important;
+    z-index:5000!important;
+    box-sizing:border-box!important;
+    align-items:stretch!important;
+    justify-content:stretch!important;
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;
+    gap:4px!important;
+  }
+
+  .student-bottom-nav .mobile-menu-nav,
+  .student-bottom-nav .mobile-home-nav,
+  .student-bottom-nav .mobile-profile-nav,
+  .student-bottom-nav .mobile-back-nav{
+    order:initial!important;
+    flex:1 1 0!important;
+    width:0!important;
+    max-width:none!important;
+    min-width:0!important;
+    margin:0!important;
+  }
+  .student-bottom-nav .mobile-menu-nav{order:1!important}
+  .student-bottom-nav .mobile-home-nav{order:2!important}
+  .student-bottom-nav .mobile-profile-nav{order:3!important}
+  .student-bottom-nav .mobile-back-nav{order:4!important}
+
+  /* The drawer is a real left-edge sidebar, not a floating dialog. */
+  #vybeMobileNav.student-mobile-menu{
+    display:none!important;
+    position:fixed!important;
+    left:0!important;
+    top:0!important;
+    right:auto!important;
+    bottom:70px!important;
+    width:min(78vw,280px)!important;
+    height:auto!important;
+    margin:0!important;
+    padding:14px!important;
+    box-sizing:border-box!important;
+    z-index:4999!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    flex-direction:column!important;
+    gap:10px!important;
+    border:0!important;
+    border-right:1px solid rgba(70,150,205,.35)!important;
+    border-radius:0 18px 0 0!important;
+    background:rgba(3,12,22,.98)!important;
+    box-shadow:18px 0 45px rgba(0,0,0,.48)!important;
+    backdrop-filter:blur(26px)!important;
+    -webkit-backdrop-filter:blur(26px)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu.open{
+    display:flex!important;
+  }
+
+  /* Never show the old desktop/mobile-nav links inside the drawer. */
+  #vybeMobileNav.student-mobile-menu > a{
+    display:none!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{
+    display:none!important;
+  }
+
+  /* Show our actual VYBE mobile links. */
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
+    display:flex!important;
+    flex-direction:column!important;
+    width:100%!important;
+    gap:10px!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-height:52px!important;
+    box-sizing:border-box!important;
+    margin:0!important;
+    padding:10px 13px!important;
+    gap:12px!important;
+    border:1px solid rgba(72,145,192,.28)!important;
+    border-radius:14px!important;
+    background:rgba(10,28,44,.78)!important;
+    color:#d9eaf6!important;
+    text-decoration:none!important;
+    font-size:13px!important;
+    font-weight:650!important;
+    box-shadow:0 6px 18px rgba(0,0,0,.18)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+    background:rgba(26,110,165,.42)!important;
+    border-color:rgba(73,173,235,.65)!important;
+  }
+
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{
+    display:grid!important;
+    place-items:center!important;
+    width:30px!important;
+    height:30px!important;
+    flex:0 0 30px!important;
+    font-size:20px!important;
+    line-height:1!important;
+    color:#54b9ee!important;
+  }
+
+  .student-bottom-spacer{
+    height:78px!important;
+  }
+}
+
+
+  /* FINAL MOBILE-ONLY MENU ICON — matched to the supplied reference image.
+     Desktop navigation is intentionally untouched. */
+  @media (max-width:850px){
+    .student-bottom-nav button.mobile-menu-nav{
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      position:relative!important;
+      height:44px!important;
+      max-height:44px!important;
+      margin:0 auto!important;
+      padding:0!important;
+      border:1px solid rgba(73,126,164,.34)!important;
+      border-radius:14px!important;
+      background:#061522!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.025), 0 5px 16px rgba(0,0,0,.18)!important;
+      color:#fff!important;
+      overflow:hidden!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{
+      width:24px!important;
+      height:18px!important;
+      display:flex!important;
+      flex-direction:column!important;
+      align-items:center!important;
+      justify-content:space-between!important;
+      flex:0 0 18px!important;
+      margin:0!important;
+      padding:0!important;
+      background:transparent!important;
+      border:0!important;
+      border-radius:0!important;
+      box-shadow:none!important;
+      font-size:0!important;
+      line-height:0!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines i{
+      display:block!important;
+      width:21px!important;
+      height:2px!important;
+      flex:0 0 2px!important;
+      margin:0!important;
+      padding:0!important;
+      border:0!important;
+      border-radius:2px!important;
+      background:#f2f7fb!important;
+      box-shadow:0 0 1px rgba(255,255,255,.18)!important;
+      transform-origin:center!important;
+      transition:transform .18s ease, opacity .18s ease, background .18s ease!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(1){
+      transform:translateY(8px) rotate(45deg)!important;
+      background:#22aef2!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(2){
+      opacity:0!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav[aria-expanded="true"] .mobile-menu-icon-lines i:nth-child(3){
+      transform:translateY(-8px) rotate(-45deg)!important;
+      background:#22aef2!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{
+      display:none!important;
+    }
+    .student-bottom-nav button.mobile-menu-nav:active{
+      transform:scale(.97)!important;
+    }
+  }
+
 
 /* =========================================================
    COMMUNITY PAGE — TWO STUDENT OPTIONS + LIVE CHAT
@@ -1635,139 +2069,78 @@ main,.main,.wrap{position:relative}
 @media(min-width:851px){#vybeMobileNav.student-mobile-menu{left:auto!important;right:18px!important;width:260px!important}}
 
 
-/* ===== ONE MOBILE VYBE LAYOUT ===== */
+/* ===== FINAL PHONE LAYOUT POLISH ===== */
 @media(max-width:850px){
   html,body{width:100%;max-width:100%;overflow-x:hidden!important}
-  body{padding-bottom:0!important}
+  .nav{width:100%!important;position:relative!important;z-index:5000!important}
+  .navin.student-nav-compact{
+    width:100%!important;box-sizing:border-box!important;
+    min-height:54px!important;padding:7px 12px!important;
+    display:flex!important;align-items:center!important;gap:8px!important;
+  }
+  .student-brand-compact{display:flex!important;align-items:center!important;min-width:0!important;flex:1 1 auto!important;gap:8px!important;overflow:hidden!important}
+  .student-brand-compact .brandmark{width:36px!important;height:36px!important;flex:0 0 36px!important;border-radius:11px!important}
+  .student-brand-compact .brandtext{font-size:18px!important;white-space:nowrap!important}
+  /* Phone header: logo + Updates only. Menu lives exclusively in the bottom bar. */
+  .student-header-tools{margin-left:auto!important;flex:0 0 auto!important;gap:0!important}
+  .student-header-tools .student-menu{display:none!important}
+  .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:35px!important;padding:0 11px!important;border-radius:9px!important;background:#172033!important;color:#fff!important;border:0!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
+  .student-header-back{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;padding:7px 8px!important;margin-right:1px!important;border-radius:9px!important;font-size:12px!important}
+  /* Keep the search directly below the header and make it full-width on every page. */
+  .student-control-row{width:100%!important;box-sizing:border-box!important;padding:6px 12px 9px!important;display:flex!important;justify-content:center!important;background:#fff!important}
+  .student-control-row .student-search{width:100%!important;max-width:none!important;margin:0!important}
+  .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;border-radius:11px!important;font-size:13px!important}
+  .vybe-search-suggestions{left:0!important;right:0!important;top:calc(100% + 6px)!important;max-height:52vh!important;overflow:auto!important;border-radius:12px!important}
+  .vybe-search-suggestion{min-height:42px!important;padding:10px 11px!important;font-size:12px!important}
+  .vybe-search-suggestion span:last-child{font-size:10px!important}
 
-  /* Student phone shell */
-  .nav:has(.student-nav-compact){
-    position:fixed!important;top:0!important;left:0!important;right:0!important;
-    width:100%!important;height:112px!important;margin:0!important;padding:0!important;
-    z-index:10000!important;background:#fff!important;border-bottom:1px solid #dfe4e8!important;
-    box-shadow:0 3px 14px rgba(20,32,44,.10)!important;
+  /* One clean bottom navigation: Menu / Home / Profile. */
+  .student-bottom-nav{
+    position:fixed!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;
+    width:100%!important;max-width:none!important;height:68px!important;box-sizing:border-box!important;
+    display:flex!important;align-items:center!important;justify-content:stretch!important;
+    padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
+    gap:7px!important;background:rgba(255,255,255,.98)!important;
+    border-top:1px solid #dfe7df!important;box-shadow:0 -10px 28px rgba(31,48,66,.10)!important;
+    z-index:9000!important;overflow:visible!important;
   }
-  .nav:has(.student-nav-compact) .student-nav-compact{
-    height:54px!important;min-height:54px!important;width:100%!important;
-    padding:7px 10px!important;display:flex!important;align-items:center!important;
-    gap:6px!important;box-sizing:border-box!important;
+  .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{
+    flex:1 1 0!important;width:0!important;min-width:0!important;height:48px!important;
+    margin:0!important;padding:0 5px!important;box-sizing:border-box!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    border-radius:12px!important;font-size:12px!important;font-weight:800!important;
   }
-  .student-nav-compact .student-header-back{
-    display:inline-flex!important;flex:0 0 auto!important;align-items:center!important;
-    justify-content:center!important;height:32px!important;padding:0 8px!important;
-    border:1px solid #cfd8df!important;border-radius:8px!important;background:#fff!important;
-    color:#263542!important;font-size:11px!important;font-weight:800!important;
-    text-decoration:none!important;
-  }
-  .student-nav-compact .student-brand-compact{
-    display:flex!important;align-items:center!important;gap:6px!important;
-    flex:0 0 auto!important;min-width:0!important;
-  }
-  .student-nav-compact .student-brand-compact .brandmark{width:28px!important;height:28px!important;margin:0!important}
-  .student-nav-compact .student-brand-compact .brandtext{font-size:16px!important;white-space:nowrap!important}
-  .student-nav-compact .student-desktop-links{display:none!important}
-  .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;margin-left:auto!important;flex:0 0 auto!important}
-  .student-nav-compact .student-menu{display:none!important}
-  .student-nav-compact .student-header-updates{
-    display:inline-flex!important;align-items:center!important;justify-content:center!important;
-    height:32px!important;padding:0 10px!important;border:1px solid #cfd8df!important;
-    border-radius:8px!important;background:#fff!important;color:#263542!important;
-    font-size:11px!important;font-weight:800!important;white-space:nowrap!important;box-shadow:none!important;
-  }
-  .nav:has(.student-nav-compact) .student-control-row{
-    display:block!important;width:100%!important;height:58px!important;
-    padding:7px 10px 9px!important;box-sizing:border-box!important;background:#fff!important;
-  }
-  .student-control-row .student-search{display:block!important;position:relative!important;width:100%!important;height:42px!important;margin:0!important}
-  .student-search input{
-    display:block!important;width:100%!important;height:42px!important;padding:0 13px!important;
-    box-sizing:border-box!important;border:1px solid #cfd8df!important;border-radius:10px!important;
-    background:#f7fafc!important;color:#1d2a35!important;font-size:13px!important;outline:none!important;
-  }
-  .student-search input:focus{background:#fff!important;border-color:#6a8294!important;box-shadow:0 0 0 3px rgba(73,103,126,.10)!important}
+  .student-bottom-nav a{color:#5d6874!important;background:transparent!important;border:0!important;text-decoration:none!important}
+  .student-bottom-nav a.active{background:#eef6e8!important;color:#4e7f25!important}
+  .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border:1px solid #172033!important;box-shadow:0 6px 16px rgba(23,32,51,.16)!important;visibility:visible!important;opacity:1!important}
+  .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{display:block!important;color:#fff!important;font-size:12px!important;font-weight:850!important}
+  .student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-spacer{display:block!important;height:78px!important}
 
-  /* Direct search destinations. Visible on focus, click and typing. */
-  .student-search .mobile-direct-suggestions{
-    display:none;position:absolute!important;left:0!important;right:0!important;top:46px!important;
-    z-index:40000!important;padding:5px!important;background:#fff!important;
-    border:1px solid #d4dce2!important;border-radius:10px!important;
-    box-shadow:0 14px 30px rgba(20,32,44,.16)!important;
-  }
-  .student-search:focus-within .mobile-direct-suggestions,
-  .student-search .mobile-direct-suggestions.open{display:block!important}
-  .mobile-direct-suggestions .vybe-search-suggestion{
-    display:flex!important;align-items:center!important;justify-content:space-between!important;
-    min-height:40px!important;padding:8px 9px!important;border-radius:7px!important;
-    background:#fff!important;color:#263542!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important;
-  }
-  .mobile-direct-suggestions .vybe-search-suggestion span:last-child{font-size:9px!important;color:#84909a!important}
-  .mobile-direct-suggestions .vybe-search-suggestion:hover{background:#f1f5f7!important}
-
-  .student-search .mobile-direct-suggestions.open{display:block!important}
-  .student-search .mobile-direct-suggestions{pointer-events:auto!important}
-  .student-search .mobile-direct-suggestions .vybe-search-suggestion{display:flex!important;width:100%!important}
-
-  /* Exactly one mobile menu, opened from the left. */
+  /* Phone drawer: left side, clearly separated from the page, under half the screen. */
   #vybeMobileNav.student-mobile-menu{
-    position:fixed!important;display:none!important;top:60px!important;left:8px!important;right:auto!important;
-    width:210px!important;max-width:calc(100vw - 32px)!important;min-width:0!important;
-    max-height:calc(100vh - 135px)!important;overflow-y:auto!important;z-index:30000!important;
-    padding:7px!important;box-sizing:border-box!important;background:#fff!important;
-    border:1px solid #d5dde2!important;border-radius:11px!important;box-shadow:0 16px 38px rgba(20,32,44,.20)!important;
+    display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:60px!important;
+    width:44vw!important;max-width:220px!important;min-width:170px!important;
+    max-height:calc(100vh - 82px)!important;overflow:auto!important;
+    padding:8px!important;box-sizing:border-box!important;z-index:10000!important;
+    border-radius:14px!important;background:rgba(255,255,255,.99)!important;
+    border:1px solid #dfe7df!important;box-shadow:0 18px 45px rgba(31,48,66,.18)!important;
   }
-  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:2px!important}
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:4px!important}
   #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:5px 6px 8px!important;border-bottom:1px solid #edf0ec!important}
   #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:27px!important;height:27px!important;border:1px solid #d5dde2!important;border-radius:8px!important;background:#fff!important;color:#263542!important}
-  #vybeMobileNav.student-mobile-menu > a{display:flex!important;align-items:center!important;min-height:36px!important;padding:7px 9px!important;background:#fff!important;border:0!important;border-radius:7px!important;color:#263542!important;font-size:11px!important;font-weight:750!important;text-decoration:none!important}
-  #vybeMobileNav.student-mobile-menu > a:hover{background:#f1f5f7!important}
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:27px!important;height:27px!important;border:1px solid #dce5dc!important;border-radius:8px!important;background:#f4f7f3!important;color:#172033!important}
+  #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{min-height:36px!important;padding:8px 9px!important;border-radius:9px!important;background:#fff!important;border:0!important;color:#26323e!important;font-size:11px!important;font-weight:750!important;line-height:1.2!important;text-decoration:none!important}
+  #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#f1f7eb!important;color:#4e7f25!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:flex!important;flex-direction:column!important;gap:4px!important}
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
 
-  /* Exactly three equal bottom controls. */
-  .student-bottom-nav{
-    position:fixed!important;left:0!important;right:0!important;bottom:0!important;
-    transform:none!important;width:100vw!important;max-width:100vw!important;height:64px!important;min-height:64px!important;
-    display:grid!important;grid-template-columns:repeat(3,1fr)!important;grid-template-rows:1fr!important;gap:6px!important;
-    margin:0!important;padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;
-    box-sizing:border-box!important;background:#fff!important;border-top:1px solid #dfe4e8!important;
-    box-shadow:0 -4px 16px rgba(20,32,44,.10)!important;z-index:10000!important;
-  }
-  .student-bottom-nav > *{
-    width:auto!important;max-width:none!important;height:48px!important;min-width:0!important;min-height:48px!important;margin:0!important;padding:0!important;
-    flex:none!important;order:initial!important;transform:none!important;
-    justify-self:stretch!important;align-self:stretch!important;
-    display:flex!important;align-items:center!important;justify-content:center!important;
-    box-sizing:border-box!important;border:1px solid #d5dde2!important;border-radius:8px!important;
-    background:#fff!important;color:#4b5b67!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;
-  }
-  .student-bottom-nav .mobile-home-nav.active{background:#eef3f6!important;color:#263542!important;border-color:#cbd6dd!important}
-  .student-bottom-nav button.mobile-menu-nav{background:#fff!important;color:#263542!important;border-color:#cbd6dd!important;box-shadow:none!important}
-  .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important}
-  .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
-  .student-bottom-spacer{display:block!important;height:70px!important}
-
-  /* All pages: no horizontal overflow and comfortable phone forms/cards. */
-  .wrap,.page-shell,.auth,.authbox,.card,.hero,.section,.grid,.grid2,.two,.academic-grid,.academic-resource-grid,.academic-app-grid,.updates-grid,.events-grid,.community-grid{max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
-  .wrap{width:100%!important;padding-left:12px!important;padding-right:12px!important}
-  .auth{width:100%!important;min-height:calc(100dvh - 20px)!important;padding:20px 0 24px!important;display:flex!important;align-items:flex-start!important;justify-content:center!important}
-  .authbox{width:100%!important;margin:0!important;padding:20px 16px!important;border-radius:18px!important}
-  .authbox h1{font-size:28px!important;line-height:1.1!important;word-break:break-word!important}
-  .form,.form input,.form select,.form textarea,.password-wrap{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important}
-  .actions{width:100%!important;display:flex!important;flex-direction:column!important;gap:8px!important}
-  .actions .btn,.form>.btn{width:100%!important;min-height:44px!important}
-  img,video,iframe,svg{max-width:100%!important;height:auto!important}
-  table{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  /* Prevent wide cards/tables/forms from breaking the phone viewport. */
+  .wrap,.page-shell,.clean-home,.academic-hero,.academic-detail,.community-chat-page-section,.community-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important}
+  .wrap{padding-left:12px!important;padding-right:12px!important}
+  img,video,iframe,table{max-width:100%!important}
+  .card,.panel,.academic-detail,.academic-update-card,.academic-resource-card,.home-update-panel{box-sizing:border-box!important;max-width:100%!important}
   input,select,textarea,button{max-width:100%!important;box-sizing:border-box!important}
-
-  /* Student content starts below the fixed header and ends above the fixed bottom bar. */
-  body:has(.student-nav-compact){padding-top:112px!important;padding-bottom:70px!important}
-  body:has(.student-nav-compact) .vybe-footer,body:has(.student-nav-compact) .footer{display:none!important}
-  body:has(.student-nav-compact) .vybe-assistant-fab{bottom:76px!important}
-  body:has(.student-nav-compact) .vybe-assistant-panel{bottom:130px!important}
-
-  /* Generic public/auth pages remain simple and fully usable on phone. */
-  body:not(:has(.student-nav-compact)) .navin{padding:10px 12px!important;min-height:48px!important;gap:8px!important}
-  body:not(:has(.student-nav-compact)) .navlinks{display:none!important}
 }
 
 
@@ -1788,7 +2161,8 @@ def layout(title, body, admin=False):
         mobile_links = '<a href="/dashboard"><span>Home</span></a><a href="/academics"><span>Academics</span></a><a href="/updates"><span>Updates</span></a><a href="/apps"><span>Study Apps</span></a><a href="/papers"><span>Previous Papers</span></a><a href="/issues"><span>Help Desk</span></a><a href="/community"><span>Community</span></a><a href="/chat"><span>Chat</span></a><a href="/search"><span>Search</span></a><a href="/announcements"><span>Announcements</span></a><a href="/events"><span>Events</span></a><a href="/profile"><span>Profile</span></a><a href="/logout"><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
-        header_lead = (('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>') if student_on_subpage else '') + '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
+        mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
+        header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 <div class="student-control-row"><form class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
@@ -1803,15 +2177,107 @@ def layout(title, body, admin=False):
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}
-/* One small layout safety layer. Keep mobile rules in CSS above, not in layout(). */
-@media (max-width:850px) {{
-  html,body {{ width:100%; max-width:100%; overflow-x:hidden; }}
-  .wrap,.page-shell {{ max-width:100%; min-width:0; box-sizing:border-box; }}
-  img,video,iframe,svg {{ max-width:100%; }}
-  table {{ max-width:100%; overflow-x:auto; }}
-}}
+  /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
+  @media(max-width:850px){{
+    html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
+    body{{padding-top:112px!important;padding-bottom:76px!important;box-sizing:border-box!important}}
+    .nav:has(.student-nav-compact){{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:5000!important;background:rgba(255,255,255,.98)!important;border-bottom:1px solid #dfe7df!important;box-shadow:0 4px 18px rgba(20,35,28,.08)!important;backdrop-filter:blur(14px)!important;-webkit-backdrop-filter:blur(14px)!important}}
+    .nav:has(.student-nav-compact) .navin{{width:100%!important;box-sizing:border-box!important}}
+    .nav:has(.student-nav-compact) .student-control-row{{width:100%!important;box-sizing:border-box!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;visibility:visible!important;opacity:1!important}}
+    .student-nav-compact .student-header-back{{display:none!important}}
+    .student-nav-compact .student-desktop-links{{display:none!important}}
+    .student-nav-compact .student-header-tools{{display:flex!important;margin-left:auto!important}}
+    .student-nav-compact .student-header-tools .student-menu{{display:none!important}}
+    .student-control-row{{display:block!important}}
+    .student-control-row .student-search{{display:block!important}}
+    .student-search input{{display:block!important}}
+    .student-search-suggestions,.search-suggestions,.search-dropdown{{z-index:6000!important}}
+    #vybeMobileNav.student-mobile-menu{{position:fixed!important;z-index:7000!important;top:108px!important;left:8px!important;right:auto!important;width:44vw!important;max-width:205px!important;min-width:160px!important}}
+    .student-bottom-nav{{position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:5000!important;width:100%!important;margin:0!important}}
+    .student-bottom-spacer{{display:none!important}}
+    .vybe-assistant-fab{{bottom:86px!important}}
+    .vybe-assistant-panel{{bottom:140px!important;max-width:calc(100vw - 24px)!important}}
+    .wrap{{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important}}
+    .vybe-footer,.footer{{display:none!important}}
+  }}
+
+  /* ===== FINAL MOBILE VYBE HEADER / MENU CLEANUP ===== */
+  @media(max-width:850px){{
+    .student-nav-compact{{display:flex!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:54px!important;padding:8px 12px!important;box-sizing:border-box!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;align-items:center!important;gap:7px!important;flex:0 0 auto!important;min-width:max-content!important}}
+    .student-nav-compact .student-brand-compact .brandtext{{font-size:16px!important;font-weight:850!important}}
+    .student-nav-compact .student-brand-compact .brandmark{{width:29px!important;height:29px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}}
+    .student-desktop-links,.student-header-back{{display:none!important}}
+    .student-header-tools{{display:flex!important;align-items:center!important;margin-left:auto!important;flex:0 0 auto!important}}
+    .student-header-tools .student-menu{{display:none!important}}
+    .student-header-updates{{display:inline-flex!important;height:34px!important;padding:0 10px!important;border-radius:9px!important;background:#315f24!important;color:#fff!important;border:1px solid #315f24!important;font-size:11px!important;font-weight:850!important;white-space:nowrap!important}}
+    .student-control-row{{display:block!important;width:100%!important;padding:6px 12px 10px!important;box-sizing:border-box!important}}
+    .student-control-row .student-search{{width:100%!important;max-width:none!important;margin:0!important}}
+    .student-search{{position:relative!important}}
+    .student-search input{{width:100%!important;height:42px!important;padding:0 14px!important;border-radius:11px!important;font-size:13px!important;box-sizing:border-box!important}}
+    .student-search:focus-within input{{border-color:#5f8f3b!important;box-shadow:0 0 0 3px rgba(95,143,59,.12)!important}}
+    /* Only one set of menu entries. */
+    #vybeMobileNav.student-mobile-menu > a{{display:flex!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{display:none!important}}
+    #vybeMobileNav.student-mobile-menu{{left:8px!important;right:auto!important;top:62px!important;width:44vw!important;max-width:205px!important;min-width:160px!important;height:auto!important;max-height:calc(100vh - 145px)!important;overflow-y:auto!important;box-sizing:border-box!important;padding:8px!important;border-radius:14px!important;background:#fff!important;border:1px solid #dbe5d9!important;box-shadow:0 18px 42px rgba(25,42,33,.22)!important}}
+    #vybeMobileNav.student-mobile-menu.open{{display:flex!important;flex-direction:column!important;gap:3px!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-head{{display:flex!important}}
+    #vybeMobileNav.student-mobile-menu > a{{min-height:34px!important;padding:7px 9px!important;border-radius:8px!important;background:#fff!important;color:#24302a!important;font-size:11px!important;font-weight:750!important;line-height:1.2!important;text-decoration:none!important}}
+    #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu > a:focus{{background:#edf6e8!important;color:#315f24!important}}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-close{{display:inline-flex!important}}
+    .student-bottom-nav{{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;align-items:stretch!important;gap:6px!important;height:auto!important;min-height:58px!important;padding:6px 10px calc(6px + env(safe-area-inset-bottom))!important;box-sizing:border-box!important;background:rgba(255,255,255,.98)!important;border-top:1px solid #dfe8df!important;box-shadow:0 -8px 24px rgba(25,42,33,.08)!important}}
+    .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{{width:100%!important;min-width:0!important;height:46px!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:10px!important;box-sizing:border-box!important}}
+    .student-bottom-nav button.mobile-menu-nav{{background:#172033!important;color:#fff!important;border:1px solid #172033!important;visibility:visible!important;opacity:1!important;font-size:12px!important;font-weight:850!important}}
+    .student-bottom-nav button.mobile-menu-nav .mobile-menu-label{{display:block!important;color:#fff!important}}
+    .student-bottom-nav .mobile-menu-icon-lines{{display:none!important}}
+    .student-bottom-nav a{{font-size:12px!important;font-weight:750!important}}
+    .student-bottom-spacer{{height:72px!important}}
+  }}
+  @media(min-width:851px){{
+    .student-control-row .student-search{{margin-left:auto!important;margin-right:auto!important}}
+  }}
+  /* ===== MOBILE NAV FINAL, SIMPLE AND DETERMINISTIC ===== */
+  @media(max-width:850px){{
+    .nav:has(.student-nav-compact){{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:108px!important;padding:0!important;margin:0!important;z-index:10000!important;background:#fff!important;border-bottom:1px solid #dfe4e8!important;box-shadow:0 3px 14px rgba(20,32,44,.10)!important;backdrop-filter:none!important}}
+    .nav:has(.student-nav-compact) .student-nav-compact{{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:7px!important}}
+    .student-nav-compact .student-brand-compact{{display:flex!important;align-items:center!important;gap:6px!important;flex:0 0 auto!important}}
+    .student-nav-compact .student-brand-compact .brandmark{{width:28px!important;height:28px!important}}
+    .student-nav-compact .student-brand-compact .brandtext{{font-size:16px!important;font-weight:850!important}}
+    .student-nav-compact .student-header-back{{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:30px!important;padding:0 8px!important;margin-left:2px!important;border:1px solid #cfd8df!important;border-radius:8px!important;background:#fff!important;color:#263542!important;font-size:11px!important;font-weight:800!important;text-decoration:none!important}}
+    .student-nav-compact .student-desktop-links{{display:none!important}}
+    .student-nav-compact .student-header-tools{{display:flex!important;align-items:center!important;margin-left:auto!important}}
+    .student-nav-compact .student-header-updates{{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:32px!important;padding:0 10px!important;background:#fff!important;color:#263542!important;border:1px solid #cfd8df!important;border-radius:8px!important;font-size:11px!important;font-weight:800!important;box-shadow:none!important}}
+    .student-nav-compact .student-menu{{display:none!important}}
+    .nav:has(.student-nav-compact) .student-control-row{{display:block!important;height:54px!important;width:100%!important;padding:6px 12px 8px!important;box-sizing:border-box!important}}
+    .student-control-row .student-search{{display:block!important;position:relative!important;width:100%!important;height:40px!important;margin:0!important}}
+    .student-search input{{display:block!important;width:100%!important;height:40px!important;padding:0 13px!important;background:#f7fafc!important;border:1px solid #cfd8df!important;border-radius:10px!important;color:#1d2a35!important;font-size:13px!important;outline:none!important;box-sizing:border-box!important}}
+    .student-search input:focus{{background:#fff!important;border-color:#6a8294!important;box-shadow:0 0 0 3px rgba(73,103,126,.10)!important}}
+    .mobile-direct-suggestions{{display:none!important;position:absolute!important;left:0!important;right:0!important;top:44px!important;z-index:50000!important;background:#fff!important;border:1px solid #cbd5dc!important;border-radius:10px!important;padding:5px!important;box-shadow:0 16px 34px rgba(20,32,44,.20)!important;box-sizing:border-box!important}}
+    .student-search:focus-within .mobile-direct-suggestions,.mobile-direct-suggestions.open{{display:block!important}}
+    .vybe-search-suggestions.open{{display:block!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion{{display:flex!important;min-height:38px!important;align-items:center!important;justify-content:space-between!important;padding:7px 9px!important;border-radius:7px!important;text-decoration:none!important;background:#fff!important;color:#263542!important;font-size:11px!important;font-weight:750!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion span:last-child{{font-size:9px!important;color:#84909a!important}}
+    .mobile-direct-suggestions .vybe-search-suggestion:hover{{background:#f1f5f7!important}}
+    #vybeMobileNav.student-mobile-menu{{position:fixed!important;top:60px!important;left:8px!important;right:auto!important;width:210px!important;max-width:calc(100vw - 32px)!important;min-width:0!important;max-height:calc(100vh - 135px)!important;overflow-y:auto!important;z-index:30000!important;background:#fff!important;border:1px solid #d5dde2!important;border-radius:11px!important;padding:7px!important;box-shadow:0 16px 38px rgba(20,32,44,.20)!important}}
+    #vybeMobileNav.student-mobile-menu.open{{display:flex!important;flex-direction:column!important;gap:2px!important}}
+    #vybeMobileNav.student-mobile-menu > a{{display:flex!important;align-items:center!important;min-height:36px!important;padding:7px 9px!important;background:#fff!important;border:0!important;border-radius:7px!important;color:#263542!important;font-size:11px!important;font-weight:750!important;text-decoration:none!important}}
+    #vybeMobileNav.student-mobile-menu > a:hover{{background:#f1f5f7!important}}
+    .student-bottom-nav{{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:64px!important;min-height:64px!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:0!important;margin:0!important;padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #dfe4e8!important;box-shadow:0 -4px 16px rgba(20,32,44,.10)!important;z-index:10000!important;box-sizing:border-box!important}}
+    .student-bottom-nav > *{{width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;border:1px solid #263442!important;border-radius:8px!important;background:#263442!important;color:#fff!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;visibility:visible!important;opacity:1!important}}
+    .student-bottom-nav .mobile-home-nav.active{{background:#334454!important;color:#fff!important;border-color:#334454!important}}
+    .student-bottom-nav .mobile-profile-nav{{background:#263442!important;color:#fff!important;border-color:#263442!important}}
+    .student-bottom-nav button.mobile-menu-nav{{display:flex!important;visibility:visible!important;opacity:1!important;background:#263442!important;color:#fff!important;border-color:#263442!important;box-shadow:none!important}}
+    .student-bottom-nav .mobile-menu-label{{display:block!important;color:inherit!important}}
+    .student-bottom-nav .mobile-menu-icon-lines{{display:none!important}}
+    .student-bottom-spacer{{display:block!important;height:64px!important}}
+    body{{padding-top:112px!important;padding-bottom:70px!important}}
+    .vybe-footer,.footer{{display:none!important}}
+    .vybe-assistant-fab{{bottom:76px!important}}
+    .vybe-assistant-panel{{bottom:130px!important}}
+  }}
 </style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}</div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
@@ -1888,8 +2354,8 @@ function setMenu(open){{
       }}).join('');
       form.appendChild(box);
     }}
-    function openSuggestions(){{ box.classList.add('open'); box.style.display='block'; }}
-    function closeSuggestions(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)){{ box.classList.remove('open'); box.style.display='none'; }} }},180); }}
+    function openSuggestions(){{ box.classList.add('open'); }}
+    function closeSuggestions(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)) box.classList.remove('open'); }},220); }}
     input.addEventListener('focus',openSuggestions);
     input.addEventListener('click',openSuggestions);
     input.addEventListener('input',function(){{ openSuggestions(); }});
