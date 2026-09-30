@@ -2023,6 +2023,37 @@ main,.main,.wrap{position:relative}
   #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
 }
 
+/* ===== FINAL STUDENT NAV / SEARCH POLISH ===== */
+.student-header-tools{display:flex!important;align-items:center!important;gap:8px!important;margin-left:auto!important}
+.student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;text-decoration:none!important;white-space:nowrap!important}
+.student-search{position:relative!important}
+.student-search-suggestion-menu{position:absolute!important;left:0!important;right:0!important;top:calc(100% + 7px)!important;display:none!important;flex-direction:column!important;gap:3px!important;padding:7px!important;background:rgba(255,255,255,.98)!important;border:1px solid #dfe7df!important;border-radius:13px!important;box-shadow:0 18px 42px rgba(35,55,42,.13)!important;z-index:6100!important;backdrop-filter:blur(16px)!important}
+.student-search:focus-within .student-search-suggestion-menu{display:flex!important}
+.student-search-suggestion-menu a{display:flex!important;align-items:center!important;min-height:38px!important;padding:0 11px!important;border-radius:9px!important;color:#26333d!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important;background:transparent!important}
+.student-search-suggestion-menu a:hover,.student-search-suggestion-menu a:focus{background:#f0f7eb!important;color:#4e7f25!important}
+.student-search-suggestion-menu a::after{content:'›';margin-left:auto;color:#9aaa9c;font-size:15px}
+/* Phone: one menu trigger only, fixed to the bottom nav. */
+@media(max-width:850px){
+  .student-nav-compact{min-height:56px!important}
+  .student-nav-compact .student-menu{display:none!important}
+  .student-header-tools{margin-left:auto!important}
+  .student-control-row{position:relative!important}
+  .student-search-suggestion-menu{top:calc(100% + 5px)!important;max-height:55vh!important;overflow-y:auto!important}
+  .student-bottom-nav{display:flex!important;align-items:center!important;justify-content:space-around!important;visibility:visible!important;opacity:1!important}
+  .student-bottom-nav button.mobile-menu-nav{display:flex!important;align-items:center!important;justify-content:center!important;flex:1 1 0!important;min-width:0!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:5002!important}
+  .student-bottom-nav a{display:flex!important;align-items:center!important;justify-content:center!important;flex:1 1 0!important;min-width:0!important}
+  #vybeMobileNav.student-mobile-menu{left:auto!important;right:10px!important;top:auto!important;bottom:78px!important;width:min(42vw,190px)!important;max-width:190px!important;max-height:calc(100vh - 120px)!important;overflow-y:auto!important;border-radius:15px!important;padding:8px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{min-height:38px!important;padding:0 9px!important;font-size:12px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{padding:4px 4px 7px!important}
+}
+/* Desktop: search remains centered and there are no extra header shortcut buttons. */
+@media(min-width:851px){
+  .student-nav-compact{min-height:58px!important}
+  .student-control-row{display:flex!important;justify-content:center!important}
+  .student-control-row .student-search{width:min(560px,48vw)!important;max-width:560px!important;margin:0 auto!important}
+  .student-search-suggestion-menu{left:0!important;right:0!important}
+}
+
 
 """
 
@@ -2042,8 +2073,8 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
-<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form><div class="student-search-suggestions" aria-label="Quick search suggestions"><a href="/academics?resource_type=Study+material">Study Material</a><a href="/academics?resource_type=Notes">Notes</a><a href="/papers">Previous Papers</a><a href="/updates?kind=Admit%20Card">Admit Card</a><a href="/updates?kind=Date%20Sheet">Date Sheets</a><a href="/timetable">Timetable</a></div></div>'''
+        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')}<div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a></div></div>
+<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form><div class="student-search-suggestion-menu" aria-label="Search suggestions"><a href="/academics?resource_type=Study+material">Study Material</a><a href="/academics?resource_type=Notes">Notes</a><a href="/papers">Previous Papers</a><a href="/updates?kind=Admit%20Card">Admit Card</a><a href="/updates?kind=Date%20Sheet">Date Sheets</a><a href="/timetable">Timetable</a><a href="/updates">Results &amp; Updates</a></div></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -2180,6 +2211,14 @@ if(notificationBell){{
   refreshStudentNotifications();
   notificationTimer=setInterval(refreshStudentNotifications,1000);
 }}
+
+document.addEventListener("click",function(e){{
+  const search=e.target.closest(".student-search");
+  if(!search){{ document.querySelectorAll(".student-search").forEach(function(f){{f.classList.remove("search-open");}}); }}
+}});
+document.addEventListener("keydown",function(e){{
+  if(e.key==="Escape"){{ document.querySelectorAll(".student-search input").forEach(function(i){{i.blur();}}); }}
+}});
 
 window.vybeToggleStudentMenu=function(e){{
   if(e){{e.preventDefault();e.stopPropagation();}}
