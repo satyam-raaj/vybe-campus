@@ -2185,7 +2185,7 @@ def layout(title, body, admin=False):
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
-        bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -2376,36 +2376,73 @@ def layout(title, body, admin=False):
   max-width:none!important;
   height:46px!important;
   margin:0!important;
-  padding:0 8px!important;
+  padding:4px 8px!important;
   display:flex!important;
+  flex-direction:column!important;
   align-items:center!important;
   justify-content:center!important;
+  gap:3px!important;
+  border:1px solid rgba(91,143,190,.32)!important;
+  border-radius:12px!important;
+  background:linear-gradient(145deg,rgba(24,39,57,.96),rgba(9,17,28,.98))!important;
+  color:#b9cbe0!important;
   box-sizing:border-box!important;
-  border:1px solid #b9cfe0!important;
-  border-radius:8px!important;
-  background:#ffffff!important;
-  color:#15191d!important;
-  box-shadow:none!important;
   text-decoration:none!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.055),0 8px 20px rgba(0,0,0,.22)!important;
+  cursor:pointer!important;
+  font:inherit!important;
 }}
-.student-bottom-nav > .mobile-home-nav.active{{
-  background:#dceeff!important;
-  color:#111827!important;
-  border-color:#8fbce0!important;
+.student-bottom-nav .vybe-nav-icon{{
+  width:19px!important;
+  height:19px!important;
+  display:grid!important;
+  place-items:center!important;
+  flex:0 0 19px!important;
 }}
-.student-bottom-nav > .mobile-menu-nav:hover,
-.student-bottom-nav > .mobile-profile-nav:hover{{
-  background:#f3f8fc!important;
-  border-color:#8fbce0!important;
-  color:#111827!important;
+.student-bottom-nav .vybe-nav-icon svg{{
+  width:19px!important;
+  height:19px!important;
+  display:block!important;
+  fill:none!important;
+  stroke:currentColor!important;
+  stroke-width:1.8!important;
+  stroke-linecap:round!important;
+  stroke-linejoin:round!important;
 }}
-.student-bottom-nav .mobile-menu-label,
-.student-bottom-nav .mobile-home-nav,
-.student-bottom-nav .mobile-profile-nav{{
+.student-bottom-nav .mobile-menu-label{{
+  display:block!important;
   color:inherit!important;
-  font-size:12px!important;
+  font-size:10px!important;
   font-weight:800!important;
   line-height:1!important;
+  letter-spacing:.01em!important;
+}}
+.student-bottom-nav > .mobile-home-nav.active{{
+  background:linear-gradient(145deg,rgba(20,77,112,.98),rgba(9,39,62,.98))!important;
+  color:#69c9ff!important;
+  border-color:rgba(66,190,255,.55)!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.08),0 8px 24px rgba(0,126,210,.18)!important;
+}}
+.student-bottom-nav > .mobile-menu-nav:hover,
+.student-bottom-nav > .mobile-profile-nav:hover,
+.student-bottom-nav > .mobile-menu-nav:focus-visible,
+.student-bottom-nav > .mobile-profile-nav:focus-visible{{
+  background:linear-gradient(145deg,rgba(30,49,70,.98),rgba(10,20,32,.98))!important;
+  color:#e7f5ff!important;
+  border-color:rgba(93,169,224,.5)!important;
+}}
+.student-bottom-nav > .mobile-home-nav:hover,
+.student-bottom-nav > .mobile-home-nav:focus-visible{{
+  color:#7bd2ff!important;
+  border-color:rgba(66,190,255,.65)!important;
+}}
+.student-bottom-nav > .mobile-menu-nav:active,
+.student-bottom-nav > .mobile-home-nav:active,
+.student-bottom-nav > .mobile-profile-nav:active{{
+  transform:translateY(1px)!important;
+}}
+.student-bottom-nav button.mobile-menu-nav .mobile-menu-icon-lines{{
+  display:none!important;
 }}
 /* Every desktop navigation/menu item gets its own visible border. */
 .student-desktop-links > a,
