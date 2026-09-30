@@ -1911,7 +1911,119 @@ main,.main,.wrap{position:relative}
 .home-updates-head{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:40px 0 14px}.home-updates-head p{margin:4px 0 0;color:#7a8794}.home-live-status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #d7e8d0;border-radius:999px;background:#f4faef;color:#56833a;font-size:11px;font-weight:800;letter-spacing:.05em}.home-live-status span{width:7px;height:7px;border-radius:50%;background:#57a53f;box-shadow:0 0 0 5px rgba(87,165,63,.10);animation:statusBlink 1.8s ease-in-out infinite}@keyframes statusBlink{50%{opacity:.35;transform:scale(.8)}}
 .vybe-footer{margin-top:40px!important;background:#f8fafb!important;border-top:1px solid #dfe7ed!important;text-align:left!important;color:#66717e!important}.footer-inner{max-width:1400px;margin:auto;padding:26px 20px;display:flex;align-items:center;gap:28px;justify-content:space-between}.footer-brand{display:flex;flex-direction:column;gap:4px}.footer-brand strong{font-size:18px;color:#182230}.footer-brand span,.footer-copy{font-size:12px;color:#7b8792}.footer-links{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}.footer-links a{padding:9px 12px;border:1px solid #dce4ea;border-radius:10px;background:#fff;color:#42505d;font-size:12px;font-weight:700;transition:.2s ease}.footer-links a:hover{border-color:#b9d3e8;background:#eef6ff;color:#2f6fca}.footer-copy{text-align:right}
 @media(max-width:1000px){.home-live-hero{grid-template-columns:1fr 220px;padding:38px}.home-live-orbit{width:200px;height:200px}.home-action-grid.live-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:850px){.home-live-hero{display:block;min-height:0;padding:30px 22px;border-radius:24px}.home-live-copy h1{font-size:43px}.home-live-copy p{font-size:15px}.home-live-orbit{width:145px;height:145px;margin:28px 0 0 auto}.orbit-core{width:52px;height:52px;border-radius:16px;font-size:22px}.home-live-orbit:before{inset:18px}.home-live-orbit:after{inset:35px}.orbit-dot-a{top:18px;right:35px}.orbit-dot-b{bottom:27px;left:22px}.home-action-grid.live-home-grid{grid-template-columns:1fr;gap:10px}.live-home-grid .home-action{min-height:94px;grid-template-columns:auto 1fr auto}.home-updates-head{align-items:start}.footer-inner{padding:22px 14px 100px;display:grid;gap:15px}.footer-links{justify-content:flex-start}.footer-copy{text-align:left}.footer-links a{flex:1 1 auto;text-align:center}.home-hero-actions .btn{flex:1 1 180px}.student-control-row{overflow-x:auto;scrollbar-width:none}.student-control-row::-webkit-scrollbar{display:none}.student-control{flex:0 0 auto!important}.student-search{min-width:180px!important}}
+@media(max-width:850px){
+  /* ===== STUDENT HOME PHONE: REPLACE THE OLD HERO RULE ===== */
+  .clean-home.live-home{
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:8px 0 24px!important;
+    box-sizing:border-box!important;
+  }
+  .clean-home.live-home .home-live-hero{
+    display:block!important;
+    width:100%!important;
+    height:auto!important;
+    min-height:0!important;
+    margin:0 0 18px!important;
+    padding:22px 18px 16px!important;
+    box-sizing:border-box!important;
+    border-radius:22px!important;
+    overflow:hidden!important;
+  }
+  .clean-home.live-home .home-live-copy{
+    width:100%!important;
+    text-align:left!important;
+  }
+  .clean-home.live-home .student-space-pill{
+    display:inline-flex!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+  .clean-home.live-home .home-live-copy h1{
+    font-size:36px!important;
+    line-height:1.02!important;
+    letter-spacing:-.055em!important;
+    margin:14px 0 10px!important;
+    max-width:100%!important;
+  }
+  .clean-home.live-home .home-live-copy p{
+    max-width:100%!important;
+    margin:0!important;
+    font-size:14px!important;
+    line-height:1.45!important;
+  }
+  .clean-home.live-home .home-hero-actions{
+    display:block!important;
+    width:100%!important;
+    margin:16px 0 0!important;
+  }
+  .clean-home.live-home .home-hero-actions .btn{
+    display:flex!important;
+    width:100%!important;
+    min-height:48px!important;
+    box-sizing:border-box!important;
+    align-items:center!important;
+    justify-content:center!important;
+  }
+  .clean-home.live-home .home-live-orbit{
+    width:104px!important;
+    height:104px!important;
+    margin:18px 4px 0 auto!important;
+  }
+  .clean-home.live-home .orbit-core{
+    width:44px!important;
+    height:44px!important;
+    border-radius:14px!important;
+    font-size:19px!important;
+  }
+  .clean-home.live-home .home-action-grid.live-home-grid{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:10px!important;
+  }
+  .clean-home.live-home .live-home-grid .home-action{
+    min-height:84px!important;
+    height:auto!important;
+    padding:13px!important;
+    box-sizing:border-box!important;
+  }
+  .clean-home.live-home .home-updates-grid{
+    grid-template-columns:1fr!important;
+  }
+  .clean-home.live-home .home-updates-head{
+    align-items:flex-start!important;
+  }
+
+  /* Keep the assistant above the fixed bottom navigation. */
+  #vybeAssistantFab,.vybe-assistant-fab{
+    right:14px!important;
+    bottom:82px!important;
+    z-index:2147482005!important;
+  }
+  #vybeAssistantPanel,.vybe-assistant-panel{
+    right:10px!important;
+    bottom:136px!important;
+    z-index:2147482004!important;
+  }
+
+  /* One active Home state. */
+  #vybeStudentBottomNav > .mobile-home-nav.active{
+    background:#dceeff!important;
+    color:#172033!important;
+    border-color:#b9d5ec!important;
+  }
+  #vybeStudentBottomNav > #vybeBottomMenuButton{
+    background:#172033!important;
+    color:#fff!important;
+    border-color:#536176!important;
+  }
+  #vybeStudentBottomNav > .mobile-profile-nav{
+    background:#fff!important;
+    color:#4d5a67!important;
+    border-color:#cfd9e2!important;
+  }
+}
 /* ===== FLOATING VYBE ASSISTANT ===== */
 .vybe-assistant-fab{position:fixed;right:24px;bottom:24px;z-index:7000;display:flex;align-items:center;gap:9px;border:1px solid #b9d6ed;background:#101827;color:#fff;border-radius:16px;padding:12px 16px;min-height:48px;box-shadow:0 16px 40px rgba(16,24,39,.20);font-weight:800;font-size:13px;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
 .vybe-assistant-fab:hover{transform:translateY(-3px);box-shadow:0 20px 46px rgba(16,24,39,.25);background:#172238}
@@ -2158,10 +2270,13 @@ main,.main,.wrap{position:relative}
   .authbox .btn{width:100%!important;min-height:46px!important;box-sizing:border-box!important}
   .authbox .actions{display:grid!important;grid-template-columns:1fr!important;width:100%!important}
   .authbox .actions .btn{width:100%!important}
-  #vybeStudentBottomNav{background:#202124!important;background-image:none!important;border-top:1px solid #55585d!important;box-shadow:0 -8px 24px rgba(0,0,0,.28)!important}
-  #vybeStudentBottomNav > #vybeBottomMenuButton,#vybeStudentBottomNav > .mobile-home-nav,#vybeStudentBottomNav > .mobile-profile-nav{background:#303236!important;color:#f5f5f5!important;border:1px solid #62656a!important}
-  #vybeStudentBottomNav > .mobile-home-nav.active{background:#f4f4f4!important;color:#17181a!important;border-color:#f4f4f4!important}
-  #vybeStudentBottomNav > #vybeBottomMenuButton:hover,#vybeStudentBottomNav > .mobile-profile-nav:hover{background:#3b3e43!important;color:#fff!important;border-color:#7a7e84!important}
+  body:has(.auth) #vybeStudentBottomNav{background:#202124!important;background-image:none!important;border-top:1px solid #55585d!important;box-shadow:0 -8px 24px rgba(0,0,0,.28)!important}
+  body:has(.auth) #vybeStudentBottomNav > #vybeBottomMenuButton,
+  body:has(.auth) #vybeStudentBottomNav > .mobile-home-nav,
+  body:has(.auth) #vybeStudentBottomNav > .mobile-profile-nav{background:#303236!important;color:#f5f5f5!important;border:1px solid #62656a!important}
+  body:has(.auth) #vybeStudentBottomNav > .mobile-home-nav.active{background:#f4f4f4!important;color:#17181a!important;border-color:#f4f4f4!important}
+  body:has(.auth) #vybeStudentBottomNav > #vybeBottomMenuButton:hover,
+  body:has(.auth) #vybeStudentBottomNav > .mobile-profile-nav:hover{background:#3b3e43!important;color:#fff!important;border-color:#7a7e84!important}
 }
 
 """
