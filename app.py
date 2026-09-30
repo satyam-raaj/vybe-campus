@@ -4738,7 +4738,7 @@ def profile():
 
     st=con.execute("SELECT name,student_id,reputation_points,helpful_answers,accepted_solutions,admit_card_original_name FROM students WHERE id=?",(sid,)).fetchone()
     accepted=con.execute("SELECT issue_title,solution_text,solver_name,accepted_at FROM accepted_solutions WHERE student_id=? ORDER BY id DESC LIMIT 30",(sid,)).fetchall()
-    given=con.execute("SELECT s.id,i.title AS issue_title,s.solution_text,s.created_at,COALESCE(i.status,'') AS issue_status FROM solutions s LEFT JOIN issues i ON i.id=s.issue_id WHERE s.student_id=? ORDER BY s.id DESC LIMIT 50",(sid,)).fetchall()
+    given=con.execute("SELECT s.id,i.title AS issue_title,s.text AS solution_text,s.created_at,COALESCE(i.status,'') AS issue_status FROM solutions s LEFT JOIN issues i ON i.id=s.issue_id WHERE s.student_id=? ORDER BY s.id DESC LIMIT 50",(sid,)).fetchall()
     con.close()
     initials="".join(x[0] for x in st["name"].split()[:2]).upper() or "V"
     card_label=esc(st["admit_card_original_name"]) if st["admit_card_original_name"] else "No ID card uploaded yet."
