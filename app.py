@@ -2339,6 +2339,92 @@ def layout(title, body, admin=False):
     .vybe-assistant-fab{{bottom:76px!important}}
     .vybe-assistant-panel{{bottom:130px!important}}
   }}
+
+/* ===== FINAL NAV / FOOTER COLORS ===== */
+.student-bottom-nav{{
+  background:#202326!important;
+  background-image:none!important;
+  border-top:1px solid #4b4f54!important;
+  box-shadow:0 -8px 22px rgba(0,0,0,.18)!important;
+}}
+.student-bottom-nav > .mobile-menu-nav,
+.student-bottom-nav > .mobile-home-nav,
+.student-bottom-nav > .mobile-profile-nav{{
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:46px!important;
+  margin:0!important;
+  padding:0 8px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  box-sizing:border-box!important;
+  border:1px solid #666b70!important;
+  border-radius:8px!important;
+  background:#30343a!important;
+  color:#f5f5f5!important;
+  box-shadow:none!important;
+  text-decoration:none!important;
+}}
+.student-bottom-nav > .mobile-home-nav.active{{
+  background:#ffffff!important;
+  color:#111315!important;
+  border-color:#ffffff!important;
+}}
+.student-bottom-nav > .mobile-menu-nav:hover,
+.student-bottom-nav > .mobile-profile-nav:hover{{
+  background:#3a3f45!important;
+  border-color:#8b9095!important;
+  color:#ffffff!important;
+}}
+.student-bottom-nav .mobile-menu-label,
+.student-bottom-nav .mobile-home-nav,
+.student-bottom-nav .mobile-profile-nav{{
+  color:inherit!important;
+  font-size:12px!important;
+  font-weight:800!important;
+  line-height:1!important;
+}}
+/* Every desktop navigation/menu item gets its own visible border. */
+.student-desktop-links > a,
+.navlinks > a,
+.admin-navlinks > a{{
+  border:1px solid #b8bdc3!important;
+  background:#ffffff!important;
+  color:#17191c!important;
+  border-radius:8px!important;
+  box-shadow:none!important;
+}}
+.student-desktop-links > a:hover,
+.navlinks > a:hover,
+.admin-navlinks > a:hover{{
+  background:#f0f1f2!important;
+  border-color:#777d83!important;
+  color:#000000!important;
+}}
+/* Each item in the phone menu has its own box. */
+#vybeMobileNav.student-mobile-menu > a,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+  display:flex!important;
+  align-items:center!important;
+  width:calc(100% - 16px)!important;
+  min-height:40px!important;
+  margin:4px 8px!important;
+  padding:0 12px!important;
+  border:1px solid #b8bdc3!important;
+  border-radius:8px!important;
+  background:#ffffff!important;
+  color:#17191c!important;
+  box-sizing:border-box!important;
+  text-decoration:none!important;
+}}
+#vybeMobileNav.student-mobile-menu > a:hover,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover{{
+  background:#f0f1f2!important;
+  border-color:#777d83!important;
+}}
+
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
