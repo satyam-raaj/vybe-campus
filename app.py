@@ -818,6 +818,9 @@ CSS = r"""
 
 
 def layout(title, body, admin=False):
+    # Always initialize this before branching. Admin pages do not enter the
+    # student branch, so leaving it unassigned causes UnboundLocalError.
+    student_tools = ""
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/password">Security</a><a href="/admin/logout">Logout</a>'
     elif session.get("student_db_id"):
