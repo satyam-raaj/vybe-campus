@@ -4388,15 +4388,15 @@ def issues():
 
 
 /* ===== FINAL VYBE LOGIN EXPERIENCE — DESKTOP + PHONE ===== */
-@media (min-width:851px){
-  body:has(.authbox){
+@media (min-width:851px){{
+  body:has(.authbox){{
     min-height:100vh!important;
     background:
       radial-gradient(700px 420px at 12% 18%,rgba(47,111,202,.12),transparent 68%),
       radial-gradient(700px 420px at 88% 82%,rgba(104,184,46,.10),transparent 68%),
       linear-gradient(135deg,#f7f9fc 0%,#eef4f8 52%,#f8faf7 100%)!important;
-  }
-  body:has(.authbox) .auth{
+  }}
+  body:has(.authbox) .auth{{
     min-height:calc(100vh - 64px)!important;
     width:100%!important;
     max-width:none!important;
@@ -4407,14 +4407,14 @@ def issues():
     justify-content:center!important;
     position:relative!important;
     overflow:hidden!important;
-  }
+  }}
   body:has(.authbox) .auth:before,
-  body:has(.authbox) .auth:after{
+  body:has(.authbox) .auth:after{{
     content:""!important;position:absolute!important;border-radius:50%!important;pointer-events:none!important;filter:blur(2px)!important;
-  }
-  body:has(.authbox) .auth:before{width:360px;height:360px;left:8%;top:12%;background:rgba(47,111,202,.08)}
-  body:has(.authbox) .auth:after{width:330px;height:330px;right:9%;bottom:8%;background:rgba(104,184,46,.07)}
-  body:has(.authbox) .authbox{
+  }}
+  body:has(.authbox) .auth:before{{width:360px;height:360px;left:8%;top:12%;background:rgba(47,111,202,.08)}}
+  body:has(.authbox) .auth:after{{width:330px;height:330px;right:9%;bottom:8%;background:rgba(104,184,46,.07)}}
+  body:has(.authbox) .authbox{{
     position:relative!important;z-index:1!important;
     width:min(500px,100%)!important;max-width:500px!important;min-width:0!important;
     margin:0!important;padding:38px 38px 32px!important;box-sizing:border-box!important;
@@ -4424,87 +4424,87 @@ def issues():
     box-shadow:0 30px 80px rgba(31,48,66,.14),0 8px 25px rgba(31,48,66,.06),inset 0 1px rgba(255,255,255,.95)!important;
     backdrop-filter:blur(24px) saturate(135%)!important;
     -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-  }
-  body:has(.authbox) .authbox .badge{
+  }}
+  body:has(.authbox) .authbox .badge{{
     display:inline-flex!important;align-items:center!important;max-width:100%!important;box-sizing:border-box!important;
     padding:7px 11px!important;border-radius:999px!important;
     background:#edf4ff!important;border:1px solid #d7e5fb!important;color:#2f6fca!important;
     font-size:10px!important;font-weight:850!important;letter-spacing:.12em!important;
-  }
-  body:has(.authbox) .authbox h1{
+  }}
+  body:has(.authbox) .authbox h1{{
     margin:17px 0 9px!important;font-size:42px!important;line-height:1.02!important;letter-spacing:-.055em!important;
     color:#17202b!important;background:none!important;-webkit-text-fill-color:#17202b!important;
-  }
-  body:has(.authbox) .authbox>p.muted{margin:0 0 25px!important;color:#687482!important;font-size:15px!important;line-height:1.55!important;max-width:420px!important}
-  body:has(.authbox) .authbox .form{display:grid!important;gap:17px!important;width:100%!important}
-  body:has(.authbox) .authbox .label{display:block!important;margin:0 0 7px!important;color:#35414d!important;font-size:12px!important;font-weight:750!important}
+  }}
+  body:has(.authbox) .authbox>p.muted{{margin:0 0 25px!important;color:#687482!important;font-size:15px!important;line-height:1.55!important;max-width:420px!important}}
+  body:has(.authbox) .authbox .form{{display:grid!important;gap:17px!important;width:100%!important}}
+  body:has(.authbox) .authbox .label{{display:block!important;margin:0 0 7px!important;color:#35414d!important;font-size:12px!important;font-weight:750!important}}
   body:has(.authbox) .authbox input,
   body:has(.authbox) .authbox select,
-  body:has(.authbox) .authbox textarea{
+  body:has(.authbox) .authbox textarea{{
     width:100%!important;min-width:0!important;max-width:100%!important;height:52px!important;box-sizing:border-box!important;
     padding:0 15px!important;border-radius:14px!important;background:rgba(247,250,253,.94)!important;
     color:#17202b!important;border:1px solid #d8e0e7!important;font-size:14px!important;
-  }
-  body:has(.authbox) .authbox input::placeholder{color:#8b97a3!important}
-  body:has(.authbox) .authbox input:focus{background:#fff!important;border-color:#78a9df!important;box-shadow:0 0 0 4px rgba(47,111,202,.10)!important}
-  body:has(.authbox) .authbox .password-wrap{position:relative!important;width:100%!important;min-width:0!important}
-  body:has(.authbox) .authbox .password-wrap input{padding-right:55px!important}
-  body:has(.authbox) .authbox .password-toggle{position:absolute!important;right:7px!important;top:50%!important;transform:translateY(-50%)!important;width:38px!important;height:38px!important;margin:0!important;border:0!important;border-radius:10px!important;background:transparent!important;color:#71808e!important;display:grid!important;place-items:center!important;cursor:pointer!important}
-  body:has(.authbox) .authbox .password-toggle:hover{background:#edf3f8!important;color:#2f6fca!important}
-  body:has(.authbox) .authbox .btn.accent{width:100%!important;min-height:52px!important;margin-top:2px!important;border-radius:14px!important;background:linear-gradient(135deg,#3479d1,#245eae)!important;border:1px solid #2f6fca!important;color:#fff!important;font-size:14px!important;font-weight:800!important;box-shadow:0 10px 25px rgba(47,111,202,.20)!important}
-  body:has(.authbox) .authbox .btn.accent:hover{background:linear-gradient(135deg,#3d82dc,#245aa8)!important;transform:translateY(-1px)!important}
-  body:has(.authbox) .authbox .actions{display:grid!important;grid-template-columns:1fr!important;margin-top:11px!important}
-  body:has(.authbox) .authbox .actions .btn.dark{width:100%!important;min-height:46px!important;border-radius:13px!important;background:#f5f8fb!important;border:1px solid #d8e0e7!important;color:#44515e!important}
-  body:has(.authbox) .authbox .actions .btn.dark:hover{background:#edf3f8!important;border-color:#c5d1dc!important}
-  body:has(.authbox) .authbox .small{font-size:12px!important;line-height:1.5!important;color:#7a8793!important;text-align:center!important;margin:18px 0 0!important}
-  body:has(.authbox) .authbox .small a{color:#2f6fca!important;font-weight:750!important}
-}
+  }}
+  body:has(.authbox) .authbox input::placeholder{{color:#8b97a3!important}}
+  body:has(.authbox) .authbox input:focus{{background:#fff!important;border-color:#78a9df!important;box-shadow:0 0 0 4px rgba(47,111,202,.10)!important}}
+  body:has(.authbox) .authbox .password-wrap{{position:relative!important;width:100%!important;min-width:0!important}}
+  body:has(.authbox) .authbox .password-wrap input{{padding-right:55px!important}}
+  body:has(.authbox) .authbox .password-toggle{{position:absolute!important;right:7px!important;top:50%!important;transform:translateY(-50%)!important;width:38px!important;height:38px!important;margin:0!important;border:0!important;border-radius:10px!important;background:transparent!important;color:#71808e!important;display:grid!important;place-items:center!important;cursor:pointer!important}}
+  body:has(.authbox) .authbox .password-toggle:hover{{background:#edf3f8!important;color:#2f6fca!important}}
+  body:has(.authbox) .authbox .btn.accent{{width:100%!important;min-height:52px!important;margin-top:2px!important;border-radius:14px!important;background:linear-gradient(135deg,#3479d1,#245eae)!important;border:1px solid #2f6fca!important;color:#fff!important;font-size:14px!important;font-weight:800!important;box-shadow:0 10px 25px rgba(47,111,202,.20)!important}}
+  body:has(.authbox) .authbox .btn.accent:hover{{background:linear-gradient(135deg,#3d82dc,#245aa8)!important;transform:translateY(-1px)!important}}
+  body:has(.authbox) .authbox .actions{{display:grid!important;grid-template-columns:1fr!important;margin-top:11px!important}}
+  body:has(.authbox) .authbox .actions .btn.dark{{width:100%!important;min-height:46px!important;border-radius:13px!important;background:#f5f8fb!important;border:1px solid #d8e0e7!important;color:#44515e!important}}
+  body:has(.authbox) .authbox .actions .btn.dark:hover{{background:#edf3f8!important;border-color:#c5d1dc!important}}
+  body:has(.authbox) .authbox .small{{font-size:12px!important;line-height:1.5!important;color:#7a8793!important;text-align:center!important;margin:18px 0 0!important}}
+  body:has(.authbox) .authbox .small a{{color:#2f6fca!important;font-weight:750!important}}
+}}
 
-@media (max-width:850px){
-  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
-  body:has(.authbox){min-height:100svh!important;background:linear-gradient(180deg,#f7f9fc 0%,#eef4f8 52%,#f7faf5 100%)!important}
-  body:has(.authbox) .wrap{width:100%!important;max-width:none!important;padding:0!important;box-sizing:border-box!important}
-  body:has(.authbox) .auth{
+@media (max-width:850px){{
+  html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
+  body:has(.authbox){{min-height:100svh!important;background:linear-gradient(180deg,#f7f9fc 0%,#eef4f8 52%,#f7faf5 100%)!important}}
+  body:has(.authbox) .wrap{{width:100%!important;max-width:none!important;padding:0!important;box-sizing:border-box!important}}
+  body:has(.authbox) .auth{{
     width:100%!important;min-height:calc(100svh - 58px)!important;height:auto!important;
     margin:0!important;padding:20px 12px 34px!important;box-sizing:border-box!important;
     display:flex!important;align-items:flex-start!important;justify-content:center!important;
-  }
-  body:has(.authbox) .authbox{
+  }}
+  body:has(.authbox) .authbox{{
     width:100%!important;max-width:520px!important;min-width:0!important;margin:0!important;
     padding:24px 18px 22px!important;box-sizing:border-box!important;border-radius:22px!important;
     background:rgba(255,255,255,.86)!important;border:1px solid rgba(255,255,255,.95)!important;
     box-shadow:0 20px 55px rgba(31,48,66,.12),0 5px 18px rgba(31,48,66,.05),inset 0 1px rgba(255,255,255,.95)!important;
     backdrop-filter:blur(20px) saturate(130%)!important;-webkit-backdrop-filter:blur(20px) saturate(130%)!important;
-  }
-  body:has(.authbox) .authbox .badge{font-size:9px!important;letter-spacing:.10em!important;padding:6px 9px!important;max-width:100%!important;white-space:normal!important}
-  body:has(.authbox) .authbox h1{font-size:31px!important;line-height:1.05!important;letter-spacing:-.055em!important;margin:14px 0 8px!important;color:#17202b!important;background:none!important;-webkit-text-fill-color:#17202b!important}
-  body:has(.authbox) .authbox>p.muted{font-size:13px!important;line-height:1.48!important;margin:0 0 20px!important;color:#687482!important}
-  body:has(.authbox) .authbox .form{display:grid!important;gap:14px!important;width:100%!important;min-width:0!important}
-  body:has(.authbox) .authbox .label{font-size:11px!important;font-weight:750!important;color:#35414d!important;margin:0 0 6px!important}
+  }}
+  body:has(.authbox) .authbox .badge{{font-size:9px!important;letter-spacing:.10em!important;padding:6px 9px!important;max-width:100%!important;white-space:normal!important}}
+  body:has(.authbox) .authbox h1{{font-size:31px!important;line-height:1.05!important;letter-spacing:-.055em!important;margin:14px 0 8px!important;color:#17202b!important;background:none!important;-webkit-text-fill-color:#17202b!important}}
+  body:has(.authbox) .authbox>p.muted{{font-size:13px!important;line-height:1.48!important;margin:0 0 20px!important;color:#687482!important}}
+  body:has(.authbox) .authbox .form{{display:grid!important;gap:14px!important;width:100%!important;min-width:0!important}}
+  body:has(.authbox) .authbox .label{{font-size:11px!important;font-weight:750!important;color:#35414d!important;margin:0 0 6px!important}}
   body:has(.authbox) .authbox input,
   body:has(.authbox) .authbox select,
-  body:has(.authbox) .authbox textarea{width:100%!important;min-width:0!important;max-width:100%!important;height:48px!important;box-sizing:border-box!important;padding:0 13px!important;border-radius:13px!important;background:rgba(248,250,252,.96)!important;color:#17202b!important;border:1px solid #d8e0e7!important;font-size:14px!important}
-  body:has(.authbox) .authbox input:focus{background:#fff!important;border-color:#78a9df!important;box-shadow:0 0 0 3px rgba(47,111,202,.10)!important}
-  body:has(.authbox) .authbox .password-wrap{position:relative!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}
-  body:has(.authbox) .authbox .password-wrap input{padding-right:52px!important}
-  body:has(.authbox) .authbox .password-toggle{position:absolute!important;right:6px!important;top:50%!important;transform:translateY(-50%)!important;width:36px!important;height:36px!important;margin:0!important;border:0!important;border-radius:9px!important;background:transparent!important;color:#71808e!important;display:grid!important;place-items:center!important}
-  body:has(.authbox) .authbox .btn.accent{width:100%!important;max-width:100%!important;min-height:48px!important;height:auto!important;padding:11px 13px!important;margin-top:1px!important;border-radius:13px!important;background:linear-gradient(135deg,#3479d1,#245eae)!important;border:1px solid #2f6fca!important;color:#fff!important;font-size:13px!important;font-weight:800!important;white-space:normal!important;box-sizing:border-box!important;box-shadow:0 9px 22px rgba(47,111,202,.18)!important}
-  body:has(.authbox) .authbox .actions{display:grid!important;grid-template-columns:1fr!important;width:100%!important;gap:8px!important;margin-top:10px!important}
-  body:has(.authbox) .authbox .actions .btn{width:100%!important;min-height:44px!important;box-sizing:border-box!important;border-radius:12px!important}
-  body:has(.authbox) .authbox .actions .btn.dark{background:#f5f8fb!important;border:1px solid #d8e0e7!important;color:#44515e!important}
-  body:has(.authbox) .authbox .small{font-size:11px!important;line-height:1.5!important;text-align:center!important;margin:15px 0 0!important;color:#7a8793!important;overflow-wrap:anywhere!important}
-  body:has(.authbox) .authbox .small a{color:#2f6fca!important;font-weight:750!important}
-  body:has(.authbox) .authbox .flash{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere!important}
-}
+  body:has(.authbox) .authbox textarea{{width:100%!important;min-width:0!important;max-width:100%!important;height:48px!important;box-sizing:border-box!important;padding:0 13px!important;border-radius:13px!important;background:rgba(248,250,252,.96)!important;color:#17202b!important;border:1px solid #d8e0e7!important;font-size:14px!important}}
+  body:has(.authbox) .authbox input:focus{{background:#fff!important;border-color:#78a9df!important;box-shadow:0 0 0 3px rgba(47,111,202,.10)!important}}
+  body:has(.authbox) .authbox .password-wrap{{position:relative!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}}
+  body:has(.authbox) .authbox .password-wrap input{{padding-right:52px!important}}
+  body:has(.authbox) .authbox .password-toggle{{position:absolute!important;right:6px!important;top:50%!important;transform:translateY(-50%)!important;width:36px!important;height:36px!important;margin:0!important;border:0!important;border-radius:9px!important;background:transparent!important;color:#71808e!important;display:grid!important;place-items:center!important}}
+  body:has(.authbox) .authbox .btn.accent{{width:100%!important;max-width:100%!important;min-height:48px!important;height:auto!important;padding:11px 13px!important;margin-top:1px!important;border-radius:13px!important;background:linear-gradient(135deg,#3479d1,#245eae)!important;border:1px solid #2f6fca!important;color:#fff!important;font-size:13px!important;font-weight:800!important;white-space:normal!important;box-sizing:border-box!important;box-shadow:0 9px 22px rgba(47,111,202,.18)!important}}
+  body:has(.authbox) .authbox .actions{{display:grid!important;grid-template-columns:1fr!important;width:100%!important;gap:8px!important;margin-top:10px!important}}
+  body:has(.authbox) .authbox .actions .btn{{width:100%!important;min-height:44px!important;box-sizing:border-box!important;border-radius:12px!important}}
+  body:has(.authbox) .authbox .actions .btn.dark{{background:#f5f8fb!important;border:1px solid #d8e0e7!important;color:#44515e!important}}
+  body:has(.authbox) .authbox .small{{font-size:11px!important;line-height:1.5!important;text-align:center!important;margin:15px 0 0!important;color:#7a8793!important;overflow-wrap:anywhere!important}}
+  body:has(.authbox) .authbox .small a{{color:#2f6fca!important;font-weight:750!important}}
+  body:has(.authbox) .authbox .flash{{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere!important}}
+}}
 
-@media (max-width:380px){
-  body:has(.authbox) .auth{padding:14px 8px 26px!important}
-  body:has(.authbox) .authbox{padding:20px 14px 18px!important;border-radius:19px!important}
-  body:has(.authbox) .authbox h1{font-size:28px!important}
-  body:has(.authbox) .authbox>p.muted{font-size:12px!important;margin-bottom:17px!important}
-  body:has(.authbox) .authbox input{height:46px!important;font-size:13px!important}
-  body:has(.authbox) .authbox .btn.accent{min-height:46px!important}
-}
+@media (max-width:380px){{
+  body:has(.authbox) .auth{{padding:14px 8px 26px!important}}
+  body:has(.authbox) .authbox{{padding:20px 14px 18px!important;border-radius:19px!important}}
+  body:has(.authbox) .authbox h1{{font-size:28px!important}}
+  body:has(.authbox) .authbox>p.muted{{font-size:12px!important;margin-bottom:17px!important}}
+  body:has(.authbox) .authbox input{{height:46px!important;font-size:13px!important}}
+  body:has(.authbox) .authbox .btn.accent{{min-height:46px!important}}
+}}
 
 </style>
     <section class="section vybe-campus-wrap">
@@ -6236,3 +6236,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
