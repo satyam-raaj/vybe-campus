@@ -4832,6 +4832,151 @@ def academics():
     font-size:16px!important;
   }
 }
+<style>
+/* ===== ACADEMIC HUB — HOMEPAGE LIGHT GLASS MOBILE NAV ===== */
+@media (max-width:850px){
+  .page-academics{padding-bottom:94px!important}
+
+  .student-bottom-nav{
+    position:fixed!important;
+    left:12px!important;
+    right:12px!important;
+    bottom:10px!important;
+    width:auto!important;
+    height:68px!important;
+    min-height:68px!important;
+    padding:7px!important;
+    margin:0!important;
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:6px!important;
+    align-items:stretch!important;
+    box-sizing:border-box!important;
+    background:rgba(255,255,255,.68)!important;
+    background-image:linear-gradient(135deg,rgba(255,255,255,.82),rgba(239,247,255,.64) 58%,rgba(241,249,235,.64))!important;
+    border:1px solid rgba(255,255,255,.92)!important;
+    border-radius:22px!important;
+    box-shadow:0 12px 34px rgba(42,75,105,.15),0 2px 8px rgba(42,75,105,.07),inset 0 1px rgba(255,255,255,.95)!important;
+    backdrop-filter:blur(24px) saturate(135%)!important;
+    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+    z-index:10000!important;
+  }
+
+  .student-bottom-nav > .mobile-menu-nav,
+  .student-bottom-nav > .mobile-home-nav,
+  .student-bottom-nav > .mobile-profile-nav{
+    width:100%!important;
+    height:52px!important;
+    min-width:0!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:4px 6px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:4px!important;
+    box-sizing:border-box!important;
+    border:1px solid rgba(205,220,232,.72)!important;
+    border-radius:16px!important;
+    background:rgba(255,255,255,.54)!important;
+    color:#526171!important;
+    box-shadow:0 3px 10px rgba(43,73,99,.045),inset 0 1px rgba(255,255,255,.85)!important;
+    backdrop-filter:blur(12px)!important;
+    -webkit-backdrop-filter:blur(12px)!important;
+    font-size:11px!important;
+    font-weight:800!important;
+    line-height:1!important;
+    text-decoration:none!important;
+    transition:background .18s ease,color .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease!important;
+    -webkit-tap-highlight-color:transparent!important;
+  }
+
+  .student-bottom-nav .vybe-nav-icon{
+    width:19px!important;
+    height:19px!important;
+    display:grid!important;
+    place-items:center!important;
+    flex:0 0 19px!important;
+  }
+  .student-bottom-nav .vybe-nav-icon svg{
+    width:19px!important;
+    height:19px!important;
+    stroke:currentColor!important;
+  }
+  .student-bottom-nav .mobile-menu-label{
+    display:block!important;
+    color:inherit!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    line-height:1!important;
+  }
+
+  /* Home: soft VYBE blue */
+  .student-bottom-nav > .mobile-home-nav.active{
+    background:linear-gradient(145deg,rgba(237,246,255,.94),rgba(221,237,255,.82))!important;
+    color:#2f6fca!important;
+    border-color:rgba(143,190,232,.78)!important;
+    box-shadow:0 5px 15px rgba(47,111,202,.10),inset 0 1px rgba(255,255,255,.95)!important;
+  }
+
+  /* Profile: soft VYBE green */
+  .student-bottom-nav > .mobile-profile-nav{
+    background:rgba(242,249,236,.62)!important;
+    color:#5c8e35!important;
+    border-color:rgba(178,211,151,.68)!important;
+  }
+
+  .student-bottom-nav > .mobile-menu-nav:hover,
+  .student-bottom-nav > .mobile-menu-nav:focus-visible{
+    background:rgba(255,255,255,.82)!important;
+    color:#2f6fca!important;
+    border-color:#bcd6ed!important;
+  }
+  .student-bottom-nav > .mobile-profile-nav:hover,
+  .student-bottom-nav > .mobile-profile-nav:focus-visible{
+    background:rgba(242,249,236,.88)!important;
+    color:#4f8129!important;
+    border-color:#b8d69d!important;
+  }
+  .student-bottom-nav > .mobile-home-nav:hover,
+  .student-bottom-nav > .mobile-home-nav:focus-visible{
+    background:rgba(237,246,255,.92)!important;
+  }
+
+  .student-bottom-nav > a:active,
+  .student-bottom-nav > button:active{
+    transform:scale(.96)!important;
+  }
+
+  /* Let the homepage-like background show through the glass. */
+  .vybe-assistant-fab{
+    right:14px!important;
+    bottom:82px!important;
+    min-height:40px!important;
+    padding:8px 11px!important;
+    border-radius:14px!important;
+    background:rgba(255,255,255,.76)!important;
+    color:#24384b!important;
+    border:1px solid rgba(177,205,226,.72)!important;
+    box-shadow:0 10px 26px rgba(42,75,105,.15),inset 0 1px rgba(255,255,255,.9)!important;
+    backdrop-filter:blur(18px)!important;
+    -webkit-backdrop-filter:blur(18px)!important;
+  }
+  .vybe-assistant-fab .fab-mark{
+    background:#eef6ff!important;
+    color:#2f6fca!important;
+    border:1px solid #d2e3f5!important;
+  }
+  .vybe-assistant-panel{bottom:138px!important}
+}
+
+@media (max-width:380px){
+  .student-bottom-nav{left:8px!important;right:8px!important;bottom:8px!important;height:64px!important;min-height:64px!important;border-radius:20px!important;padding:6px!important}
+  .student-bottom-nav > .mobile-menu-nav,
+  .student-bottom-nav > .mobile-home-nav,
+  .student-bottom-nav > .mobile-profile-nav{height:50px!important;border-radius:15px!important;font-size:10px!important}
+}
 </style>""" + body
     return layout("Academic Hub", body)
 
