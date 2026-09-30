@@ -1119,6 +1119,57 @@ def _safe_500_page():
     flex:0 0 30px!important;font-size:20px!important;line-height:1!important;color:#54b9ee!important;
   }
 }
+
+  /* ===== SIMPLE FINAL PHONE NAV: DO NOT TOUCH DESKTOP ===== */
+  @media(max-width:850px){
+    html,body{width:100%!important;overflow-x:hidden!important}
+    body{padding-top:111px!important;padding-bottom:78px!important}
+    .nav:has(.student-nav-compact){position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:9000!important;background:#fff!important;border-bottom:1px solid #dfe5df!important;box-shadow:0 3px 14px rgba(20,35,28,.08)!important}
+    .nav:has(.student-nav-compact) .student-nav-compact{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:8px!important;box-sizing:border-box!important}
+    .student-nav-compact .student-brand-compact,.student-nav-compact .student-header-back{flex:1 1 auto!important;min-width:0!important}
+    .student-nav-compact .student-brand-compact{display:flex!important;align-items:center!important;gap:7px!important;text-decoration:none!important}
+    .student-nav-compact .student-brand-compact .brandmark{width:32px!important;height:32px!important;border-radius:10px!important;font-size:17px!important}
+    .student-nav-compact .student-brand-compact .brandtext{font-size:18px!important;font-weight:850!important;color:#172033!important}
+    .student-nav-compact .student-header-back{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:7px 9px!important;border:1px solid #dce4dc!important;border-radius:9px!important;background:#f6f8f5!important;color:#172033!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
+    .student-nav-compact .student-desktop-links,.student-nav-compact .student-menu{display:none!important}
+    .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;flex:0 0 auto!important;margin-left:auto!important}
+    .student-nav-compact .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:34px!important;padding:0 11px!important;border:1px solid #cfd9e2!important;border-radius:9px!important;background:#fff!important;color:#263746!important;font-size:12px!important;font-weight:800!important;text-decoration:none!important;box-shadow:none!important}
+    .student-nav-compact .student-header-updates:hover{background:#f3f7fa!important;border-color:#b9c9d6!important;color:#1f5f8e!important}
+    .nav:has(.student-nav-compact) .student-control-row{height:57px!important;box-sizing:border-box!important;padding:6px 12px 9px!important;margin:0!important;background:#fff!important;border:0!important;display:flex!important;align-items:center!important;justify-content:center!important}
+    .student-control-row .student-search{width:100%!important;max-width:none!important;height:42px!important;margin:0!important;position:relative!important}
+    .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;padding:0 13px!important;border:1px solid #d6e0e7!important;border-radius:11px!important;background:#f8fafb!important;color:#172033!important;font-size:13px!important;outline:none!important}
+    .student-search input:focus{background:#fff!important;border-color:#78a9cf!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
+
+    /* Real, visible direct suggestions under the search field. */
+    .vybe-search-suggestions{display:none!important;position:absolute!important;left:0!important;right:0!important;top:48px!important;z-index:10001!important;background:#fff!important;border:1px solid #d9e2e8!important;border-radius:12px!important;padding:5px!important;box-shadow:0 14px 35px rgba(24,42,58,.16)!important}
+    .vybe-search-suggestions.open{display:block!important}
+    .vybe-search-suggestion{display:flex!important;align-items:center!important;justify-content:space-between!important;min-height:40px!important;padding:8px 10px!important;border-radius:8px!important;color:#253746!important;background:#fff!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important}
+    .vybe-search-suggestion:hover,.vybe-search-suggestion:focus{background:#eef5fa!important;color:#205f8d!important;outline:none!important}
+
+    /* Exactly three aligned footer controls. */
+    .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:70px!important;box-sizing:border-box!important;z-index:9000!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;align-items:center!important;gap:6px!important;padding:6px 10px calc(6px + env(safe-area-inset-bottom))!important;background:rgba(255,255,255,.98)!important;border-top:1px solid #dfe5df!important;box-shadow:0 -6px 22px rgba(20,35,28,.08)!important}
+    .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:10px!important;border:1px solid transparent!important;background:transparent!important;color:#596875!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important}
+    .student-bottom-nav a.active{background:#eef4f8!important;color:#245f88!important;border-color:#d8e5ee!important}
+    .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border-color:#172033!important;box-shadow:none!important}
+    .student-bottom-nav button.mobile-menu-nav:hover{background:#243247!important;color:#fff!important}
+    .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important;font-size:12px!important;font-weight:800!important}
+    .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+    .student-bottom-spacer{display:none!important}
+
+    /* Left drawer, no duplicate second menu. */
+    #vybeMobileNav.student-mobile-menu{display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:62px!important;width:min(44vw,205px)!important;min-width:155px!important;max-height:calc(100vh - 145px)!important;overflow:auto!important;padding:8px!important;z-index:10000!important;box-sizing:border-box!important;background:#fff!important;border:1px solid #dce5df!important;border-radius:12px!important;box-shadow:0 16px 40px rgba(24,42,58,.18)!important}
+    #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:3px!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:3px 4px 7px!important;border-bottom:1px solid #edf0ed!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
+    #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:27px!important;padding:0 8px!important;border:1px solid #d9e1dc!important;border-radius:7px!important;background:#f7f9f7!important;color:#26323e!important;font-size:10px!important}
+    #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{display:flex!important;align-items:center!important;min-height:34px!important;padding:7px 8px!important;border:0!important;border-radius:8px!important;background:#fff!important;color:#26323e!important;text-decoration:none!important;font-size:10.5px!important;font-weight:700!important;line-height:1.15!important}
+    #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#eef5fa!important;color:#205f8d!important}
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
+    .vybe-assistant-fab{bottom:80px!important}
+    .vybe-assistant-panel{bottom:132px!important}
+    .footer,.vybe-footer{display:none!important}
+  }
+
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -2111,8 +2162,9 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin student-nav-compact"><a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a><nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
-<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
+        header_lead = ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')
+        header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+<div class="student-control-row"><form class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -2238,34 +2290,34 @@ function setMenu(open){{
   }});
 }})();
 
-/* Header search: show direct campus destinations when the field is focused. */
+/* Header search: direct campus destinations. */
 (function(){{
   const forms=document.querySelectorAll('.student-search');
   const items=[
-    {{label:'Study Material',hint:'Open academics',url:'/academics?resource_type=Study+material'}},
-    {{label:'Notes',hint:'Study notes',url:'/academics?resource_type=Notes'}},
-    {{label:'Timetable',hint:'View timetable',url:'/timetable'}},
-    {{label:'Previous Papers',hint:'PYQ papers',url:'/papers'}},
+    {{label:'Study Material',hint:'Academics',url:'/academics?resource_type=Study+material'}},
+    {{label:'Notes',hint:'Study Notes',url:'/academics?resource_type=Notes'}},
+    {{label:'Timetable',hint:'Campus timetable',url:'/timetable'}},
+    {{label:'Previous Papers',hint:'PYQ Papers',url:'/papers'}},
     {{label:'Admit Card',hint:'Exam updates',url:'/updates?kind=Admit%20Card'}},
     {{label:'Results & Updates',hint:'Latest updates',url:'/updates'}}
   ];
   forms.forEach(function(form){{
-    const input=form.querySelector('input[name=\"q\"]');
-    if(!input || form.dataset.suggestionReady==='1') return;
-    form.dataset.suggestionReady='1';
+    const input=form.querySelector('input[name="q"]');
+    if(!input || form.dataset.vybeSuggestionReady==='1') return;
+    form.dataset.vybeSuggestionReady='1';
     const box=document.createElement('div');
     box.className='vybe-search-suggestions';
     box.setAttribute('role','listbox');
     box.innerHTML=items.map(function(item){{
-      return '<a class=\"vybe-search-suggestion\" role=\"option\" href=\"'+item.url+'\"><span>'+item.label+'</span><span>'+item.hint+'</span></a>';
+      return '<a class="vybe-search-suggestion" role="option" href="'+item.url+'"><span>'+item.label+'</span><span>'+item.hint+'</span></a>';
     }}).join('');
     form.appendChild(box);
-    function open(){{ box.classList.add('open'); }}
-    function close(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)) box.classList.remove('open'); }},120); }}
-    input.addEventListener('focus',open);
-    input.addEventListener('click',open);
-    input.addEventListener('input',function(){{ if(input.value.trim()) box.classList.remove('open'); else open(); }});
-    input.addEventListener('blur',close);
+    function openSuggestions(){{ box.classList.add('open'); }}
+    function closeSuggestions(){{ setTimeout(function(){{ if(!form.contains(document.activeElement)) box.classList.remove('open'); }},180); }}
+    input.addEventListener('focus',openSuggestions);
+    input.addEventListener('click',openSuggestions);
+    input.addEventListener('input',function(){{ openSuggestions(); }});
+    input.addEventListener('blur',closeSuggestions);
   }});
 }})();
 
@@ -5581,4 +5633,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
