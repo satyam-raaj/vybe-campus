@@ -5066,6 +5066,54 @@ def issues():
         .page-issues .campus-faculty-card{{padding:14px;border-radius:18px}}
       }}
 
+
+/* ===== VYBE timetable + academic updates visual redesign ===== */
+/* Timetable */
+.timetable-head{{max-width:1180px!important;margin:0 auto!important;padding:30px 0 20px!important}}
+.timetable-head:before{{content:"YOUR ACADEMIC SCHEDULE";display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#edf4ff;border:1px solid #d7e4f7;color:#2f6fca;font-size:9px;font-weight:900;letter-spacing:.13em}}
+.timetable-head h1{{font-size:clamp(38px,5vw,62px)!important;line-height:1!important;letter-spacing:-.055em!important;margin:16px 0 9px!important;color:#17202b!important}}
+.timetable-head h1:after{{content:"";display:inline-block;width:10px;height:10px;margin:0 0 6px 9px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 6px #edf8e6}}
+.timetable-head .muted{{max-width:680px;font-size:14px!important;line-height:1.6!important}}
+.timetable-list{{max-width:1180px!important;margin:0 auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px!important;padding-top:4px!important}}
+.timetable-card{{padding:14px!important;border-radius:22px!important;background:#fff!important;border:1px solid #dfe5ea!important;box-shadow:0 9px 28px rgba(31,48,66,.065)!important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease!important}}
+.timetable-card:hover{{transform:translateY(-3px)!important;border-color:#c8d8e8!important;box-shadow:0 16px 38px rgba(31,48,66,.11)!important}}
+.timetable-card:before{{content:"";display:block;height:4px;width:64px;border-radius:999px;background:linear-gradient(90deg,#2f6fca,#68b82e);margin:0 0 14px 2px}}
+.timetable-card .badge{{display:inline-flex!important;margin:0 0 2px!important;padding:6px 9px!important;border-radius:999px!important;font-size:9px!important;letter-spacing:.08em!important}}
+.timetable-card h2{{font-size:19px!important;margin:9px 0 4px!important;color:#17202b!important}}
+.timetable-card .small{{color:#89939f!important}}
+.timetable-preview{{margin-top:14px!important;border-radius:16px!important;border:1px solid #e1e7ec!important;background:#f5f7f9!important;box-shadow:inset 0 1px 0 #fff}}
+.timetable-preview img{{background:#f5f7f9!important;transition:transform .3s ease!important}}
+.timetable-card:hover .timetable-preview img{{transform:scale(1.012)}}
+.timetable-actions{{margin-top:12px!important}}
+.timetable-actions .btn{{border-radius:11px!important;background:#17202b!important;color:#fff!important;min-height:44px!important;font-weight:800!important;box-shadow:0 5px 14px rgba(23,32,43,.10)!important}}
+.timetable-actions .btn:after{{content:"  ↗";opacity:.7}}
+.timetable-card .notice{{border-radius:14px!important;background:#f7faff!important;border:1px solid #dbe6f2!important}}
+/* Academic updates */
+.academic-compact{{max-width:1180px!important;margin:0 auto!important;padding:46px 40px 38px!important;border-radius:28px!important;background:linear-gradient(135deg,#fff 0%,#f7faff 62%,#f5faef 100%)!important;box-shadow:0 15px 40px rgba(31,48,66,.06)!important;position:relative;overflow:hidden}}
+.academic-compact:after{{content:"";position:absolute;right:-90px;top:-120px;width:250px;height:250px;border-radius:50%;background:rgba(47,111,202,.055);pointer-events:none}}
+.academic-compact h1{{font-size:clamp(40px,5vw,64px)!important;line-height:.98!important;letter-spacing:-.055em!important;margin:14px 0 10px!important}}
+.academic-compact h1:after{{content:"";display:inline-block;width:10px;height:10px;margin:0 0 7px 9px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 6px #edf8e6}}
+.academic-compact .academic-lead{{max-width:720px!important;font-size:14px!important;line-height:1.65!important}}
+.academic-filter-panel{{max-width:1180px!important;margin:0 auto 22px!important;padding:15px!important;border-radius:18px!important;background:#fff!important;box-shadow:0 9px 28px rgba(31,48,66,.06)!important}}
+.academic-filter-form{{grid-template-columns:minmax(220px,2fr) 1fr 1fr auto!important;gap:8px!important}}
+.academic-filter-form input,.academic-filter-form select{{min-height:44px!important;border-radius:11px!important}}
+.academic-filter-form button{{min-height:44px!important;border-radius:11px!important;background:#17202b!important;color:#fff!important;font-weight:800!important}}
+.academic-update-list{{max-width:1180px!important;margin:0 auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px!important}}
+.academic-update-card{{min-height:220px!important;padding:20px!important;border-radius:19px!important;background:#fff!important;border:1px solid #dfe5ea!important;box-shadow:0 8px 24px rgba(31,48,66,.055)!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease!important}}
+.academic-update-card:hover{{transform:translateY(-3px)!important;border-color:#c8d8e8!important;box-shadow:0 16px 38px rgba(31,48,66,.10)!important}}
+.academic-update-card:before{{content:"";display:block;width:46px;height:4px;border-radius:999px;background:#2f6fca;margin-bottom:13px}}
+.academic-update-card:nth-child(2n):before{{background:#68b82e}}
+.academic-update-line{{gap:7px!important}}
+.academic-update-category{{display:inline-flex!important;padding:5px 8px!important;border-radius:999px!important;background:#edf8e6!important;border:1px solid #d5e9c4!important;color:#4f861e!important;font-size:9px!important}}
+.academic-update-kind{{padding:5px 8px!important;border-radius:999px!important;background:#edf4ff!important;border:1px solid #d7e4f7!important;color:#2f6fca!important;font-size:9px!important}}
+.academic-update-card h2{{font-size:20px!important;line-height:1.2!important;margin:16px 0 7px!important;color:#17202b!important}}
+.academic-update-card p{{font-size:13px!important;line-height:1.6!important;color:#687482!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+.academic-update-foot{{margin-top:auto!important;padding-top:18px!important;border-top:1px solid #edf0f2!important;color:#89939f!important}}
+.academic-link{{display:inline-flex!important;align-items:center;gap:5px;padding:9px 11px;border-radius:9px;background:#f7faff;color:#2f6fca!important;border:1px solid #dbe6f2;text-decoration:none!important;font-weight:900!important;transition:.18s ease}}
+.academic-link:hover{{background:#edf4ff!important;border-color:#cbdced!important;transform:translateY(-1px)}}
+.academic-empty{{grid-column:1/-1!important;padding:55px 24px!important;border-radius:20px!important;background:#fff!important;border:1px dashed #ccd7df!important}}
+@media(max-width:900px){{.timetable-list,.academic-update-list{{grid-template-columns:1fr!important}}.academic-filter-form{{grid-template-columns:1fr 1fr 1fr!important}}.academic-filter-form button{{grid-column:1/-1}}.academic-compact{{padding:38px 28px 32px!important}}}}
+@media(max-width:620px){{.timetable-head,.academic-filter-panel,.timetable-list,.academic-update-list{{padding-left:0!important;padding-right:0!important}}.timetable-head{{padding-top:25px!important}}.timetable-head h1,.academic-compact h1{{font-size:39px!important}}.academic-compact{{padding:30px 20px!important;border-radius:22px!important}}.academic-filter-form{{grid-template-columns:1fr!important}}.academic-filter-form button{{grid-column:auto}}.academic-update-card{{min-height:205px!important;padding:17px!important}}.academic-update-card h2{{font-size:18px!important}}.academic-update-foot{{align-items:flex-start!important;flex-direction:column!important;gap:9px!important}}.academic-link{{width:100%;justify-content:center;box-sizing:border-box}}.timetable-card{{border-radius:18px!important}}.timetable-actions .btn{{min-height:46px!important}}}}
 </style>
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
