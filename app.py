@@ -1907,6 +1907,77 @@ main,.main,.wrap{position:relative}
 }
 
 
+/* ===== VYBE REFERENCE HEADER / CLEAN MOBILE NAV ===== */
+.student-nav-compact{
+  max-width:1400px!important;
+  min-height:64px!important;
+  padding:8px 30px!important;
+  gap:28px!important;
+  background:#fff!important;
+  color:#172033!important;
+}
+.nav:has(.student-nav-compact){
+  background:#fff!important;
+  border-bottom:1px solid #e8ece7!important;
+  box-shadow:0 5px 20px rgba(30,45,55,.045)!important;
+}
+.student-brand-compact{display:flex!important;align-items:center!important;gap:11px!important;min-width:150px!important;text-decoration:none!important}
+.student-brand-compact .brandmark{width:46px!important;height:46px!important;border-radius:15px!important;background:#9bea2b!important;color:#101827!important;box-shadow:0 8px 20px rgba(115,178,30,.16)!important;display:grid!important;place-items:center!important;font-weight:900!important;font-size:22px!important}
+.student-brand-compact .brandtext{background:none!important;color:#172033!important;-webkit-text-fill-color:#172033!important;font-size:22px!important;font-weight:900!important;letter-spacing:-.04em!important}
+.student-desktop-links{flex:1!important;justify-content:center!important;gap:4px!important}
+.student-desktop-links a{padding:11px 15px!important;border-radius:9px!important;color:#172033!important;font-size:14px!important;font-weight:700!important}
+.student-desktop-links a:hover{background:#f2f7ed!important;color:#172033!important}
+.student-header-tools{gap:8px!important}
+.student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:40px!important;padding:0 13px!important;border-radius:10px!important;color:#172033!important;text-decoration:none!important;font-size:14px!important;font-weight:700!important}
+.student-header-updates:hover{background:#f2f7ed!important}
+.student-menu{height:40px!important;min-width:68px!important;background:#172033!important;color:#fff!important;border:0!important;border-radius:10px!important;box-shadow:none!important}
+.student-menu:hover{background:#263246!important;border-color:transparent!important;box-shadow:none!important}
+.student-control-row{max-width:1400px!important;padding:0 30px 10px!important;background:#fff!important}
+.student-control-row .student-search{max-width:460px!important;margin-left:auto!important}
+.student-search input{background:#f7f9f7!important;border-color:#e0e6df!important;color:#172033!important;box-shadow:none!important}
+.student-search input:focus{background:#fff!important;border-color:#a8c987!important;box-shadow:0 0 0 4px rgba(155,234,43,.12)!important}
+.student-header-back{color:#172033!important;background:#f5f7f4!important;border:1px solid #e0e6df!important;border-radius:10px!important;padding:9px 13px!important;min-width:auto!important}
+.student-header-back:hover{color:#172033!important;background:#edf5e8!important}
+.student-header-back + .student-desktop-links{justify-content:center!important}
+/* Desktop menu contains names only, never alphabet markers. */
+#vybeMobileNav.student-mobile-menu > a{font-size:13px!important;color:#25313e!important}
+#vybeMobileNav.student-mobile-menu > a:hover{background:#f1f7eb!important;color:#4e7f25!important}
+#vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{font-size:13px!important}
+/* Phone: the bottom navigation is the same clean navigation language as Home. */
+@media(max-width:850px){
+  .student-nav-compact{min-height:58px!important;padding:7px 12px!important;gap:8px!important}
+  .student-brand-compact{min-width:auto!important;gap:8px!important}
+  .student-brand-compact .brandmark{width:38px!important;height:38px!important;border-radius:12px!important;font-size:19px!important}
+  .student-brand-compact .brandtext{font-size:19px!important}
+  .student-header-tools{gap:6px!important}
+  .student-header-updates{display:none!important}
+  .student-menu{height:38px!important;min-width:62px!important;font-size:12px!important}
+  .student-control-row{padding:5px 12px 8px!important;background:#fff!important}
+  .student-control-row .student-search{width:100%!important;max-width:none!important}
+  .student-bottom-nav{
+    display:flex!important;align-items:stretch!important;justify-content:space-around!important;
+    height:68px!important;padding:7px 12px calc(7px + env(safe-area-inset-bottom))!important;
+    background:rgba(255,255,255,.97)!important;border-top:1px solid #e1e7df!important;
+    box-shadow:0 -8px 25px rgba(30,50,40,.08)!important;backdrop-filter:blur(18px)!important;
+  }
+  .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{
+    flex:1!important;display:flex!important;align-items:center!important;justify-content:center!important;
+    min-width:0!important;height:48px!important;margin:0 4px!important;border-radius:12px!important;
+    color:#5d6874!important;background:transparent!important;border:0!important;text-decoration:none!important;
+    font-size:12px!important;font-weight:750!important;box-shadow:none!important;
+  }
+  .student-bottom-nav a.active{background:#f0f7ea!important;color:#4e7f25!important}
+  .student-bottom-nav a:hover,.student-bottom-nav button.mobile-menu-nav:hover{background:#f5f7f5!important;color:#172033!important}
+  .student-bottom-nav .mobile-menu-label{display:block!important;font-size:12px!important;color:inherit!important}
+  .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-spacer{height:78px!important}
+  /* Remove the old letter-style markers from mobile menu links. */
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
+  #vybeMobileNav.student-mobile-menu a{display:flex!important;align-items:center!important;gap:0!important}
+}
+
+
 """
 
 
@@ -1919,15 +1990,15 @@ def layout(title, body, admin=False):
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
-        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
+        links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/updates">Updates</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
         # Mobile gets its own drawer links so desktop navigation is never changed.
-        mobile_links = '<a href="/dashboard"><span class="student-menu-icon">H</span><span>Home</span></a><a href="/academics"><span class="student-menu-icon">A</span><span>Academics</span></a><a href="/updates"><span class="student-menu-icon">U</span><span>Updates</span></a><a href="/apps"><span class="student-menu-icon">A</span><span>Apps</span></a><a href="/issues"><span class="student-menu-icon">C</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">C</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">M</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">S</span><span>Search</span></a><a href="/announcements"><span class="student-menu-icon"></span><span>Announcements</span></a><a href="/profile"><span class="student-menu-icon">P</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">L</span><span>Logout</span></a>'
+        mobile_links = '<a href="/dashboard"><span>Home</span></a><a href="/academics"><span>Academics</span></a><a href="/updates"><span>Updates</span></a><a href="/apps"><span>Study Apps</span></a><a href="/papers"><span>Previous Papers</span></a><a href="/issues"><span>Help Desk</span></a><a href="/community"><span>Community</span></a><a href="/chat"><span>Chat</span></a><a href="/search"><span>Search</span></a><a href="/announcements"><span>Announcements</span></a><a href="/events"><span>Events</span></a><a href="/profile"><span>Profile</span></a><a href="/logout"><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div></div>
+        header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 <div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>H</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>P</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
