@@ -4695,6 +4695,143 @@ def academics():
   .academic-hub-page > .academic-hero .academic-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
   .academic-hub-page > .academic-hero .academic-quick{min-height:100px!important}
 }
+</style>""" + r"""<style>
+/* ===== Academic Hub phone navigation polish ===== */
+@media (max-width:850px){
+  /* Give the page breathing room above the floating navigation. */
+  .page-academics{
+    padding-bottom:92px!important;
+  }
+
+  /* Floating, compact bottom navigation instead of three boxed buttons. */
+  .student-bottom-nav{
+    position:fixed!important;
+    left:12px!important;
+    right:12px!important;
+    bottom:10px!important;
+    width:auto!important;
+    height:66px!important;
+    min-height:66px!important;
+    padding:6px!important;
+    margin:0!important;
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    align-items:stretch!important;
+    gap:5px!important;
+    box-sizing:border-box!important;
+    border:1px solid rgba(130,170,205,.30)!important;
+    border-radius:22px!important;
+    background:rgba(20,31,45,.90)!important;
+    background-image:none!important;
+    box-shadow:0 12px 35px rgba(15,30,48,.28),0 2px 8px rgba(15,30,48,.12),inset 0 1px rgba(255,255,255,.10)!important;
+    backdrop-filter:blur(22px) saturate(145%)!important;
+    -webkit-backdrop-filter:blur(22px) saturate(145%)!important;
+    z-index:6800!important;
+  }
+
+  .student-bottom-nav > .mobile-menu-nav,
+  .student-bottom-nav > .mobile-home-nav,
+  .student-bottom-nav > .mobile-profile-nav{
+    position:relative!important;
+    width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:5px 4px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:3px!important;
+    box-sizing:border-box!important;
+    border:1px solid transparent!important;
+    border-radius:16px!important;
+    background:transparent!important;
+    color:#c8d3df!important;
+    box-shadow:none!important;
+    font-size:11px!important;
+    font-weight:700!important;
+    line-height:1!important;
+    text-decoration:none!important;
+    transition:background .18s ease,color .18s ease,transform .18s ease,border-color .18s ease!important;
+    -webkit-tap-highlight-color:transparent!important;
+  }
+
+  .student-bottom-nav > .mobile-menu-nav:before,
+  .student-bottom-nav > .mobile-home-nav:before,
+  .student-bottom-nav > .mobile-profile-nav:before{
+    display:block!important;
+    font-size:17px!important;
+    line-height:18px!important;
+    font-weight:500!important;
+  }
+  .student-bottom-nav > .mobile-menu-nav:before{content:"☰"!important}
+  .student-bottom-nav > .mobile-home-nav:before{content:"⌂"!important}
+  .student-bottom-nav > .mobile-profile-nav:before{content:"♙"!important}
+
+  .student-bottom-nav > .mobile-menu-nav:hover,
+  .student-bottom-nav > .mobile-profile-nav:hover,
+  .student-bottom-nav > .mobile-home-nav:hover{
+    background:rgba(255,255,255,.07)!important;
+    color:#f4f8fc!important;
+    border-color:rgba(255,255,255,.08)!important;
+  }
+
+  .student-bottom-nav > .mobile-home-nav.active{
+    background:linear-gradient(180deg,rgba(55,127,207,.36),rgba(36,91,154,.28))!important;
+    border-color:rgba(104,184,240,.30)!important;
+    color:#ffffff!important;
+    box-shadow:inset 0 1px rgba(255,255,255,.10),0 4px 14px rgba(35,110,180,.16)!important;
+  }
+
+  .student-bottom-nav > a:active,
+  .student-bottom-nav > button:active{
+    transform:scale(.96)!important;
+  }
+
+  /* Keep the assistant just above the floating navigation. */
+  .vybe-assistant-fab{
+    right:14px!important;
+    bottom:86px!important;
+    z-index:6900!important;
+    border-radius:15px!important;
+    padding:9px 12px!important;
+    min-height:42px!important;
+    font-size:12px!important;
+    box-shadow:0 10px 28px rgba(16,24,39,.24)!important;
+  }
+  .vybe-assistant-fab .fab-mark{
+    width:24px!important;
+    height:24px!important;
+    border-radius:8px!important;
+  }
+  .vybe-assistant-panel{
+    bottom:142px!important;
+    z-index:6899!important;
+  }
+}
+
+@media (max-width:380px){
+  .student-bottom-nav{
+    left:8px!important;
+    right:8px!important;
+    bottom:8px!important;
+    height:63px!important;
+    min-height:63px!important;
+    border-radius:20px!important;
+  }
+  .student-bottom-nav > .mobile-menu-nav,
+  .student-bottom-nav > .mobile-home-nav,
+  .student-bottom-nav > .mobile-profile-nav{
+    font-size:10px!important;
+  }
+  .student-bottom-nav > .mobile-menu-nav:before,
+  .student-bottom-nav > .mobile-home-nav:before,
+  .student-bottom-nav > .mobile-profile-nav:before{
+    font-size:16px!important;
+  }
+}
 </style>""" + body
     return layout("Academic Hub", body)
 
