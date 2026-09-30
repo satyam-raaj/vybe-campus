@@ -3289,7 +3289,7 @@ def layout(title, body, admin=False):
     transform:scale(.96)!important;
   }}
 
-  /* Assistant panel follows the same white/blue/green glass language. */
+  /* Assistant panel — dark desktop-matched design on phone too. */
   body:has(.student-nav-compact) .vybe-assistant-panel{{
     right:10px!important;
     left:10px!important;
@@ -3297,17 +3297,25 @@ def layout(title, body, admin=False):
     width:auto!important;
     max-width:none!important;
     border-radius:20px!important;
-    background:rgba(255,255,255,.82)!important;
-    border:1px solid rgba(255,255,255,.96)!important;
-    box-shadow:0 20px 50px rgba(28,49,69,.18),inset 0 1px rgba(255,255,255,1)!important;
-    backdrop-filter:blur(24px) saturate(150%)!important;
-    -webkit-backdrop-filter:blur(24px) saturate(150%)!important;
-    color:#263646!important;
+    background:rgba(8,15,25,.98)!important;
+    background-image:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.98))!important;
+    border:1px solid rgba(104,142,178,.42)!important;
+    box-shadow:0 24px 60px rgba(0,0,0,.48),0 8px 24px rgba(9,18,31,.36),inset 0 1px rgba(255,255,255,.07)!important;
+    backdrop-filter:blur(24px) saturate(135%)!important;
+    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+    color:#f4f7fb!important;
+    overflow:hidden!important;
   }}
   body:has(.student-nav-compact) .vybe-assistant-head{{
-    background:linear-gradient(110deg,rgba(239,247,255,.78),rgba(244,250,238,.70))!important;
-    border-bottom:1px solid #e4ebef!important;
+    background:linear-gradient(135deg,rgba(29,50,76,.96),rgba(13,29,42,.94))!important;
+    border-bottom:1px solid rgba(105,139,171,.25)!important;
   }}
+  body:has(.student-nav-compact) .vybe-assistant-head strong{{color:#fff!important}}
+  body:has(.student-nav-compact) .vybe-assistant-head small{{color:#9fb2c5!important}}
+  body:has(.student-nav-compact) .vybe-assistant-close{{background:rgba(255,255,255,.07)!important;color:#e4edf5!important;border-color:rgba(120,150,180,.34)!important}}
+  body:has(.student-nav-compact) .vybe-assistant-body{{background:transparent!important;color:#f4f7fb!important}}
+  body:has(.student-nav-compact) .vybe-assistant-suggestion{{background:rgba(255,255,255,.055)!important;color:#e8eef5!important;border-color:rgba(105,139,170,.28)!important}}
+  body:has(.student-nav-compact) .vybe-assistant-suggestion:hover{{background:rgba(47,111,202,.20)!important;color:#fff!important;border-color:rgba(104,160,216,.48)!important}}
   body:has(.student-nav-compact) .vybe-assistant-suggestion{{
     background:rgba(248,251,253,.78)!important;
     border:1px solid #e1e9ef!important;
