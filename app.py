@@ -1883,7 +1883,7 @@ main,.main,.wrap{position:relative}
 
   /* Direct search destinations. Visible on focus, click and typing. */
   .student-search .mobile-direct-suggestions{
-    display:none!important;position:absolute!important;left:0!important;right:0!important;top:46px!important;
+    display:none;position:absolute!important;left:0!important;right:0!important;top:46px!important;
     z-index:40000!important;padding:5px!important;background:#fff!important;
     border:1px solid #d4dce2!important;border-radius:10px!important;
     box-shadow:0 14px 30px rgba(20,32,44,.16)!important;
@@ -1897,6 +1897,10 @@ main,.main,.wrap{position:relative}
   }
   .mobile-direct-suggestions .vybe-search-suggestion span:last-child{font-size:9px!important;color:#84909a!important}
   .mobile-direct-suggestions .vybe-search-suggestion:hover{background:#f1f5f7!important}
+
+  .student-search .mobile-direct-suggestions.open{display:block!important}
+  .student-search .mobile-direct-suggestions{pointer-events:auto!important}
+  .student-search .mobile-direct-suggestions .vybe-search-suggestion{display:flex!important;width:100%!important}
 
   /* Exactly one mobile menu, opened from the left. */
   #vybeMobileNav.student-mobile-menu{
@@ -1917,14 +1921,15 @@ main,.main,.wrap{position:relative}
   /* Exactly three equal bottom controls. */
   .student-bottom-nav{
     position:fixed!important;left:0!important;right:0!important;bottom:0!important;
-    width:100%!important;height:64px!important;min-height:64px!important;
-    display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;
+    transform:none!important;width:100vw!important;max-width:100vw!important;height:64px!important;min-height:64px!important;
+    display:grid!important;grid-template-columns:repeat(3,1fr)!important;grid-template-rows:1fr!important;gap:6px!important;
     margin:0!important;padding:6px 8px calc(6px + env(safe-area-inset-bottom))!important;
     box-sizing:border-box!important;background:#fff!important;border-top:1px solid #dfe4e8!important;
     box-shadow:0 -4px 16px rgba(20,32,44,.10)!important;z-index:10000!important;
   }
   .student-bottom-nav > *{
-    width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;
+    width:100%!important;max-width:none!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;
+    flex:none!important;order:initial!important;transform:none!important;
     display:flex!important;align-items:center!important;justify-content:center!important;
     box-sizing:border-box!important;border:1px solid #d5dde2!important;border-radius:8px!important;
     background:#fff!important;color:#4b5b67!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important;
