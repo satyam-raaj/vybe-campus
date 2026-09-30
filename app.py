@@ -4008,7 +4008,77 @@ def issues():
         .campus-search{{min-width:0;width:100%}}
         .campus-note{{font-size:12px}}
       }}
-    </style>
+    
+  /* ===== FINAL REQUEST: MONOCHROME FOOTER + BORDERED MENU ITEMS ===== */
+  .student-desktop-links a,
+  .admin-navlinks a,
+  .navlinks a {{
+    border:1px solid #d4d7db !important;
+    background:#fff !important;
+    color:#222 !important;
+    border-radius:8px !important;
+    box-sizing:border-box !important;
+  }}
+  .student-desktop-links a:hover,
+  .admin-navlinks a:hover,
+  .navlinks a:hover {{
+    background:#f1f2f4 !important;
+    border-color:#9da3aa !important;
+    color:#000 !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a {{
+    border:1px solid #cfd3d8 !important;
+    background:#fff !important;
+    color:#222 !important;
+    border-radius:8px !important;
+    margin:4px 8px !important;
+    box-sizing:border-box !important;
+  }}
+  @media(max-width:850px){{
+    .student-bottom-nav {{
+      background:#1f2328 !important;
+      border-top:1px solid #3b4046 !important;
+      box-shadow:0 -8px 24px rgba(0,0,0,.18) !important;
+      padding:7px 8px calc(7px + env(safe-area-inset-bottom)) !important;
+      gap:7px !important;
+    }}
+    .student-bottom-nav .mobile-menu-nav,
+    .student-bottom-nav .mobile-home-nav,
+    .student-bottom-nav .mobile-profile-nav {{
+      flex:1 1 0 !important;
+      width:auto !important;
+      max-width:none !important;
+      min-width:0 !important;
+      height:52px !important;
+      border:1px solid #666b72 !important;
+      border-radius:10px !important;
+      background:#2b3036 !important;
+      color:#f5f5f5 !important;
+      box-sizing:border-box !important;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      text-decoration:none !important;
+    }}
+    .student-bottom-nav .mobile-home-nav.active {{
+      background:#fff !important;
+      border-color:#fff !important;
+      color:#111 !important;
+    }}
+    .student-bottom-nav .mobile-menu-nav:active,
+    .student-bottom-nav .mobile-profile-nav:active {{
+      background:#111 !important;
+      border-color:#888 !important;
+    }}
+    .student-bottom-nav .mobile-menu-label,
+    .student-bottom-nav .mobile-home-nav,
+    .student-bottom-nav .mobile-profile-nav {{
+      font-weight:800 !important;
+      font-size:12px !important;
+    }}
+  }}
+</style>
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
         <div class="campus-hero-top">
