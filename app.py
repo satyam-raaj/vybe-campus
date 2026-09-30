@@ -4833,18 +4833,66 @@ def issues():
   body:has(.authbox) .authbox .btn.accent{{min-height:46px!important}}
 }}
 
+      /* ===== HELP DESK PREMIUM REDESIGN ===== */
+      .page-issues .vybe-campus-wrap{{max-width:1040px}}
+      .page-issues .campus-hero{{padding:34px 34px 26px;border:1px solid rgba(47,111,202,.14);background:linear-gradient(135deg,#ffffff 0%,#f3f8ff 52%,#f2faee 100%);box-shadow:0 22px 60px rgba(31,72,110,.10);color:#17202b}}
+      .page-issues .campus-hero:before{{content:"";position:absolute;width:340px;height:340px;right:-120px;top:-170px;border-radius:50%;background:radial-gradient(circle,rgba(47,111,202,.14),transparent 68%);pointer-events:none}}
+      .page-issues .campus-hero:after{{width:260px;height:260px;right:80px;bottom:-210px;top:auto;background:rgba(104,184,46,.10);filter:blur(20px)}}
+      .page-issues .campus-hero-top{{gap:20px}}
+      .page-issues .campus-hero-icon{{width:62px;height:62px;flex-basis:62px;border-radius:20px;background:linear-gradient(145deg,#e8f2ff,#edf8e6);border:1px solid rgba(47,111,202,.16);color:#2f6fca;font-size:28px;box-shadow:0 12px 28px rgba(47,111,202,.10)}}
+      .page-issues .campus-hero h1{{color:#17202b;font-weight:800}}
+      .page-issues .campus-hero p{{color:#687482}}
+      .page-issues .campus-hero .badge{{background:#edf5ff!important;color:#2f6fca!important;border:1px solid #d9e9fb!important}}
+      .page-issues .campus-note{{display:flex;align-items:center;gap:7px;margin-top:22px;background:rgba(255,255,255,.72);border:1px solid #dfe8ef;color:#687482;box-shadow:0 8px 22px rgba(31,72,110,.05)}}
+      .page-issues .campus-note strong{{color:#17202b}}
+      .campus-steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}}
+      .campus-steps>div{{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:15px;background:rgba(255,255,255,.74);border:1px solid #e2e9ef}}
+      .campus-steps b{{font-size:10px;color:#2f6fca;letter-spacing:.08em}}
+      .campus-steps span{{font-size:12px;color:#596675;font-weight:650}}
+      .page-issues .campus-section-head{{margin-top:34px}}
+      .page-issues .campus-section-head h2{{font-size:25px;color:#17202b}}
+      .page-issues .campus-section-head p{{color:#7a8793}}
+      .page-issues .campus-count{{background:#edf8e6;border-color:#dceccf;color:#4c8f21;font-weight:700}}
+      .page-issues .campus-search input{{background:#fff;border:1px solid #dfe5ea;color:#17202b;box-shadow:0 8px 24px rgba(31,72,110,.06);height:48px}}
+      .page-issues .campus-search input::placeholder{{color:#8a96a2}}
+      .page-issues .campus-search span{{color:#2f6fca;font-weight:800}}
+      .page-issues .campus-faculty-grid{{gap:16px}}
+      .page-issues .campus-faculty-card{{position:relative;padding:18px;background:rgba(255,255,255,.94);border:1px solid #e1e7ec;border-radius:20px;box-shadow:0 10px 28px rgba(31,72,110,.07);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}}
+      .page-issues .campus-faculty-card:hover{{transform:translateY(-4px);border-color:#c8dcef;box-shadow:0 18px 36px rgba(31,72,110,.11)}}
+      .page-issues .campus-faculty-avatar{{background:linear-gradient(145deg,#e8f2ff,#edf8e6);border-color:#dbe7f0;color:#2f6fca;box-shadow:inset 0 1px 0 rgba(255,255,255,.9)}}
+      .page-issues .campus-faculty-info h3{{color:#17202b}}
+      .page-issues .campus-faculty-role{{color:#73808d}}
+      .page-issues .campus-faculty-email{{color:#2f6fca;font-weight:600}}
+      .page-issues .campus-mail-btn{{background:#f1f7ff;border-color:#d9e8f7;color:#2f6fca;position:relative;overflow:hidden}}
+      .page-issues .campus-mail-btn:before{{content:"✉";font-size:16px}}
+      .page-issues .campus-mail-btn{{font-size:0}}
+      .page-issues .campus-mail-btn:hover{{background:#e7f1fd;border-color:#c7ddef;transform:translateY(-1px)}}
+      .page-issues .campus-empty-state,.page-issues .campus-no-results{{background:#fff;border-color:#dfe7ed;color:#17202b;box-shadow:0 10px 25px rgba(31,72,110,.05)}}
+      .page-issues .campus-empty-state p,.page-issues .campus-no-results{{color:#7a8793}}
+      @media(max-width:700px){{
+        .page-issues .campus-hero{{padding:22px 18px 20px;border-radius:22px}}
+        .page-issues .campus-hero-top{{gap:13px}}
+        .page-issues .campus-hero-icon{{width:48px;height:48px;flex-basis:48px;border-radius:15px;font-size:22px}}
+        .page-issues .campus-hero h1{{font-size:29px}}
+        .campus-note{{flex-direction:column;align-items:flex-start!important}}
+        .campus-steps{{grid-template-columns:1fr;gap:7px}}
+        .campus-steps>div{{padding:10px 12px}}
+        .page-issues .campus-section-head{{margin-top:26px}}
+        .page-issues .campus-faculty-card{{padding:14px;border-radius:18px}}
+      }}
+
 </style>
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
         <div class="campus-hero-top">
-          <div class="campus-hero-icon"></div>
+          <div class="campus-hero-icon">✦</div>
           <div>
             <div class="badge">CAMPUS SUPPORT</div>
             <h1>Report campus problems.</h1>
             <p class="muted">Report all the campus problems directly to the faculty.</p>
           </div>
         </div>
-        <div class="campus-note">Choose a faculty member below and tap their email ID to contact them directly.</div>
+        <div class="campus-note"><strong>Need help?</strong><span>Choose the right faculty contact below and email them directly.</span></div><div class="campus-steps"><div><b>01</b><span>Find your area</span></div><div><b>02</b><span>Choose a contact</span></div><div><b>03</b><span>Send your message</span></div></div>
       </div>
 
       <div class="campus-section-head">
