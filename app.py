@@ -847,9 +847,37 @@ def init_db():
             default_uid=con.execute("SELECT id FROM universities WHERE slug=?",("default-campus",)).fetchone()["id"]
     else:
         default_uid=existing["id"]
+    # Backfill tenant IDs only after verifying the column really exists. This is
+    # deliberately defensive for Render databases that may contain tables from
+    # several older VYBE releases. A single legacy table must never abort the
+    # entire application startup.
     legacy_tables=("students", "resources", "issues", "solutions", "community_messages", "notifications", "student_notifications", "assistant_knowledge", "timetables", "announcements", "events", "saved_reports", "accepted_solutions", "helpful_votes", "campus_pages", "faculty", "departments", "faculty_accounts", "clubs", "club_memberships", "targeted_announcements", "emergency_alerts", "digital_ids", "security_audit_logs", "integration_configs", "api_tokens", "enterprise_calendar_events", "faculty_materials", "faculty_questions", "faculty_timetable", "faculty_announcements", "faculty_assignments")
-    for table in legacy_tables:
-        con.execute(f"UPDATE {table} SET university_id=? WHERE university_id IS NULL",(default_uid,))
+    if con.is_pg:
+        for table in legacy_tables:
+            try:
+                con.execute("SAVEPOINT vybe_backfill")
+                exists = con.execute(
+                    "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=? AND column_name=?",
+                    (table, "university_id"),
+                ).fetchone()
+                if exists:
+                    con.execute(f"UPDATE {table} SET university_id=? WHERE university_id IS NULL", (default_uid,))
+                con.execute("RELEASE SAVEPOINT vybe_backfill")
+            except Exception as exc:
+                try:
+                    con.execute("ROLLBACK TO SAVEPOINT vybe_backfill")
+                    con.execute("RELEASE SAVEPOINT vybe_backfill")
+                except Exception:
+                    pass
+                app.logger.warning("Skipping university_id backfill for %s: %s: %s", table, type(exc).__name__, exc)
+    else:
+        for table in legacy_tables:
+            try:
+                cols={r["name"] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+                if "university_id" in cols:
+                    con.execute(f"UPDATE {table} SET university_id=? WHERE university_id IS NULL", (default_uid,))
+            except Exception as exc:
+                app.logger.warning("Skipping university_id backfill for %s: %s: %s", table, type(exc).__name__, exc)
     # Keep existing data working even if the old table was created before the
     # enterprise layer existed.
 
