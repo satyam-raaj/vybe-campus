@@ -1172,6 +1172,76 @@ def _safe_500_page():
   }
 
 
+
+
+/* ===== FINAL GLOBAL ASK VYBE DARK PANEL — DESKTOP + MOBILE ===== */
+.vybe-assistant-panel{
+  background:rgba(15,23,42,.97)!important;
+  background-image:linear-gradient(145deg,rgba(25,39,64,.98),rgba(9,15,28,.98))!important;
+  border:1px solid rgba(137,178,211,.28)!important;
+  box-shadow:0 28px 80px rgba(3,8,18,.42),0 8px 28px rgba(3,8,18,.28)!important;
+  color:#f7fbff!important;
+  backdrop-filter:blur(22px)!important;
+  -webkit-backdrop-filter:blur(22px)!important;
+}
+.vybe-assistant-panel .vybe-assistant-head{
+  background:linear-gradient(135deg,#18283f,#111c2e)!important;
+  border-bottom:1px solid rgba(157,194,222,.18)!important;
+}
+.vybe-assistant-panel .vybe-assistant-head strong{color:#ffffff!important}
+.vybe-assistant-panel .vybe-assistant-head small{color:#a9bbcc!important}
+.vybe-assistant-panel .vybe-assistant-close{
+  background:rgba(255,255,255,.08)!important;
+  border-color:rgba(174,207,231,.22)!important;
+  color:#eaf4fb!important;
+}
+.vybe-assistant-panel .vybe-assistant-body{background:transparent!important}
+.vybe-assistant-panel .vybe-assistant-suggestion{
+  background:rgba(255,255,255,.055)!important;
+  border-color:rgba(169,204,228,.18)!important;
+  color:#edf6fc!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
+}
+.vybe-assistant-panel .vybe-assistant-suggestion:hover{
+  background:rgba(65,132,194,.18)!important;
+  border-color:rgba(111,175,224,.42)!important;
+  color:#ffffff!important;
+}
+.vybe-assistant-panel .vybe-assistant-note{color:#8fa5b8!important}
+@media(max-width:850px){
+  .vybe-assistant-panel{
+    right:10px!important;
+    bottom:136px!important;
+    width:calc(100vw - 20px)!important;
+    max-height:calc(100svh - 160px)!important;
+    border-radius:20px!important;
+  }
+  .vybe-assistant-panel .vybe-assistant-head{padding:14px 15px!important}
+  .vybe-assistant-panel .vybe-assistant-body{padding:14px!important}
+}
+
+/* FINAL GLOBAL MOBILE ASK VYBE — MATCH DESKTOP AI BUTTON COLOUR */
+@media (max-width:850px){
+  body:has(.student-nav-compact) .vybe-assistant-fab{
+    background:#101827!important;
+    background-image:none!important;
+    color:#ffffff!important;
+    border:1px solid #b9d6ed!important;
+    box-shadow:0 12px 30px rgba(16,24,39,.22)!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+  }
+  body:has(.student-nav-compact) .vybe-assistant-fab:hover{
+    background:#172238!important;
+    color:#ffffff!important;
+  }
+  body:has(.student-nav-compact) .vybe-assistant-fab .fab-mark{
+    background:#eaf3ff!important;
+    color:#2f6fca!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+}
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -1918,11 +1988,11 @@ main,.main,.wrap{position:relative}
 .vybe-assistant-fab{position:fixed;right:24px;bottom:24px;z-index:7000;display:flex;align-items:center;gap:9px;border:1px solid #b9d6ed;background:#101827;color:#fff;border-radius:16px;padding:12px 16px;min-height:48px;box-shadow:0 16px 40px rgba(16,24,39,.20);font-weight:800;font-size:13px;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
 .vybe-assistant-fab:hover{transform:translateY(-3px);box-shadow:0 20px 46px rgba(16,24,39,.25);background:#172238}
 .vybe-assistant-fab .fab-mark{display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:#eaf3ff;color:#2f6fca;font-size:11px;font-weight:900}
-.vybe-assistant-panel{position:fixed;right:24px;bottom:84px;width:min(390px,calc(100vw - 32px));z-index:6999;background:rgba(255,255,255,.98);border:1px solid #d8e2ea;border-radius:22px;box-shadow:0 24px 70px rgba(29,48,67,.20);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);overflow:hidden;opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.vybe-assistant-panel{position:fixed;right:24px;bottom:84px;width:min(390px,calc(100vw - 32px));z-index:6999;background:rgba(8,15,25,.97);background-image:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97));border:1px solid rgba(104,142,178,.38);border-radius:22px;box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07);backdrop-filter:blur(24px) saturate(135%);-webkit-backdrop-filter:blur(24px) saturate(135%);overflow:hidden;opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;transition:opacity .2s ease,transform .2s ease;color:#f4f7fb}
 .vybe-assistant-panel.open{opacity:1;transform:none;pointer-events:auto}
-.vybe-assistant-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 17px;border-bottom:1px solid #e4ebf0;background:linear-gradient(135deg,#f5f9ff,#f5faf2)}
-.vybe-assistant-head strong{font-size:15px;color:#182230}.vybe-assistant-head small{display:block;margin-top:2px;color:#748292;font-size:11px}.vybe-assistant-close{border:1px solid #dce5eb;background:#fff;color:#4a5967;width:34px;height:34px;border-radius:10px;font-size:18px;cursor:pointer}
-.vybe-assistant-body{padding:15px}.vybe-assistant-suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:13px}.vybe-assistant-suggestion{display:flex;align-items:center;justify-content:flex-start;min-height:42px;padding:9px 11px;border:1px solid #dce6ed;border-radius:11px;background:#fff;color:#344452;text-decoration:none;font-size:12px;font-weight:750;transition:.18s ease}.vybe-assistant-suggestion:hover{background:#eef6ff;border-color:#bcd7ed;color:#2867ae;transform:translateY(-1px)}
+.vybe-assistant-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 17px;border-bottom:1px solid rgba(105,139,171,.24);background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))}
+.vybe-assistant-head strong{font-size:15px;color:#ffffff}.vybe-assistant-head small{display:block;margin-top:2px;color:#9fb2c5;font-size:11px}.vybe-assistant-close{border:1px solid rgba(120,150,180,.34);background:rgba(255,255,255,.07);color:#e4edf5;width:34px;height:34px;border-radius:10px;font-size:18px;cursor:pointer}
+.vybe-assistant-body{padding:15px}.vybe-assistant-suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:13px}.vybe-assistant-suggestion{display:flex;align-items:center;justify-content:flex-start;min-height:42px;padding:9px 11px;border:1px solid rgba(105,139,170,.28);border-radius:11px;background:rgba(255,255,255,.055);color:#e8eef5;text-decoration:none;font-size:12px;font-weight:750;transition:.18s ease}.vybe-assistant-suggestion:hover{background:rgba(47,111,202,.20);border-color:rgba(104,160,216,.48);color:#ffffff;transform:translateY(-1px)}
 .vybe-assistant-form{display:flex;gap:8px;align-items:stretch}.vybe-assistant-form input{min-width:0;flex:1;height:44px;border:1px solid #d5e0e7;border-radius:11px;padding:0 12px;background:#fff;color:#1e2935;outline:none}.vybe-assistant-form input:focus{border-color:#77aeda;box-shadow:0 0 0 4px rgba(47,111,202,.08)}.vybe-assistant-form button{height:44px;padding:0 14px;border:0;border-radius:11px;background:#101827;color:#fff;font-weight:800;cursor:pointer}.vybe-assistant-note{font-size:10px;color:#87929d;margin:10px 2px 0;line-height:1.4}
 @media(max-width:850px){.vybe-assistant-fab{right:14px;bottom:82px;border-radius:14px;padding:10px 13px;min-height:45px}.vybe-assistant-panel{right:10px;bottom:136px;width:calc(100vw - 20px);border-radius:20px}.vybe-assistant-suggestions{grid-template-columns:1fr 1fr}.vybe-assistant-form input{font-size:14px}}
 
@@ -2723,7 +2793,7 @@ def layout(title, body, admin=False):
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     assistant_widget = ""
     if student:
-        assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
+        assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div></div></section>'''
     mobile_runtime_css = r'''
 /* ===== SINGLE MOBILE STUDENT SHELL ===== */
 @media (max-width:850px){
@@ -2786,6 +2856,46 @@ def layout(title, body, admin=False):
   .nav:has(.student-nav-compact) .student-control-row{position:relative!important;z-index:2147482001!important;overflow:visible!important}
   body{padding-bottom:84px!important;overflow-x:hidden!important}
 }
+/* ===== FINAL ASK VYBE PANEL — DARK ON EVERY PAGE ===== */
+.vybe-assistant-panel{
+  background:rgba(8,15,25,.97)!important;
+  background-image:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+  border:1px solid rgba(104,142,178,.38)!important;
+  box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
+  color:#f4f7fb!important;
+  backdrop-filter:blur(24px) saturate(135%)!important;
+  -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+}
+.vybe-assistant-panel .vybe-assistant-head{
+  background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))!important;
+  border-bottom:1px solid rgba(105,139,171,.24)!important;
+}
+.vybe-assistant-panel .vybe-assistant-head strong{color:#fff!important}
+.vybe-assistant-panel .vybe-assistant-head small{color:#9fb2c5!important}
+.vybe-assistant-panel .vybe-assistant-close{
+  background:rgba(255,255,255,.07)!important;
+  color:#e4edf5!important;
+  border-color:rgba(120,150,180,.34)!important;
+}
+.vybe-assistant-panel .vybe-assistant-suggestion{
+  background:rgba(255,255,255,.055)!important;
+  color:#e8eef5!important;
+  border-color:rgba(105,139,170,.28)!important;
+}
+.vybe-assistant-panel .vybe-assistant-suggestion:hover{
+  background:rgba(47,111,202,.20)!important;
+  color:#fff!important;
+  border-color:rgba(104,160,216,.48)!important;
+}
+@media(max-width:850px){
+  .vybe-assistant-panel{
+    right:10px!important;left:10px!important;bottom:136px!important;width:calc(100vw - 20px)!important;
+    border-radius:20px!important;
+    background:rgba(8,15,25,.97)!important;
+    background-image:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+  }
+}
+
 '''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}{mobile_runtime_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
