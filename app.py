@@ -4422,9 +4422,29 @@ def resource(rid):
 @app.route("/issues", methods=["GET"])
 @student_required
 def issues():
+    # Help Desk must remain usable even if an older deployed database does not
+    # yet contain the faculty table.  Older VYBE deployments can have a
+    # perfectly valid database while missing this newer additive table.
     con = db()
-    faculty = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
-    con.close()
+    try:
+        if con.is_pg:
+            con.execute("CREATE TABLE IF NOT EXISTS faculty (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, designation TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        else:
+            con.execute("CREATE TABLE IF NOT EXISTS faculty (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, designation TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        con.commit()
+        faculty = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
+    except Exception:
+        # Do not turn the student Help Desk into a generic 500 page if faculty
+        # contact data is temporarily unavailable. The page can still show
+        # the Help Desk interface and the admin can repair/add contacts later.
+        app.logger.exception("Help Desk faculty lookup failed")
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        faculty = []
+    finally:
+        con.close()
 
     faculty_cards = "".join(
         f'''<article class="campus-faculty-card" data-faculty-name="{esc(x["name"]).lower()}" data-faculty-role="{esc(x["designation"]).lower()}">
@@ -4498,14 +4518,14 @@ def issues():
   /* ===== VYBE FINAL MONOCHROME NAVIGATION ===== */
   .student-desktop-links,
   .admin-navlinks,
-  .navlinks {
+  .navlinks {{
     display:flex !important;
     align-items:center !important;
     gap:8px !important;
-  }
+  }}
   .student-desktop-links > a,
   .admin-navlinks > a,
-  .navlinks > a {
+  .navlinks > a {{
     display:inline-flex !important;
     align-items:center !important;
     justify-content:center !important;
@@ -4518,16 +4538,16 @@ def issues():
     box-shadow:none !important;
     text-decoration:none !important;
     box-sizing:border-box !important;
-  }
+  }}
   .student-desktop-links > a:hover,
   .admin-navlinks > a:hover,
-  .navlinks > a:hover {
+  .navlinks > a:hover {{
     background:#f0f1f2 !important;
     border-color:#777c82 !important;
     color:#000000 !important;
-  }
+  }}
   #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {{
     display:flex !important;
     align-items:center !important;
     justify-content:flex-start !important;
@@ -4541,21 +4561,21 @@ def issues():
     color:#17191c !important;
     box-sizing:border-box !important;
     text-decoration:none !important;
-  }
+  }}
   #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover {
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover {{
     background:#f0f1f2 !important;
     border-color:#777c82 !important;
-  }
-  .student-bottom-nav {
+  }}
+  .student-bottom-nav {{
     background:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
     background-image:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
     border-top:1px solid #b9d4ea !important;
     box-shadow:0 -8px 24px rgba(38,75,105,.14) !important;
-  }
+  }}
   .student-bottom-nav > .mobile-menu-nav,
   .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav {
+  .student-bottom-nav > .mobile-profile-nav {{
     width:100% !important;
     min-width:0 !important;
     max-width:none !important;
@@ -4572,26 +4592,26 @@ def issues():
     box-sizing:border-box !important;
     text-decoration:none !important;
     box-shadow:none !important;
-  }
-  .student-bottom-nav > .mobile-home-nav.active {
+  }}
+  .student-bottom-nav > .mobile-home-nav.active {{
     background:#dceeff !important;
     color:#111827 !important;
     border-color:#8fbce0 !important;
     box-shadow:inset 0 1px rgba(255,255,255,.75),0 2px 8px rgba(56,104,145,.10) !important;
-  }
+  }}
   .student-bottom-nav > .mobile-menu-nav:hover,
-  .student-bottom-nav > .mobile-profile-nav:hover {
+  .student-bottom-nav > .mobile-profile-nav:hover {{
     background:#f3f8fc !important;
     color:#111827 !important;
     border-color:#8fbce0 !important;
-  }
+  }}
   .student-bottom-nav .mobile-menu-label,
   .student-bottom-nav .mobile-home-nav,
-  .student-bottom-nav .mobile-profile-nav {
+  .student-bottom-nav .mobile-profile-nav {{
     font-size:12px !important;
     font-weight:800 !important;
     line-height:1 !important;
-  }
+  }}
 
   /* ===== FINAL MOBILE GLASS OVERRIDE ===== */
   @media(max-width:850px){{
