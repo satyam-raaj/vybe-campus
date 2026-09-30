@@ -635,6 +635,11 @@ def init_db():
         con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BLOB, created_at TEXT NOT NULL)""")
 
     if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_update_views (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, item_type TEXT NOT NULL, item_id BIGINT NOT NULL, viewed_at TEXT NOT NULL, UNIQUE(student_id,item_type,item_id))""")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_update_views (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, item_type TEXT NOT NULL, item_id INTEGER NOT NULL, viewed_at TEXT NOT NULL, UNIQUE(student_id,item_type,item_id))""")
+
+    if con.is_pg:
         con.executescript([
             "CREATE TABLE IF NOT EXISTS saved_reports (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, issue_category TEXT NOT NULL, issue_description TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, saved_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS accepted_solutions (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, issue_title TEXT NOT NULL, solution_text TEXT NOT NULL, solver_name TEXT NOT NULL, accepted_at TEXT NOT NULL)",
@@ -2765,6 +2770,79 @@ a.card textarea{
 """
 
 
+
+def _admin_update_feed(con, student_id, limit=18):
+    # On the first visit after this feature is deployed, establish a baseline
+    # from the content that already existed. Only subsequently published items
+    # become alerts for that student.
+    try:
+        existing_view = con.execute("SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)).fetchone()
+        if not existing_view:
+            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events")):
+                for r in con.execute(f"SELECT id FROM {table}").fetchall():
+                    rid=int(r["id"])
+                    if con.is_pg:
+                        con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING", (student_id,typ,rid,now()))
+                    else:
+                        con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)", (student_id,typ,rid,now()))
+            con.commit()
+            return []
+    except Exception:
+        pass
+    items=[]
+    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event")]
+    for typ,sql,base,label in sources:
+        try: rows=con.execute(sql).fetchall()
+        except Exception: rows=[]
+        for r in rows:
+            keys=r.keys()
+            detail=str(r["description"] or "")[:120] if "description" in keys else ""
+            if not detail:
+                try: detail=str(r["message"] or r["original_name"] or "")[:120]
+                except Exception: detail=""
+            rid=int(r["id"])
+            if typ=="academic": target=f"/academic-update/{rid}"
+            elif typ=="resource": target=f"/resource/{rid}"
+            elif typ=="timetable": target=f"/timetable-file/{rid}"
+            elif typ=="announcement": target="/announcements"
+            else: target="/events"
+            items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
+    items.sort(key=lambda x:x["created_at"],reverse=True); items=items[:limit]
+    for x in items:
+        try: x["unread"]=not bool(con.execute("SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",(student_id,x["type"],x["id"])).fetchone())
+        except Exception: x["unread"]=False
+    return items
+
+
+def _mark_admin_update_seen(student_id,item_type,item_id):
+    con=db()
+    try:
+        if con.is_pg: con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",(student_id,item_type,int(item_id),now()))
+        else: con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)",(student_id,item_type,int(item_id),now()))
+        con.commit()
+    finally: con.close()
+
+
+def _mark_all_page_items_seen(con,student_id,item_type,table):
+    try:
+        for r in con.execute(f"SELECT id FROM {table}").fetchall():
+            rid=int(r["id"])
+            if con.is_pg: con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",(student_id,item_type,rid,now()))
+            else: con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)",(student_id,item_type,rid,now()))
+    except Exception: pass
+
+
+@app.route("/student-update-seen/<item_type>/<int:item_id>")
+@student_required
+def student_update_seen(item_type,item_id):
+    targets={"academic":"/updates","resource":"/academics","timetable":"/timetable","announcement":"/announcements","event":"/events"}
+    if item_type not in targets: abort(404)
+    _mark_admin_update_seen(session["student_db_id"],item_type,item_id)
+    target=request.args.get("next","").strip()
+    if not target.startswith("/") or target.startswith("//"): target=targets[item_type]
+    return redirect(target)
+
+
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
@@ -2781,7 +2859,19 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
-        header = f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        try:
+            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],1000); _header_con.close()
+        except Exception: _header_updates=[]
+        _unread_count=sum(1 for x in _header_updates if x["unread"])
+        _alert_items=[]
+        for x in _header_updates:
+            href=f'/student-update-seen/{esc(x["type"])}/{x["id"]}?next={esc(x["url"])}'
+            new_cls=' is-new' if x["unread"] else ''
+            _alert_items.append(f'<a class="vybe-header-alert-item{new_cls}" href="{href}"><span class="vybe-alert-dot"></span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-arrow">›</span></a>')
+        _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">You are all caught up.</div>'
+        _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
+        header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\">!</span><span class=\"vybe-header-alert-label\">Alerts</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Admin updates you haven't opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
+
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
 
@@ -2795,6 +2885,10 @@ def layout(title, body, admin=False):
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div></div></section>'''
     mobile_runtime_css = r'''
+/* ===== HEADER ADMIN ALERTS ===== */
+.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:40px;display:inline-flex;align-items:center;gap:7px;padding:0 12px;border:1px solid #dfe5ea;border-radius:11px;background:#fff;color:#17202b;cursor:pointer;font:inherit;font-size:12px;font-weight:850;box-shadow:0 5px 15px rgba(31,48,66,.06);transition:.2s ease}.vybe-header-alert:hover{transform:translateY(-1px);border-color:#bfd5ec;background:#f8fbff}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:8px;background:#172033;color:#fff;font-size:12px;font-weight:900}.vybe-alert-count{min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#e84d4d;color:#fff;font-size:10px;font-weight:900}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(390px,calc(100vw - 28px));background:rgba(255,255,255,.98);border:1px solid #dfe5ea;border-radius:18px;box-shadow:0 22px 55px rgba(20,37,55,.18);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 17px 13px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:3px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:6px 8px;border-radius:999px;background:#fff0f0;color:#d64343;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:360px;overflow:auto;padding:7px}.vybe-header-alert-item{display:flex;align-items:center;gap:10px;padding:11px 10px;border-radius:12px;color:#17202b;text-decoration:none}.vybe-header-alert-item:hover{background:#f5f8fb}.vybe-header-alert-item.is-new{background:#f7fbff}.vybe-alert-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#c7d0d9}.vybe-header-alert-item.is-new .vybe-alert-dot{background:#e84d4d;box-shadow:0 0 0 4px rgba(232,77,77,.10)}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px}.vybe-alert-arrow{font-size:20px;color:#a2adb8}.vybe-header-alert-empty{padding:24px 15px;text-align:center;color:#7b8793;font-size:12px}.vybe-header-alert-all{display:block;padding:12px 15px;border-top:1px solid #edf0f3;color:#2f6fca;font-size:11px;font-weight:850;text-align:center}
+@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:38px;height:35px;padding:0;justify-content:center;border-radius:9px;background:#172033;color:#fff;border-color:#172033;box-shadow:none}.vybe-header-alert-icon{background:#fff;color:#172033;width:20px;height:20px}.vybe-header-alert-panel{position:fixed;top:60px;right:10px;width:min(380px,calc(100vw - 20px));max-height:calc(100vh - 80px);border-radius:17px}}
+
 /* ===== SINGLE MOBILE STUDENT SHELL ===== */
 @media (max-width:850px){
   #vybeStudentBottomNav{
@@ -3594,7 +3688,9 @@ if(assistantClose)assistantClose.addEventListener("click",function(e){{e.prevent
 if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPropagation();}});
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
-}})();</script></script></body></html>'''
+}})();</script>
+(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
+</script></body></html>'''
 
 
 @app.route("/offline")
@@ -4647,7 +4743,7 @@ def student_notifications_read():
 @app.route("/announcements")
 @student_required
 def announcements():
-    con=db(); rows=_active_announcements(con,30); con.close()
+    con=db(); rows=_active_announcements(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"announcement","announcements"); con.commit(); con.close()
     cards=""
     for r in rows:
         badge=" "+esc(r["priority"]) if r["priority"] in ("High","Important") else " Announcement"
@@ -4659,7 +4755,7 @@ def announcements():
 @app.route("/events")
 @student_required
 def events():
-    con=db(); rows=_upcoming_events(con,30); con.close()
+    con=db(); rows=_upcoming_events(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"event","events"); con.commit(); con.close()
     cards=""
     for r in rows:
         cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
@@ -4674,7 +4770,7 @@ TIMETABLE_PAGE_CSS = """<style>
 @app.route("/timetable")
 @student_required
 def timetable():
-    con=db(); rows=_latest_timetables(con,30); con.close()
+    con=db(); rows=_latest_timetables(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"timetable","timetables"); con.commit(); con.close()
     cards=""
     for r in rows:
         suffix=Path(r["original_name"]).suffix.lower()
@@ -4942,6 +5038,8 @@ def academics():
     subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' ORDER BY subject").fetchall()]
     types = [r["resource_type"] for r in con.execute("SELECT DISTINCT resource_type FROM resources WHERE resource_type<>'' ORDER BY resource_type").fetchall()]
     updates = con.execute("SELECT * FROM academic_updates ORDER BY id DESC LIMIT 12").fetchall()
+    _mark_all_page_items_seen(con, session["student_db_id"], "resource", "resources")
+    con.commit()
     con.close()
     resource_cards = ""
     for r in rows:
@@ -5385,7 +5483,7 @@ def academic_updates():
     if kind: sql+=" AND kind=?"; params.append(kind)
     if category: sql+=" AND category=?"; params.append(category)
     if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ? OR course LIKE ?)"; params += [f"%{q}%"]*4
-    sql += " ORDER BY id DESC"; rows=con.execute(sql,params).fetchall(); categories=[r["category"] for r in con.execute("SELECT DISTINCT category FROM academic_updates ORDER BY category").fetchall()]; kinds=[r["kind"] for r in con.execute("SELECT DISTINCT kind FROM academic_updates ORDER BY kind").fetchall()]; con.close()
+    sql += " ORDER BY id DESC"; rows=con.execute(sql,params).fetchall(); categories=[r["category"] for r in con.execute("SELECT DISTINCT category FROM academic_updates ORDER BY category").fetchall()]; kinds=[r["kind"] for r in con.execute("SELECT DISTINCT kind FROM academic_updates ORDER BY kind").fetchall()]; _mark_all_page_items_seen(con,session["student_db_id"],"academic","academic_updates"); con.commit(); con.close()
     selected=lambda value,current:"selected" if value==current else ""
     cards_list=[]
     for r in rows:
@@ -7640,7 +7738,8 @@ def admin_verify():
     con.close()
     if count == 0:
         return redirect(url_for("admin_password"))
-    body = f'''<div class="auth"><div class="card authbox"><div class="badge">SECOND FACTOR</div><h1>Verify passkey.</h1><p class="muted">Your admin password is correct. Verify your registered passkey to open the control center.</p><button class="btn accent" id="verifyPasskey">Verify Current Passkey</button><div id="authMsg" class="small" style="margin-top:12px"></div></div></div><script>{WEBAUTHN_JS}</script>'''
+    body = f'''<div class="auth"><div class="card authbox"><div class="badge">SECOND FACTOR</div><h1>Verify passkey.</h1><p class="muted">Your admin password is correct. Verify your registered passkey to open the control center.</p><button class="btn accent" id="verifyPasskey">Verify Current Passkey</button><div id="authMsg" class="small" style="margin-top:12px"></div></div></div><script>{WEBAUTHN_JS}</script>
+</script>'''
     return layout("Admin Verification", body, admin=True)
 
 
