@@ -5054,16 +5054,48 @@ def admin_delete_all_login_history():
 # Additive only: this layer uses the existing DB()/layout()/auth system.
 # ---------------------------------------------------------------------------
 def _enterprise_university(con):
-    """Return the active university without changing existing VYBE sessions."""
+    """Return the active university defensively on old Render schemas."""
     uid = session.get("university_id")
-    if uid:
-        row = con.execute("SELECT * FROM universities WHERE id=?", (uid,)).fetchone()
-        if row:
-            return row
-    row = con.execute("SELECT * FROM universities WHERE active=1 ORDER BY id LIMIT 1").fetchone()
+    try:
+        if uid:
+            row = con.execute("SELECT * FROM universities WHERE id=?", (uid,)).fetchone()
+            if row:
+                return row
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+    try:
+        row = con.execute("SELECT * FROM universities WHERE active=1 ORDER BY id LIMIT 1").fetchone()
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        row = con.execute("SELECT * FROM universities ORDER BY id LIMIT 1").fetchone()
     if row:
         session["university_id"] = row["id"]
     return row
+
+
+def _enterprise_count(con, table, uid, extra_where="", params=()):
+    """Safely count an enterprise table without allowing a legacy schema to 500 the page."""
+    try:
+        sql = f"SELECT COUNT(*) AS c FROM {table} WHERE university_id=?"
+        values = [uid]
+        if extra_where:
+            sql += " AND " + extra_where
+            values.extend(params)
+        row = con.execute(sql, tuple(values)).fetchone()
+        return int(row["c"] or 0)
+    except Exception as exc:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        app.logger.warning("Enterprise count skipped for %s: %s: %s", table, type(exc).__name__, exc)
+        return 0
 
 
 def _enterprise_require_admin():
@@ -5212,11 +5244,33 @@ def faculty_assignments():
 @app.route("/command-center")
 @admin_required
 def command_center():
-    con=db(); uni=_enterprise_university(con); uid=uni["id"] if uni else None
-    stats={"students":con.execute("SELECT COUNT(*) c FROM students WHERE university_id=?",(uid,)).fetchone()["c"],"faculty":con.execute("SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?",(uid,)).fetchone()["c"],"departments":con.execute("SELECT COUNT(*) c FROM departments WHERE university_id=?",(uid,)).fetchone()["c"],"clubs":con.execute("SELECT COUNT(*) c FROM clubs WHERE university_id=?",(uid,)).fetchone()["c"],"alerts":con.execute("SELECT COUNT(*) c FROM emergency_alerts WHERE university_id=? AND active=1",(uid,)).fetchone()["c"],"audit":con.execute("SELECT COUNT(*) c FROM security_audit_logs WHERE university_id=?",(uid,)).fetchone()["c"]}; con.close()
-    cards=''.join(f'<div class="card"><div class="kpi">{v}</div><h3>{k.replace("_"," ").title()}</h3></div>' for k,v in stats.items())
-    body=f'''<div class="grid">{cards}</div><div class="actions"><a class="btn dark" href="/command-center/setup">University setup</a><a class="btn dark" href="/command-center/users">People & departments</a><a class="btn dark" href="/command-center/clubs">Clubs</a><a class="btn dark" href="/command-center/announcements">Targeted announcements</a><a class="btn dark" href="/command-center/alerts">Emergency alerts</a><a class="btn dark" href="/command-center/integrations">Integrations</a><a class="btn dark" href="/command-center/audit">Security & audit</a><a class="btn dark" href="/command-center/analytics">Analytics</a><a class="btn dark" href="/command-center/export">Export data</a></div>'''
-    return _enterprise_html("Command Center","University command center","University-scoped management for the new enterprise layer. Existing VYBE admin tools remain unchanged.",body,admin=True)
+    con = db()
+    try:
+        uni = _enterprise_university(con)
+        uid = uni["id"] if uni else None
+        if uid is None:
+            body = '<div class="card"><h2>University setup is not ready yet.</h2><p class="muted">VYBE could not find a university record. Open University Setup to configure the campus.</p><a class="btn dark" href="/command-center/setup">Open University Setup</a></div>'
+            return _enterprise_html("Command Center", "University command center", "University-scoped management for VYBE.", body, admin=True)
+        stats = {
+            "students": _enterprise_count(con, "students", uid),
+            "faculty": _enterprise_count(con, "faculty_accounts", uid),
+            "departments": _enterprise_count(con, "departments", uid),
+            "clubs": _enterprise_count(con, "clubs", uid),
+            "alerts": _enterprise_count(con, "emergency_alerts", uid, "active=1"),
+            "audit": _enterprise_count(con, "security_audit_logs", uid),
+        }
+        cards = ''.join('<div class="card"><div class="kpi">%s</div><h3>%s</h3></div>' % (v, k.replace("_", " ").title()) for k, v in stats.items())
+        body = '<div class="grid">%s</div><div class="actions"><a class="btn dark" href="/command-center/setup">University setup</a><a class="btn dark" href="/command-center/users">People & departments</a><a class="btn dark" href="/command-center/clubs">Clubs</a><a class="btn dark" href="/command-center/announcements">Targeted announcements</a><a class="btn dark" href="/command-center/alerts">Emergency alerts</a><a class="btn dark" href="/command-center/integrations">Integrations</a><a class="btn dark" href="/command-center/audit">Security & audit</a><a class="btn dark" href="/command-center/analytics">Analytics</a><a class="btn dark" href="/command-center/export">Export data</a></div>' % cards
+        return _enterprise_html("Command Center", "University command center", "University-scoped management for the new enterprise layer. Existing VYBE admin tools remain unchanged.", body, admin=True)
+    except Exception as exc:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        app.logger.error("Command Center failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+        return _safe_500_page(), 500
+    finally:
+        con.close()
 
 
 @app.route("/command-center/setup", methods=["GET","POST"])
