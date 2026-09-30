@@ -145,10 +145,23 @@ def record_admin_login(con, success, event="login"):
     """Record admin authentication activity without storing passwords."""
     ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:100]
     user_agent = request.headers.get("User-Agent", "")[:500]
-    con.execute(
-        "INSERT INTO admin_login_logs(logged_at_ist,success,event,ip_address,user_agent) VALUES(?,?,?,?,?)",
-        (now_ist(), bool(success), event[:40], ip, user_agent),
-    )
+    try:
+        con.execute(
+            "INSERT INTO admin_login_logs(logged_at_ist,success,event,ip_address,user_agent) VALUES(?,?,?,?,?)",
+            (now_ist(), bool(success), event[:40], ip, user_agent),
+        )
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        try:
+            con.execute(
+                "INSERT INTO admin_login_logs(logged_at_ist,success,event,ip_address,user_agent) VALUES(?,?,?,?,?)",
+                (now_ist(), 1 if success else 0, event[:40], ip, user_agent),
+            )
+        except Exception:
+            pass
 
 
 def esc(value):
@@ -615,6 +628,11 @@ def init_db():
             )""",
         ]
     con.executescript(statements)
+    # Additive Academic Hub storage. Existing VYBE tables are left untouched.
+    if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BYTEA, created_at TEXT NOT NULL)""")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BLOB, created_at TEXT NOT NULL)""")
 
     if con.is_pg:
         con.executescript([
@@ -673,7 +691,6 @@ def init_db():
         cols_chat={r['name'] for r in con.execute('PRAGMA table_info(community_messages)').fetchall()}
         if 'reply_to_id' not in cols_chat:
             con.execute('ALTER TABLE community_messages ADD COLUMN reply_to_id INTEGER REFERENCES community_messages(id) ON DELETE SET NULL')
-        con.execute('ALTER TABLE students ADD COLUMN IF NOT EXISTS admit_card_file_data BYTEA')
 
     # Lightweight migration for the earlier VYBE_V2 SQLite schema.
     if not con.is_pg:
@@ -705,9 +722,14 @@ def init_db():
         # Assistant text column was introduced. Add it before any upload tries
         # to insert assistant_text, otherwise PostgreSQL rejects the INSERT.
         con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
-        # Existing V14 deployments may already have this table. Keep the PostgreSQL
-        # column Boolean-compatible so inserts using True/False never hit a type mismatch.
+        # Existing Render databases may have an older SMALLINT/TEXT success column.
+        # Normalize it to BOOLEAN before the application starts so admin login logging cannot fail.
         con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
+        success_type = con.execute(
+            "SELECT data_type FROM information_schema.columns WHERE table_name='admin_login_logs' AND column_name='success' LIMIT 1"
+        ).fetchone()
+        if success_type and str(success_type["data_type"]).lower() != "boolean":
+            con.execute("ALTER TABLE admin_login_logs ALTER COLUMN success TYPE BOOLEAN USING CASE WHEN LOWER(success::text) IN ('1','t','true','yes','y') THEN TRUE ELSE FALSE END")
 
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
@@ -1672,6 +1694,49 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 
 
 
+
+/* ===== VYBE Academic Hub theme ===== */
+:root{--vybe-black:#050708;--vybe-ink:#0b1014;--vybe-panel:#0f1519;--vybe-panel-2:#141c21;--vybe-line:#26323a;--vybe-white:#f5f7f8;--vybe-grey:#93a1aa;--vybe-blue:#2587d9;--vybe-blue-soft:#16364e;--vybe-green:#8fdf2e;--vybe-green-deep:#2f8f2f}
+body{background:var(--vybe-black)!important;color:var(--vybe-white)!important}
+.nav{background:rgba(5,7,8,.96)!important;border-color:var(--vybe-line)!important}
+.card,.academic-app-card{background:var(--vybe-panel)!important;border-color:var(--vybe-line)!important}
+.btn.accent,.academic-btn{background:var(--vybe-blue)!important;color:#fff!important;border-color:var(--vybe-blue)!important}
+.btn.good{background:var(--vybe-green-deep)!important;color:#fff!important}
+.badge,.academic-kicker{color:var(--vybe-green)!important}
+.muted{color:var(--vybe-grey)!important}.pill{border-radius:7px!important;background:#10202b!important;border-color:#2b4c61!important;color:#b8d7ea!important}.brandmark{background:var(--vybe-green)!important;color:#071008!important}.nav a{color:#dce5ea!important}.nav a:hover{color:#8fdfff!important}
+input,select,textarea{background:#0b1115!important;color:var(--vybe-white)!important;border-color:#2b3942!important}
+input::placeholder,textarea::placeholder{color:#72818b!important}
+.academic-hero{padding:58px 0 36px;text-align:center}.academic-hero h1{max-width:880px;margin:14px auto 12px;font-size:clamp(38px,6vw,68px);line-height:1.02;letter-spacing:-.045em}.academic-lead{max-width:760px;margin:0 auto 26px;color:#a9b4bb;font-size:17px;line-height:1.7}.academic-kicker{font-size:12px;font-weight:800;letter-spacing:.14em}
+.academic-search{max-width:760px;margin:24px auto;display:grid;grid-template-columns:1fr auto;background:#fff;border:1px solid #dce2e5;border-radius:16px;padding:5px;box-shadow:0 12px 40px rgba(0,0,0,.24)}.academic-search input{background:#fff!important;color:#101418!important;border:0!important;min-height:52px;padding:0 16px!important}.academic-search button,.academic-filter-form button{border:0;background:#0a0d0f;color:#fff;padding:0 22px;min-height:48px;border-radius:12px;font-weight:800;cursor:pointer}
+.academic-quick-grid{max-width:980px;margin:auto;display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.academic-quick{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:16px;border:1px solid var(--vybe-line);background:#0d1317;color:#fff;text-decoration:none;border-radius:14px;min-height:105px;transition:border-color .18s,transform .18s}.academic-quick:hover{border-color:#3b83b8;transform:translateY(-2px)}.academic-quick-green{border-color:rgba(143,223,46,.42)}.academic-icon{width:32px;height:32px;display:grid;place-items:center;border:1px solid #35505f;background:#102331;color:#7ec8ff;border-radius:9px;font-size:12px;font-weight:900}.academic-quick-green .academic-icon{background:#162514;border-color:#476e28;color:var(--vybe-green)}.academic-quick strong{font-size:14px}.academic-quick small{color:#7e8b94;font-size:11px}
+.academic-section-heading{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:16px}.academic-section-heading h2{margin:7px 0 0;font-size:30px;letter-spacing:-.03em}.academic-outline{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border:1px solid #33414a;border-radius:10px;color:#d7e0e5;text-decoration:none;font-weight:750;background:#0d1317}
+.academic-tool-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.academic-tool{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;padding:18px;border:1px solid var(--vybe-line);background:#0d1317;color:#fff;text-decoration:none;border-radius:14px}.academic-tool:hover{border-color:#3375a3}.academic-tool-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:#102a3c;color:#70c5ff;border:1px solid #24516e;font-size:12px;font-weight:900}.academic-tool:nth-child(4n) .academic-tool-mark{background:#172614;color:var(--vybe-green);border-color:#3f6129}.academic-tool p{margin:4px 0 0;color:#8d9aa3;font-size:13px;line-height:1.5}.academic-arrow{color:#6f7e87;font-size:20px}
+.academic-filter-panel{border:1px solid var(--vybe-line);background:#0d1317;padding:14px;border-radius:14px;margin-bottom:16px}.academic-filter-form{display:grid;grid-template-columns:2fr repeat(4,1fr) auto auto;gap:8px}.academic-filter-form input,.academic-filter-form select{min-width:0}.academic-filter-form button{background:var(--vybe-blue);min-height:44px}.academic-reset{display:grid;place-items:center;padding:0 12px;color:#aeb9c0;text-decoration:none;border:1px solid #34424a;border-radius:10px}
+.academic-resource-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.academic-resource-card{background:#0d1317;border:1px solid var(--vybe-line);border-radius:14px;padding:18px;display:flex;flex-direction:column;min-height:215px}.academic-card-top{display:flex;justify-content:space-between;gap:10px}.academic-tag{display:inline-flex;align-items:center;padding:5px 8px;border-radius:7px;background:#132638;color:#82cfff;border:1px solid #254761;font-size:10px;font-weight:800;letter-spacing:.04em}.academic-semester{font-size:11px;color:#8d9aa3}.academic-resource-card h3{margin:16px 0 6px;font-size:18px}.academic-resource-card p{color:#89969f;font-size:13px;line-height:1.55}.academic-subline{color:#c1cbd1!important}.academic-card-action{margin-top:auto}.academic-meta{font-size:12px;color:#73818a}
+.academic-update-list{display:grid;gap:10px}.academic-update-card{border:1px solid var(--vybe-line);background:#0d1317;border-radius:14px;padding:18px}.academic-update-card:hover{border-color:#31566d}.academic-update-large{padding:22px}.academic-update-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.academic-update-category{font-size:10px;font-weight:900;letter-spacing:.09em;color:var(--vybe-green)}.academic-update-kind{font-size:11px;color:#7f8d96}.academic-update-card h3,.academic-update-card h2{margin:10px 0 7px}.academic-update-card p{color:#8e9ba3;line-height:1.6;margin:0}.academic-update-foot{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:16px;font-size:11px;color:#6f7e87}.academic-link{color:#6fc1ff;text-decoration:none;font-weight:800}.academic-empty{border:1px dashed #35444d;border-radius:14px;padding:28px;text-align:center;color:#829099}.academic-detail{max-width:900px;margin:auto;border:1px solid var(--vybe-line);background:#0d1317;border-radius:18px;padding:30px}.academic-detail h1{font-size:clamp(34px,5vw,54px);letter-spacing:-.04em;margin:12px 0}.academic-detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:24px 0}.academic-detail-grid div{border:1px solid #26353e;background:#0a1014;padding:14px;border-radius:10px}.academic-detail-grid span{display:block;color:#687780;font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}.academic-detail-grid strong{font-size:13px}
+.academic-app-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.academic-app-card{padding:24px;border:1px solid var(--vybe-line);border-radius:16px}.academic-app-card h2{margin:12px 0 8px}.academic-app-card p{color:#8e9ba3;line-height:1.6}.sgpa-rows{display:grid;gap:8px;margin:18px 0}.sgpa-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}.sgpa-row button{border:1px solid #3a464e;background:#0a0f12;color:#aab5bc;border-radius:9px;cursor:pointer}.sgpa-result{margin-top:14px;padding:14px;border:1px solid #2d3e49;background:#0a1116;color:#8fdfff;border-radius:10px;font-weight:800}.academic-shortcuts{display:grid;gap:8px}.academic-shortcuts a{padding:12px;border:1px solid #29363e;border-radius:10px;color:#dbe3e7;text-decoration:none;background:#0b1115}.academic-shortcuts a:hover{border-color:#3375a3}
+@media(max-width:1050px){.academic-quick-grid{grid-template-columns:repeat(3,1fr)}.academic-filter-form{grid-template-columns:1fr 1fr 1fr}.academic-resource-grid{grid-template-columns:repeat(2,1fr)}.academic-app-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.academic-hero{padding-top:34px}.academic-hero h1{font-size:40px}.academic-lead{font-size:14px}.academic-search{grid-template-columns:1fr}.academic-search button{min-height:46px}.academic-quick-grid{grid-template-columns:repeat(2,1fr)}.academic-tool-grid,.academic-resource-grid{grid-template-columns:1fr}.academic-filter-form{grid-template-columns:1fr}.academic-filter-form button,.academic-reset{min-height:44px}.academic-detail-grid{grid-template-columns:1fr 1fr}.academic-update-foot{align-items:flex-start;flex-direction:column}.sgpa-row{grid-template-columns:1fr 1fr}.sgpa-row button{grid-column:1/-1;min-height:38px}}
+
+/* VYBE academic-portal visual layer */
+:root{--vybe-ui-bg:#fbfbf8;--vybe-ui-surface:#fff;--vybe-ui-muted:#69727e;--vybe-ui-text:#101624;--vybe-ui-line:#e1e6df;--vybe-ui-green:#79bd32;--vybe-ui-green-soft:#eaf7dc;--vybe-ui-blue:#356fc4;--vybe-ui-blue-soft:#e8f0ff;--vybe-ui-shadow:0 10px 35px rgba(20,30,20,.055)}
+html{background:var(--vybe-ui-bg)}
+body{background:var(--vybe-ui-bg)!important;color:var(--vybe-ui-text)!important}
+.nav{background:rgba(255,255,255,.96)!important;border-bottom:1px solid var(--vybe-ui-line)!important;box-shadow:0 4px 18px rgba(20,30,20,.035)!important;backdrop-filter:blur(14px)}
+.navin{max-width:1400px!important}.brand{color:var(--vybe-ui-text)!important}.brandmark{background:var(--vybe-ui-green)!important;color:#081006!important;box-shadow:none!important}.brandtext{background:none!important;color:var(--vybe-ui-text)!important;-webkit-text-fill-color:var(--vybe-ui-text)!important}
+.nav-toggle,.student-menu{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:none!important}.mobile-nav{background:#fff!important;border-color:var(--vybe-ui-line)!important;box-shadow:0 18px 45px rgba(20,30,20,.12)!important}.mobile-nav a{color:#39424e!important}.mobile-nav a:hover{background:#f3f7ef!important;border-color:#dfe8d7!important}.wrap{max-width:1400px!important}.footer{background:#fff!important;color:#737b85!important;border-top:1px solid var(--vybe-ui-line)!important}
+.btn,.button{background:#101624!important;color:#fff!important;border:1px solid #101624!important;box-shadow:none!important;border-radius:11px!important}.btn.accent{background:var(--vybe-ui-green)!important;color:#081006!important;border-color:var(--vybe-ui-green)!important}.btn.dark{background:#fff!important;color:#27303a!important;border:1px solid var(--vybe-ui-line)!important}.btn.good{background:var(--vybe-ui-green-soft)!important;color:#3f7417!important;border-color:#cfe8b8!important}.btn.danger{background:#fff0f0!important;color:#b32626!important;border-color:#f0caca!important}.btn:hover,.button:hover{transform:translateY(-1px)!important;box-shadow:0 7px 20px rgba(20,30,20,.08)!important}
+.card,.panel,.student-feature,.student-mini,.student-link,.feed-item,.stat-chip,.top-stat,.top-tool{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important}.card:hover,.student-feature:hover,.student-mini:hover,.student-link:hover{border-color:#cdd9c5!important;box-shadow:0 15px 38px rgba(20,30,20,.08)!important}.muted,.small,.student-feature-copy small,.student-wide-link small,.campus-tool small{color:var(--vybe-ui-muted)!important}.badge,.pill{background:var(--vybe-ui-green-soft)!important;color:#4d861b!important;border-color:#d5e9c4!important}.notice{background:#fff!important;border-color:var(--vybe-ui-line)!important;color:var(--vybe-ui-text)!important}
+input,textarea,select{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid #dce2da!important;border-radius:10px!important}input::placeholder,textarea::placeholder{color:#929aa4!important}input:focus,textarea:focus,select:focus{border-color:#8fc65b!important;background:#fff!important;box-shadow:0 0 0 3px rgba(121,189,50,.13)!important}table{background:#fff!important;color:var(--vybe-ui-text)!important}th{background:#f4f7f3!important;color:#4d5661!important;border-color:var(--vybe-ui-line)!important}td{border-color:var(--vybe-ui-line)!important}
+.student-header-icon,.student-control,.student-top-back{background:#fff!important;color:#27303a!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:none!important}.student-control.active{background:#101624!important;color:#fff!important;border-color:#101624!important;box-shadow:none!important}.student-search input{background:#fff!important;border:1px solid var(--vybe-ui-line)!important;color:var(--vybe-ui-text)!important;box-shadow:none!important}.student-home{max-width:1120px!important}.student-space-pill{background:var(--vybe-ui-green-soft)!important;color:#4d861b!important;border-color:#d5e9c4!important}.student-home-head h1{background:none!important;color:var(--vybe-ui-text)!important;-webkit-text-fill-color:var(--vybe-ui-text)!important;text-shadow:none!important}.student-home-head p{color:var(--vybe-ui-muted)!important}.home-section-label{color:#5f8f25!important}
+.home-action-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px!important}.home-action{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid var(--vybe-ui-line)!important;border-radius:17px!important;box-shadow:var(--vybe-ui-shadow)!important}.home-action:hover{border-color:#c9d9bd!important;background:#fff!important}.home-action-primary{border-color:#bcd99f!important;background:linear-gradient(135deg,#fff,#f4faed)!important}.home-action-icon{background:var(--vybe-ui-blue-soft)!important;border-color:#d6e2fb!important;color:var(--vybe-ui-blue)!important}.home-update-panel{background:#fff!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important}.home-update{border-color:#edf0eb!important;color:var(--vybe-ui-text)!important}.home-update-icon{background:var(--vybe-ui-green-soft)!important;border-color:#d7e9c7!important}.home-panel-title a{color:var(--vybe-ui-blue)!important}
+.academic-hero{padding:70px 0 42px!important;text-align:center!important;background:linear-gradient(180deg,#fff 0,#f5f9f1 100%)!important;border-bottom:1px solid var(--vybe-ui-line);border-radius:0 0 26px 26px}.academic-kicker{color:#5c8d23!important}.academic-hero h1{color:var(--vybe-ui-text)!important;background:none!important;-webkit-text-fill-color:var(--vybe-ui-text)!important;text-shadow:none!important}.academic-lead{color:var(--vybe-ui-muted)!important}.academic-search{background:#fff!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:0 12px 34px rgba(20,30,20,.08)!important;border-radius:14px!important}.academic-search input{border:0!important;border-radius:9px!important}.academic-search button,.academic-filter-form button{background:#101624!important;color:#fff!important;border-radius:10px!important}.academic-quick-grid{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px!important}.academic-quick{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important;border-radius:14px!important}.academic-quick:hover{border-color:#c8d8bc!important;background:#fff!important}.academic-quick-green{background:#f5faef!important;border-color:#cfe4bb!important}.academic-icon{background:var(--vybe-ui-blue-soft)!important;color:var(--vybe-ui-blue)!important;border-color:#d4e0f6!important}.academic-quick-green .academic-icon{background:var(--vybe-ui-green-soft)!important;color:#4d861b!important;border-color:#d5e9c4!important}
+.academic-tools-section{background:#f4f7f3!important}.academic-section-heading h2{color:var(--vybe-ui-text)!important}.academic-tool-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-tool{background:#fff!important;color:var(--vybe-ui-text)!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important;border-radius:16px!important}.academic-tool:hover{border-color:#c9d9bd!important}.academic-tool-mark{background:var(--vybe-ui-blue-soft)!important;color:var(--vybe-ui-blue)!important;border-color:#d4e0f6!important}.academic-tool:nth-child(4n) .academic-tool-mark{background:var(--vybe-ui-green-soft)!important;color:#4d861b!important;border-color:#d5e9c4!important}.academic-tool p{color:var(--vybe-ui-muted)!important}.academic-arrow{color:#87919d!important}.academic-filter-panel{background:#fff!important;border-color:var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important}.academic-filter-form input,.academic-filter-form select{background:#fff!important;color:var(--vybe-ui-text)!important}.academic-reset{color:#5e6874!important;border-color:var(--vybe-ui-line)!important}.academic-resource-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-resource-card,.academic-update-card,.academic-detail,.academic-app-card{background:#fff!important;color:var(--vybe-ui-text)!important;border-color:var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important;border-radius:16px!important}.academic-tag{background:var(--vybe-ui-blue-soft)!important;color:var(--vybe-ui-blue)!important;border-color:#d4e0f6!important}.academic-semester,.academic-meta{color:#78818c!important}.academic-resource-card p,.academic-update-card p,.academic-app-card p{color:var(--vybe-ui-muted)!important}.academic-link{color:var(--vybe-ui-blue)!important}.academic-update-category{color:#5c8d23!important}.academic-empty{background:#fff!important;border-color:#d6ddd2!important;color:#7a838d!important}.sgpa-result{background:var(--vybe-ui-green-soft)!important;border-color:#d5e9c4!important;color:#4d861b!important}.academic-shortcuts a{background:#fff!important;color:var(--vybe-ui-text)!important;border-color:var(--vybe-ui-line)!important}
+.hero{background:linear-gradient(180deg,#fff 0,#f5f9f1 100%)!important;color:var(--vybe-ui-text)!important;border-bottom:1px solid var(--vybe-ui-line)!important}.hero h1{color:var(--vybe-ui-text)!important;background:none!important;-webkit-text-fill-color:var(--vybe-ui-text)!important;text-shadow:none!important}.hero p{color:var(--vybe-ui-muted)!important}.authbox{background:#fff!important;border:1px solid var(--vybe-ui-line)!important;box-shadow:0 18px 55px rgba(20,30,20,.08)!important}
+.community-choice-card,.community-chat-card,.community-page-section .community-problem-card{background:#fff!important;color:var(--vybe-ui-text)!important;border-color:var(--vybe-ui-line)!important;box-shadow:var(--vybe-ui-shadow)!important}.community-choice-copy strong,.community-message-head strong{color:var(--vybe-ui-text)!important}.community-choice-copy small,.community-message-head span,.community-message-text,.community-problem-card p{color:var(--vybe-ui-muted)!important}.community-choice-icon{background:var(--vybe-ui-blue-soft)!important;color:var(--vybe-ui-blue)!important;border-color:#d4e0f6!important}.community-choice-arrow{color:var(--vybe-ui-blue)!important}.community-message{background:#f7f9f6!important;border-color:#e0e5de!important;color:var(--vybe-ui-text)!important}.community-message.mine{background:#edf5ff!important;border-color:#d5e3f6!important}.community-message-text{color:var(--vybe-ui-text)!important}.community-reply-bar,.community-reply-reference{background:#f2f7ed!important;border-color:#d8e9ca!important;color:var(--vybe-ui-text)!important}.community-chat-form textarea{background:#fff!important}
+@media(max-width:1050px){.academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-tool-grid,.academic-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.home-action-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:700px){.academic-hero{padding-top:42px!important}.academic-quick-grid,.academic-tool-grid,.academic-resource-grid{grid-template-columns:1fr!important}.home-action-grid{grid-template-columns:1fr!important}.student-control-row{padding-left:12px!important;padding-right:12px!important}}
+
 """
 
 
@@ -1686,13 +1751,13 @@ def layout(title, body, admin=False):
         # Keep the desktop student navigation exactly as it was.
         links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/issues">Campus</a><a href="/community">Community</a><a href="/chat">Chat</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
         # Mobile gets its own drawer links so desktop navigation is never changed.
-        mobile_links = '<a href="/dashboard"><span class="student-menu-icon">⌂</span><span>Home</span></a><a href="/academics"><span class="student-menu-icon">▦</span><span>Academics</span></a><a href="/issues"><span class="student-menu-icon">⌖</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">♧</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">◌</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">⌕</span><span>Search</span></a><a href="/announcements"><span class="student-menu-icon">🔔</span><span>Announcements</span></a><a href="/profile"><span class="student-menu-icon">♙</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">↪</span><span>Logout</span></a>'
+        mobile_links = '<a href="/dashboard"><span class="student-menu-icon">H</span><span>Home</span></a><a href="/academics"><span class="student-menu-icon">A</span><span>Academics</span></a><a href="/updates"><span class="student-menu-icon">U</span><span>Updates</span></a><a href="/apps"><span class="student-menu-icon">A</span><span>Apps</span></a><a href="/issues"><span class="student-menu-icon">C</span><span>Campus</span></a><a href="/community"><span class="student-menu-icon">C</span><span>Community</span></a><a href="/chat"><span class="student-menu-icon">M</span><span>Chat</span></a><a href="/search"><span class="student-menu-icon">S</span><span>Search</span></a><a href="/announcements"><span class="student-menu-icon"></span><span>Announcements</span></a><a href="/profile"><span class="student-menu-icon">P</span><span>Profile</span></a><a href="/logout"><span class="student-menu-icon">L</span><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
-        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false">🔔<span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><div class="student-notification-panel" id="vybeNotificationPanel" hidden><div class="student-notification-panel-head"><strong>Notifications</strong><button type="button" id="vybeNotificationsReadAll">Mark all read</button></div><div id="vybeNotificationList"><div class="student-notification-empty">No new notifications.</div></div></div></div><a class="student-header-icon profile" href="/profile" aria-label="Profile">♙</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
-<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">⭐</a><a class="student-control" href="/issues" aria-label="Campus">⌖</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
-        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>⌂</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>♙</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
+        header = f'''<div class="navin">{brand}<div class="student-header-tools"><div class="student-notification-wrap"><button class="student-header-icon student-notification-bell" id="vybeNotificationBell" type="button" aria-label="Notifications" aria-expanded="false"><span class="student-notification-badge" id="vybeNotificationBadge" hidden>0</span></button><div class="student-notification-panel" id="vybeNotificationPanel" hidden><div class="student-notification-panel-head"><strong>Notifications</strong><button type="button" id="vybeNotificationsReadAll">Mark all read</button></div><div id="vybeNotificationList"><div class="student-notification-empty">No new notifications.</div></div></div></div><a class="student-header-icon profile" href="/profile" aria-label="Profile">P</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div></div>
+<div class="student-control-row"><a class="student-control active" href="/dashboard" aria-label="VYBE home">V</a><a class="student-control star" href="/profile#points" aria-label="VYBE points">P</a><a class="student-control" href="/issues" aria-label="Campus">C</a><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus"></form></div>'''
+        bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span>H</span>Home</a><a class="mobile-profile-nav" href="/profile"><span>P</span>Profile</a>{mobile_back}</nav><div class="student-bottom-spacer"></div>'''
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -1701,7 +1766,7 @@ def layout(title, body, admin=False):
         bottom_nav = ""
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">✕</button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu"></button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
 <main class="wrap">{flashes}{body}</main>{bottom_nav}<footer class="footer">VYBE · Your Campus. Your Community. Your Space.</footer>
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
@@ -1714,7 +1779,7 @@ function setMenu(open){{
   menu.classList.toggle("open",isOpen);
   if(toggle){{
     toggle.setAttribute("aria-expanded",isOpen?"true":"false");
-    toggle.textContent=isOpen?"✕":"☰";
+    toggle.textContent=isOpen?"":"☰";
   }}
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
@@ -1861,7 +1926,7 @@ document.querySelectorAll(".password-error input").forEach(function(el){{
 
 @app.route("/offline")
 def offline():
-    return layout("Offline", '''<section class="offline-page"><div><div class="badge">VYBE STATUS</div><h1>🔴 OFFLINE</h1><p class="muted">VYBE is temporarily unavailable. Please check back later.</p><p><a class="btn dark" href="/admin">Admin access</a></p></div></section>''')
+    return layout("Offline", '''<section class="offline-page"><div><div class="badge">VYBE STATUS</div><h1> OFFLINE</h1><p class="muted">VYBE is temporarily unavailable. Please check back later.</p><p><a class="btn dark" href="/admin">Admin access</a></p></div></section>''')
 
 
 @app.route("/")
@@ -1870,7 +1935,7 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body = '''<section class="hero"><div><div class="badge">Student-powered campus operating system</div><h1>VYBE</h1><p>Your Campus. Your Community. Your Space.</p><div class="actions" style="justify-content:center"><a class="btn accent" href="/login">Enter VYBE →</a><a class="btn dark" href="/register">Request access</a><a class="btn dark" href="/admin">Admin Login</a></div></div></section><section class="grid"><div class="card"><div class="icon">📚</div><h2>Academics</h2><p class="muted">Notes, PYQs, syllabus, assignments and study material in one place.</p></div><div class="card"><div class="icon">🏫</div><h2>Campus</h2><p class="muted">Report real campus problems and follow their status.</p></div><div class="card"><div class="icon">💬</div><h2>Community</h2><p class="muted">Students help students with immediate, visible solutions.</p></div></section>'''
+    body = '''<section class="hero"><div><div class="badge">Student-powered campus operating system</div><h1>VYBE</h1><p>Your Campus. Your Community. Your Space.</p><div class="actions" style="justify-content:center"><a class="btn accent" href="/login">Enter VYBE →</a><a class="btn dark" href="/register">Request access</a><a class="btn dark" href="/admin">Admin Login</a></div></div></section><section class="grid"><div class="card"><div class="icon"></div><h2>Academics</h2><p class="muted">Notes, PYQs, syllabus, assignments and study material in one place.</p></div><div class="card"><div class="icon"></div><h2>Campus</h2><p class="muted">Report real campus problems and follow their status.</p></div><div class="card"><div class="icon"></div><h2>Community</h2><p class="muted">Students help students with immediate, visible solutions.</p></div></section>'''
     return layout("Welcome", body)
 
 
@@ -1983,7 +2048,7 @@ def forgot_password():
               if(!r.ok) return;
               const j = await r.json();
               if(j.status === 'approved'){{
-                title.textContent = 'Approved ✓';
+                title.textContent = 'Approved ';
                 text.textContent = 'Opening secure password page…';
                 if(timer) clearInterval(timer);
                 window.location.href = '/reset-password';
@@ -2426,7 +2491,7 @@ def _assistant_knowledge_answer(con, question):
                 if re.search(r"\b(?:DSC|GE|AEC|SEC|VAC|DSE)\b", line, re.I) or "credits" in line.lower():
                     if line not in hits: hits.append(line)
         if hits:
-            return "📚 Semester "+sem+" subjects:\n"+"\n".join("• "+x for x in hits[:10])
+            return " Semester "+sem+" subjects:\n"+"\n".join("• "+x for x in hits[:10])
 
     if intent=="eligibility":
         hits=[]
@@ -2438,17 +2503,17 @@ def _assistant_knowledge_answer(con, question):
                 if sent and ("eligib" in sent.lower() or "mathematics" in sent.lower() or "recognized board" in sent.lower()):
                     if sent not in hits: hits.append(sent)
         if hits:
-            return "🎓 Eligibility:\n"+"\n".join("• "+x for x in hits[:2])
+            return " Eligibility:\n"+"\n".join("• "+x for x in hits[:2])
 
     if intent=="admission":
         for _,_,_,_,_,unit in candidates:
             urls=re.findall(r"https?://[^\s)]+", unit)
             if urls:
-                return "🔗 Admission link: "+urls[0].rstrip(".,")
+                return " Admission link: "+urls[0].rstrip(".,")
         for _,_,_,_,_,unit in candidates:
             if "admission" in unit.lower():
                 sent=next((_clean_answer_text(x,350) for x in re.split(r"\n|(?<=[.!?])\s+",unit) if "admission" in x.lower()),"")
-                if sent: return "🎓 Admission: "+sent
+                if sent: return " Admission: "+sent
 
     if intent=="faculty":
         hits=[]
@@ -2458,13 +2523,13 @@ def _assistant_knowledge_answer(con, question):
                 if line and re.search(r"\b(?:Ms|Mr|Dr|Prof|Professor)\.?\s+[A-Z]", line):
                     if line not in hits: hits.append(line)
         if hits:
-            return "👨‍🏫 Faculty:\n"+"\n".join("• "+x for x in hits[:8])
+            return "‍ Faculty:\n"+"\n".join("• "+x for x in hits[:8])
 
     if intent=="duration":
         for _,_,_,_,_,unit in candidates:
             for sent in re.split(r"\n|(?<=[.!?])\s+",unit):
                 if re.search(r"\b(?:four|4)\s*(?:years|year)\b",sent,re.I):
-                    return "⏳ Duration: "+_clean_answer_text(sent,250)+"."
+                    return "WAIT Duration: "+_clean_answer_text(sent,250)+"."
 
     # General questions: only answer when there is strong evidence that the
     # selected passage actually addresses the question. Otherwise say that the
@@ -2484,7 +2549,7 @@ def _assistant_knowledge_answer(con, question):
             low=sent.lower(); cov=sum(bool(re.search(r"\b"+re.escape(t)+r"\b",low)) for t in tokens)
             scored.append((cov,-len(sent),sent))
         scored.sort(reverse=True)
-        return "🧠 "+scored[0][2]+("." if not scored[0][2].endswith(('.', '?', '!')) else "")
+        return " "+scored[0][2]+("." if not scored[0][2].endswith(('.', '?', '!')) else "")
     return ""
 
 
@@ -2746,7 +2811,7 @@ def _free_vybe_local_answer(con, question):
 
     if any(x in q for x in timetable_words):
         rows=con.execute("SELECT id,title,original_name,file_data,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 8").fetchall()
-        if not rows: return "🗓️ No timetable has been uploaded to VYBE yet."
+        if not rows: return " No timetable has been uploaded to VYBE yet."
         terms=[w for w in re.findall(r"[a-z0-9]+",q) if len(w)>2 and w not in {"timetable","table","class","schedule","what","which","room","timing","period","lecture","tomorrow","today"}]
         matches=[]
         for r in rows:
@@ -2759,7 +2824,7 @@ def _free_vybe_local_answer(con, question):
             if not terms or all(t in hay for t in terms[:4]): matches.append(r)
         matches=matches or rows[:3]
         teacher_intent=any(x in q for x in ("teacher","teachers","faculty","professor","prof","instructor","who teaches","teacher name","faculty name","sir","mam","ma'am"))
-        lines=["🗓️ Timetable information from VYBE:", "[[TIMETABLE_IDS:" + ",".join(str(int(r["id"])) for r in matches[:3]) + "]]" ]
+        lines=[" Timetable information from VYBE:", "[[TIMETABLE_IDS:" + ",".join(str(int(r["id"])) for r in matches[:3]) + "]]" ]
         for r in matches[:3]:
             text=(r["assistant_text"] or "").strip()
             if teacher_intent and text:
@@ -2773,15 +2838,15 @@ def _free_vybe_local_answer(con, question):
         return "\n".join(lines)
 
     if any(x in q for x in ("what time", "current time", "time now", "time is it", "what's the time", "whats the time")):
-        return f"🕐 The current VYBE time is {_format_ist(ist)}."
+        return f" The current VYBE time is {_format_ist(ist)}."
     if any(x in q for x in ("today's date", "todays date", "current date", "what date", "what day is it", "today date")):
-        return f"📅 Today is {_format_ist(ist)}."
+        return f" Today is {_format_ist(ist)}."
 
     if any(x in q for x in ("announcement", "announcements", "latest update", "new update", "new updates", "campus update", "campus news", "what's new", "whats new")):
         rows = _active_announcements(con, 8)
         if not rows:
-            return "📢 There are no active campus announcements right now."
-        lines = ["📢 Latest VYBE announcements:"]
+            return " There are no active campus announcements right now."
+        lines = [" Latest VYBE announcements:"]
         for r in rows[:5]:
             lines.append(f"• {r['title']} — {r['message']}")
         return "\n".join(lines)
@@ -2789,8 +2854,8 @@ def _free_vybe_local_answer(con, question):
     if any(x in q for x in ("event", "events", "happening", "schedule", "program", "programs", "this week", "upcoming")):
         rows = _upcoming_events(con, 8)
         if not rows:
-            return "🎉 There are no upcoming events listed in VYBE right now."
-        lines = ["🎉 Upcoming VYBE events:"]
+            return " There are no upcoming events listed in VYBE right now."
+        lines = [" Upcoming VYBE events:"]
         for r in rows[:5]:
             lines.append(f"• {r['title']} — {r['event_date']} · {r['event_time'] or 'Time TBA'} · {r['location'] or 'Location TBA'}")
         return "\n".join(lines)
@@ -2812,8 +2877,8 @@ def _free_vybe_local_answer(con, question):
             rows=con.execute("SELECT id,title,resource_type,course,semester,subject,description,file_name,original_name,file_data,assistant_text FROM resources ORDER BY id DESC LIMIT 8").fetchall()
         if not rows:
             drive=setting(con,"google_drive_url",DRIVE_URL)
-            return f"📚 I couldn't find a VYBE resource yet. Check Academics or the shared Google Drive: {drive}"
-        lines=["📚 I found these VYBE files/resources:"]
+            return f" I couldn't find a VYBE resource yet. Check Academics or the shared Google Drive: {drive}"
+        lines=[" I found these VYBE files/resources:"]
         for r in rows[:5]:
             content=(r["assistant_text"] or "").strip()
             if not content and r["file_data"]:
@@ -2835,7 +2900,7 @@ def _free_vybe_local_answer(con, question):
 
     results = _campus_search(con, question, 8)
     if results:
-        return "🔎 I found this in VYBE:\n" + "\n".join(f"• {x['title']} — {x['text']}" for x in results[:5])
+        return " I found this in VYBE:\n" + "\n".join(f"• {x['title']} — {x['text']}" for x in results[:5])
     return "I couldn't find a verified answer in VYBE's campus data yet. Ask the admin to upload the relevant timetable/resource or add the information to VYBE."
 
 @app.route("/chat")
@@ -2912,7 +2977,7 @@ def announcements():
     con=db(); rows=_active_announcements(con,30); con.close()
     cards=""
     for r in rows:
-        badge="🚨 "+esc(r["priority"]) if r["priority"] in ("High","Important") else "📢 Announcement"
+        badge=" "+esc(r["priority"]) if r["priority"] in ("High","Important") else " Announcement"
         cards += f'''<div class="card notice-card"><div class="badge">{badge}</div><h2>{esc(r["title"])}</h2><p class="muted" style="white-space:pre-wrap">{esc(r["message"])}</p><div class="small">{esc(r["created_at"])}</div></div>'''
     body=f'''<section class="section"><div class="badge">CAMPUS UPDATES</div><h1>Announcements.</h1><p class="muted">Important campus information, in one place.</p></section><section class="section" style="display:grid;gap:14px">{cards or '<div class="empty">No active announcements.</div>'}</section>'''
     return layout("Announcements",body)
@@ -2924,7 +2989,7 @@ def events():
     con=db(); rows=_upcoming_events(con,30); con.close()
     cards=""
     for r in rows:
-        cards += f'''<div class="card"><div class="badge">🎉 EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small">🕒 {esc(r["event_time"] or "Time TBA")} · 📍 {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
+        cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
     body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>What's happening.</h1><p class="muted">Upcoming events and activities around campus.</p></section><section class="section grid">{cards or '<div class="empty">No upcoming events.</div>'}</section>'''
     return layout("Events",body)
 
@@ -2939,8 +3004,8 @@ def timetable():
         if suffix in (".png",".jpg",".jpeg",".webp"):
             preview=f'<img src="/timetable-file/{r["id"]}" alt="{esc(r["title"])}" style="display:block;width:100%;max-height:720px;object-fit:contain;border-radius:18px;background:#08080a">'
         else:
-            preview=f'<div class="notice"><strong>📄 {esc(r["original_name"])}</strong><p class="small">This timetable is a document. Open it below.</p></div>'
-        cards += f'<div class="card timetable-card"><div class="badge">🗓️ TIMETABLE</div><h2>{esc(r["title"])}</h2><p class="small">Updated {esc(r["created_at"])}</p><div class="timetable-preview">{preview}</div><div class="actions timetable-actions"><a class="btn accent" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">Open / view timetable →</a></div></div>'
+            preview=f'<div class="notice"><strong> {esc(r["original_name"])}</strong><p class="small">This timetable is a document. Open it below.</p></div>'
+        cards += f'<div class="card timetable-card"><div class="badge"> TIMETABLE</div><h2>{esc(r["title"])}</h2><p class="small">Updated {esc(r["created_at"])}</p><div class="timetable-preview">{preview}</div><div class="actions timetable-actions"><a class="btn accent" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">Open / view timetable →</a></div></div>'
     body=f'<section class="section timetable-head"><div class="badge">CAMPUS TIMETABLE</div><h1>Your timetable.</h1><p class="muted">The latest timetable posted by VYBE admin or an approved publisher.</p></section><section class="section timetable-list">{cards or "<div class=\"empty\">No timetable has been posted yet.</div>"}</section>'
     return layout("Timetable",body)
 
@@ -2993,10 +3058,10 @@ def profile():
     initials="".join(x[0] for x in st["name"].split()[:2]).upper() or "V"
     accepted_html="".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted" style="white-space:pre-wrap">{esc(x["solution_text"])}</p><p class="small">Accepted from {esc(x["solver_name"])} · {esc(x["accepted_at"])}</p></div>' for x in accepted)
     card_label=esc(st["admit_card_original_name"]) if st["admit_card_original_name"] else "No admit card uploaded yet."
-    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(st["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip" id="points">⭐ {st["reputation_points"]} VYBE points</span><span class="stat-chip" id="helpful">💡 {st["helpful_answers"]} helpful answers</span><span class="stat-chip">✓ {st["accepted_solutions"]} accepted solutions</span></div></div></section>
-<section class="section grid2"><div class="card"><h2>About you.</h2><form class="form" method="post"><input type="hidden" name="action" value="profile"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(st["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(st["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form></div><div class="card"><h2>🔐 Password</h2><p class="muted">Change your student password from your profile area.</p><a class="btn dark" href="/account/password">Open password settings →</a></div></section>
-<section class="section"><div class="card"><h2>🪪 Admit card</h2><p class="muted">Optional and private. Upload your admit card in any file format up to 15 MB.</p><p class="small">Current file: <strong>{card_label}</strong></p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="admit_card"><input type="file" name="admit_card" required><button class="btn accent">Save admit card →</button></form></div></section>
-<section class="section"><div class="card"><h2>✓ Accepted solutions</h2><p class="muted">Solutions you personally accepted stay here even after their community chat is removed.</p><div class="feed-list">{accepted_html or '<div class="empty">No accepted solutions yet.</div>'}</div></div></section>'''
+    body=f'''<section class="section"><div class="card"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 style="margin:9px 0 4px">{esc(st["name"])}</h1><p class="muted" style="margin:0">Student · Student ID stays private</p></div></div><div class="stat-row" style="margin-top:22px"><span class="stat-chip" id="points">P {st["reputation_points"]} VYBE points</span><span class="stat-chip" id="helpful"> {st["helpful_answers"]} helpful answers</span><span class="stat-chip"> {st["accepted_solutions"]} accepted solutions</span></div></div></section>
+<section class="section grid2"><div class="card"><h2>About you.</h2><form class="form" method="post"><input type="hidden" name="action" value="profile"><textarea name="bio" maxlength="300" placeholder="A short bio">{esc(st["bio"])}</textarea><input name="interests" maxlength="200" value="{esc(st["interests"])}" placeholder="Interests · e.g. Coding, Design, Cricket"><button class="btn accent">Save profile →</button></form></div><div class="card"><h2> Password</h2><p class="muted">Change your student password from your profile area.</p><a class="btn dark" href="/account/password">Open password settings →</a></div></section>
+<section class="section"><div class="card"><h2> Admit card</h2><p class="muted">Optional and private. Upload your admit card in any file format up to 15 MB.</p><p class="small">Current file: <strong>{card_label}</strong></p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="admit_card"><input type="file" name="admit_card" required><button class="btn accent">Save admit card →</button></form></div></section>
+<section class="section"><div class="card"><h2> Accepted solutions</h2><p class="muted">Solutions you personally accepted stay here even after their community chat is removed.</p><div class="feed-list">{accepted_html or '<div class="empty">No accepted solutions yet.</div>'}</div></div></section>'''
     return layout("Profile",body)
 
 @app.route("/profile/admit-card")
@@ -3020,7 +3085,7 @@ def assistant():
         sources = _campus_search(con, question, 6)
     if not enabled:
         con.close()
-        body = '''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
+        body = '''<section class="section"><div class="ai-box"><div class="badge"> ASK VYBE</div><h1 style="margin:15px 0 8px">Assistant is offline.</h1><p class="muted">The VYBE Assistant has been temporarily disabled by the administrator.</p></div></section>'''
         return layout("Ask VYBE", body)
     source_html="".join(f'<a class="feed-item" href="{esc(x["url"])}"><span class="pill">{esc(x["type"])}</span><strong style="display:block;margin-top:8px">{esc(x["title"])}</strong><span class="small">{esc(x["text"])}</span></a>' for x in sources)
 
@@ -3043,7 +3108,7 @@ def assistant():
             title = esc(tt["title"] or tt["original_name"] or "Timetable")
             tt_cards.append(
                 f'<div style="margin-top:16px;padding:14px;border:1px solid rgba(58,145,214,.22);border-radius:18px;background:rgba(4,12,20,.65)">'
-                f'<strong style="display:block;margin-bottom:10px">🗓️ {title}</strong>'
+                f'<strong style="display:block;margin-bottom:10px"> {title}</strong>'
                 f'<iframe src="/timetable-file/{int(tt["id"])}" title="{title}" style="width:100%;height:680px;border:0;border-radius:14px;background:#08080a"></iframe>'
                 f'<a class="btn dark" style="margin-top:10px" href="/timetable-file/{int(tt["id"])}" target="_blank" rel="noopener">Open full timetable →</a>'
                 f'</div>'
@@ -3058,7 +3123,7 @@ def assistant():
     if timetable_html:
         answer_html += timetable_html
 
-    body=f'''<section class="section"><div class="ai-box"><div class="badge">✨ ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Powered by VYBE AI. Ask about your college, documents, timetable, resources, or any general question.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
+    body=f'''<section class="section"><div class="ai-box"><div class="badge"> ASK VYBE · AI</div><h1 style="margin:15px 0 8px">Your campus assistant.</h1><p class="muted">Powered by VYBE AI. Ask about your college, documents, timetable, resources, or any general question.</p><form class="form" method="post" style="margin-top:20px"><textarea name="question" maxlength="1000" placeholder="e.g. What are the latest announcements? Where are the Data Structures notes? What time is it?">{esc(question)}</textarea><button class="btn accent">Ask VYBE →</button></form></div></section>{f'<section class="section"><div class="card"><div class="badge">ANSWER</div><div class="ai-answer" style="margin-top:12px;white-space:pre-wrap">{answer_html}</div></div></section>' if answer else ''}{f'<section class="section"><h2>Related VYBE information.</h2><div class="feed-list">{source_html}</div></section>' if sources else ''}'''
     return layout("Ask VYBE",body)
 
 
@@ -3070,33 +3135,28 @@ def dashboard():
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
-    ann_html="".join(f'<a class="home-update" href="/announcements"><span class="home-update-icon">📣</span><span><strong>{esc(a["title"])}</strong><small>{esc(a["message"][:140])}</small></span><b>›</b></a>' for a in anns)
-    event_html="".join(f'<a class="home-update" href="/events"><span class="home-update-icon">🗓️</span><span><strong>{esc(e["title"])}</strong><small>{esc(e["event_date"])} · {esc(e["event_time"] or "TBA")}</small></span><b>›</b></a>' for e in evs)
+    ann_html="".join(f'<a class="home-update" href="/announcements"><span class="home-update-icon"></span><span><strong>{esc(a["title"])}</strong><small>{esc(a["message"][:140])}</small></span><b>›</b></a>' for a in anns)
+    event_html="".join(f'<a class="home-update" href="/events"><span class="home-update-icon"></span><span><strong>{esc(e["title"])}</strong><small>{esc(e["event_date"])} · {esc(e["event_time"] or "TBA")}</small></span><b>›</b></a>' for e in evs)
     if not ann_html:
         ann_html = '<div class="home-empty">No new announcements right now.</div>'
     if not event_html:
         event_html = '<div class="home-empty">No upcoming events right now.</div>'
     body = f'''<section class="student-home clean-home">
-<div class="student-home-head clean-home-head"><div class="student-space-pill">🎓&nbsp; STUDENT SPACE</div><h1>Hey, {esc(s["name"])}! 👋</h1><p>Everything you need for your campus, in one place.</p></div>
-<div class="home-section-label">QUICK ACCESS</div>
+<div class="student-home-head clean-home-head"><div class="student-space-pill">STUDENT SPACE</div><h1>Hey, {esc(s["name"])}.</h1><p>Your campus, academics and community in one place.</p></div>
+<div class="home-section-label">ACADEMIC ACCESS</div>
 <div class="home-action-grid">
-<a class="home-action home-action-primary" href="/assistant"><span class="home-action-icon">✦</span><span><strong>Ask VYBE</strong><small>Get answers, guidance and quick help.</small></span><b>›</b></a>
-<a class="home-action" href="/community"><span class="home-action-icon">👥</span><span><strong>Community</strong><small>Chat, solve problems or join WhatsApp.</small></span><b>›</b></a>
-<a class="home-action" href="/academics"><span class="home-action-icon">🎓</span><span><strong>Academics</strong><small>Notes, PYQs, syllabus and study material.</small></span><b>›</b></a>
-<a class="home-action" href="/issues"><span class="home-action-icon">🏫</span><span><strong>Campus</strong><small>Contact faculty and report campus problems.</small></span><b>›</b></a>
+<a class="home-action home-action-primary" href="/academics"><span class="home-action-icon">A</span><span><strong>Academic Hub</strong><small>Notes, study material, SLM PDFs and previous papers.</small></span><b>›</b></a>
+<a class="home-action" href="/updates"><span class="home-action-icon">U</span><span><strong>Academic Updates</strong><small>Results, date sheets, admit cards and exam forms.</small></span><b>›</b></a>
+<a class="home-action" href="/apps"><span class="home-action-icon">SG</span><span><strong>Study Apps</strong><small>SGPA calculator and academic shortcuts.</small></span><b>›</b></a>
+<a class="home-action" href="/timetable"><span class="home-action-icon">T</span><span><strong>Timetable</strong><small>Open the latest timetable and class information.</small></span><b>›</b></a>
+<a class="home-action" href="/assistant"><span class="home-action-icon">AI</span><span><strong>VYBE AI</strong><small>Ask about your campus, resources and timetable.</small></span><b>›</b></a>
+<a class="home-action" href="/community"><span class="home-action-icon">C</span><span><strong>Community</strong><small>Chat, ask questions and help other students.</small></span><b>›</b></a>
+<a class="home-action" href="/issues"><span class="home-action-icon">HD</span><span><strong>Campus Help Desk</strong><small>Report campus problems and follow their status.</small></span><b>›</b></a>
+<a class="home-action" href="/announcements"><span class="home-action-icon">N</span><span><strong>Announcements</strong><small>Important notices and targeted campus updates.</small></span><b>›</b></a>
+<a class="home-action" href="/events"><span class="home-action-icon">E</span><span><strong>Events</strong><small>Upcoming campus activities and schedules.</small></span><b>›</b></a>
 </div>
-<div class="home-section-label" style="margin-top:28px">CAMPUS SERVICES</div>
-<div class="home-action-grid">
-<a class="home-action" href="/calendar"><span class="home-action-icon">🗓️</span><span><strong>Campus Calendar</strong><small>Events and campus updates in one view.</small></span><b>›</b></a>
-<a class="home-action" href="/campus-search"><span class="home-action-icon">⌕</span><span><strong>Campus Search</strong><small>Find resources, events and clubs.</small></span><b>›</b></a>
-<a class="home-action" href="/clubs"><span class="home-action-icon">👥</span><span><strong>Clubs & Communities</strong><small>Discover and join campus groups.</small></span><b>›</b></a>
-<a class="home-action" href="/alerts"><span class="home-action-icon">!</span><span><strong>Campus Alerts</strong><small>See active emergency notices.</small></span><b>›</b></a>
-<a class="home-action" href="/saved-resources"><span class="home-action-icon">☆</span><span><strong>Saved Resources</strong><small>Open your saved study material.</small></span><b>›</b></a>
-<a class="home-action" href="/student/security"><span class="home-action-icon">⌁</span><span><strong>Security Center</strong><small>Review your account and session.</small></span><b>›</b></a>
-<a class="home-action" href="/student/id"><span class="home-action-icon">▣</span><span><strong>Digital Campus ID</strong><small>Open your VYBE campus ID.</small></span><b>›</b></a>
-</div>
-<div class="home-updates-head"><div><div class="home-section-label">STAY UPDATED</div><p>Keep up with what is happening on campus.</p></div></div>
-<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all&nbsp;›</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all&nbsp;›</a></div>{event_html}</div></div>
+<div class="home-updates-head"><div><div class="home-section-label">LATEST CAMPUS INFORMATION</div><p>Recent announcements and upcoming events.</p></div></div>
+<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all ›</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all ›</a></div>{event_html}</div></div>
 </section>'''
     return layout("Dashboard", body)
 
@@ -3104,15 +3164,15 @@ def dashboard():
 @app.route("/academics")
 @student_required
 def academics():
-    q = request.args.get("q", "").strip()[:100]
+    """VYBE Academic Hub: resources, papers and university academic updates."""
+    q = request.args.get("q", "").strip()[:120]
     course = request.args.get("course", "").strip()[:100]
     semester = request.args.get("semester", "").strip()[:100]
     subject = request.args.get("subject", "").strip()[:100]
+    resource_type = request.args.get("resource_type", "").strip()[:100]
     con = db()
     sql = "SELECT * FROM resources WHERE 1=1"
     params = []
-    for field, value in (("title", q), ("subject", q), ("course", q)):
-        pass
     if q:
         sql += " AND (title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)"
         params += [f"%{q}%"] * 4
@@ -3122,19 +3182,79 @@ def academics():
         sql += " AND semester=?"; params.append(semester)
     if subject:
         sql += " AND subject=?"; params.append(subject)
+    if resource_type:
+        sql += " AND resource_type=?"; params.append(resource_type)
     sql += " ORDER BY id DESC"
     rows = con.execute(sql, params).fetchall()
-    courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources ORDER BY course").fetchall()]
-    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources ORDER BY semester").fetchall()]
-    subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources ORDER BY subject").fetchall()]
-    drive = setting(con, "google_drive_url", DRIVE_URL)
+    courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE course<>'' ORDER BY course").fetchall()]
+    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' ORDER BY semester").fetchall()]
+    subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' ORDER BY subject").fetchall()]
+    types = [r["resource_type"] for r in con.execute("SELECT DISTINCT resource_type FROM resources WHERE resource_type<>'' ORDER BY resource_type").fetchall()]
+    updates = con.execute("SELECT * FROM academic_updates ORDER BY id DESC LIMIT 12").fetchall()
     con.close()
-    cards = ""
+    resource_cards = ""
     for r in rows:
-        file_link = f'<a class="btn dark" href="/resource/{r["id"]}">Open file</a>' if r["file_name"] else '<span class="pill">Drive / link resource</span>'
-        cards += f'''<div class="card"><div class="resource-meta"><span class="pill">{esc(r["resource_type"])}</span><span class="pill">{esc(r["semester"])}</span></div><h3>{esc(r["title"])}</h3><p class="small">{esc(r["course"])} · {esc(r["subject"])}</p><p class="muted">{esc(r["description"])}</p>{file_link}</div>'''
-    body = f'''<section class="section"><div class="badge">ACADEMICS</div><h1>Study smarter.</h1><p class="muted">Search by resource, course, semester or subject.</p><div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">🗓️ Timetable</h2><p class="muted" style="margin:0">Open the latest class schedule.</p></div><a class="btn accent" href="/timetable">Open Timetable →</a></div></div><div class="card"><form class="form" method="get"><input name="q" value="{esc(q)}" placeholder="Search notes, PYQs, assignments..."><div class="two"><select name="course"><option value="">All courses</option>{''.join(f'<option {"selected" if x==course else ""}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option {"selected" if x==semester else ""}>{esc(x)}</option>' for x in semesters)}</select></div><select name="subject"><option value="">All subjects</option>{''.join(f'<option {"selected" if x==subject else ""}>{esc(x)}</option>' for x in subjects)}</select><button class="btn accent">Search</button></form></div></section><section class="section grid">{cards or '<div class="empty">No matching resources.</div>'}</section><section class="section"><div class="card"><h2>☁️ Google Drive</h2><p class="muted">This is the live academic folder configured for VYBE.</p><a class="btn accent" target="_blank" rel="noopener noreferrer" href="{esc(drive)}">Open shared academic folder →</a></div></section>'''
-    return layout("Academics", body)
+        file_link = f'<a class="btn academic-btn" href="/resource/{r["id"]}">Open resource</a>' if r["file_name"] or r["file_data"] is not None else '<span class="academic-meta">External resource</span>'
+        resource_cards += f'''<article class="academic-resource-card"><div class="academic-card-top"><span class="academic-tag">{esc(r["resource_type"])}</span><span class="academic-semester">{esc(r["semester"])}</span></div><h3>{esc(r["title"])}</h3><p class="academic-subline">{esc(r["course"])}{(" · " + esc(r["subject"])) if r["subject"] else ""}</p><p>{esc(r["description"] or "Academic resource available in VYBE.")}</p><div class="academic-card-action">{file_link}</div></article>'''
+    update_cards = ""
+    for u in updates:
+        update_cards += f'''<article class="academic-update-card"><div class="academic-update-line"><span class="academic-update-category">{esc(u["category"])}</span><span class="academic-update-kind">{esc(u["kind"])}</span></div><h3>{esc(u["title"])}</h3><p>{esc(u["description"])}</p><div class="academic-update-foot"><span>{esc(u["event_date"] or u["created_at"])}</span><a class="academic-link" href="/academic-update/{u["id"]}">View details</a></div></article>'''
+    selected = lambda value, current: "selected" if value == current else ""
+    body=f'''<section class="academic-hero section"><div class="academic-kicker">ACADEMIC HUB</div><h1>Everything you need for campus study.</h1><p class="academic-lead">Notes, study material, previous-year papers and academic updates, organized in one place.</p><form class="academic-search" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search notes, papers, subjects, results..." aria-label="Search academic resources"><button type="submit">Search</button></form><div class="academic-quick-grid"><a href="/academics?resource_type=Notes" class="academic-quick"><span class="academic-icon">N</span><strong>Study Notes</strong><small>Revision notes</small></a><a href="/papers" class="academic-quick"><span class="academic-icon">P</span><strong>PYQ Papers</strong><small>Previous-year papers</small></a><a href="/updates?kind=Result" class="academic-quick academic-quick-green"><span class="academic-icon">R</span><strong>Results</strong><small>Result updates</small></a><a href="/updates?kind=Date%20Sheet" class="academic-quick"><span class="academic-icon">D</span><strong>Date Sheet</strong><small>Exam schedules</small></a><a href="/updates?kind=Admit%20Card" class="academic-quick"><span class="academic-icon">A</span><strong>Admit Card</strong><small>Exam documents</small></a><a href="/updates?kind=Exam%20Form" class="academic-quick"><span class="academic-icon">F</span><strong>Exam Forms</strong><small>Forms and notices</small></a></div></section>
+<section class="section academic-tools-section"><div class="academic-section-heading"><div><div class="academic-kicker">STUDY TOOLS</div><h2>Academic resources.</h2></div></div><div class="academic-tool-grid"><a class="academic-tool" href="/academics?resource_type=Study%20material"><span class="academic-tool-mark">SM</span><div><strong>Study Material</strong><p>Semester-wise files and reference material.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academics?resource_type=Notes"><span class="academic-tool-mark">N</span><div><strong>Notes</strong><p>Quick revision notes organized by subject.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/papers"><span class="academic-tool-mark">PY</span><div><strong>Previous Papers</strong><p>Practice with previous-year question papers.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/updates"><span class="academic-tool-mark">U</span><div><strong>Academic Updates</strong><p>Results, datesheets, forms and important notices.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/apps"><span class="academic-tool-mark">SG</span><div><strong>Study Applications</strong><p>Useful student calculators and academic utilities.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/issues"><span class="academic-tool-mark">HD</span><div><strong>Student Helpdesk</strong><p>Get help with campus, exams and technical issues.</p></div><span class="academic-arrow">→</span></a></div></section>
+<section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">LATEST</div><h2>Academic updates.</h2></div><a class="academic-outline" href="/updates">View all</a></div><div class="academic-update-list">{update_cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>
+<section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">RESOURCE LIBRARY</div><h2>Find your material.</h2></div></div><div class="academic-filter-panel"><form class="academic-filter-form" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search by subject or PDF title"><select name="resource_type"><option value="">All resource types</option>{''.join(f'<option value="{esc(x)}" {selected(x,resource_type)}>{esc(x)}</option>' for x in types)}</select><select name="course"><option value="">All courses</option>{''.join(f'<option value="{esc(x)}" {selected(x,course)}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option value="{esc(x)}" {selected(x,semester)}>{esc(x)}</option>' for x in semesters)}</select><select name="subject"><option value="">All subjects</option>{''.join(f'<option value="{esc(x)}" {selected(x,subject)}>{esc(x)}</option>' for x in subjects)}</select><button type="submit">Apply filters</button><a class="academic-reset" href="/academics">Reset</a></form></div><div class="academic-resource-grid">{resource_cards or '<div class="academic-empty">No matching academic resources.</div>'}</div></section>'''
+    return layout("Academic Hub", body)
+
+@app.route("/papers")
+@student_required
+def academic_papers():
+    return redirect(url_for("academics", resource_type="Previous Year Questions"))
+
+@app.route("/updates")
+@student_required
+def academic_updates():
+    kind=request.args.get("kind","").strip()[:80]; category=request.args.get("category","").strip()[:80]; q=request.args.get("q","").strip()[:120]
+    con=db(); sql="SELECT * FROM academic_updates WHERE 1=1"; params=[]
+    if kind: sql+=" AND kind=?"; params.append(kind)
+    if category: sql+=" AND category=?"; params.append(category)
+    if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ? OR course LIKE ?)"; params += [f"%{q}%"]*4
+    sql += " ORDER BY id DESC"; rows=con.execute(sql,params).fetchall(); categories=[r["category"] for r in con.execute("SELECT DISTINCT category FROM academic_updates ORDER BY category").fetchall()]; kinds=[r["kind"] for r in con.execute("SELECT DISTINCT kind FROM academic_updates ORDER BY kind").fetchall()]; con.close()
+    selected=lambda value,current:"selected" if value==current else ""
+    cards="".join(f'''<article class="academic-update-card academic-update-large"><div class="academic-update-line"><span class="academic-update-category">{esc(r["category"])}</span><span class="academic-update-kind">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><a class="academic-link" href="/academic-update/{r["id"]}">Read more →</a></div></article>''' for r in rows)
+    body=f'''<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Stay current.</h1><p class="academic-lead">Results, examination schedules, admit cards, forms, online classes and important campus notices.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search updates"><select name="category"><option value="">All categories</option>{''.join(f'<option value="{esc(x)}" {selected(x,category)}>{esc(x)}</option>' for x in categories)}</select><select name="kind"><option value="">All update types</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in kinds)}</select><button type="submit">Search updates</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No updates match these filters.</div>'}</div></section>'''
+    return layout("Academic Updates",body)
+
+@app.route("/academic-update/<int:uid>")
+@student_required
+def academic_update(uid):
+    con=db(); row=con.execute("SELECT * FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
+    if not row: abort(404)
+    file_button=f'<a class="btn academic-btn" href="/academic-update-file/{uid}" target="_blank" rel="noopener">Open document</a>' if row["file_name"] or row["file_data"] is not None else ""
+    external=""
+    if row["external_url"]:
+        parsed=urlparse(row["external_url"])
+        if parsed.scheme in ("http","https") and parsed.netloc: external=f'<a class="btn academic-outline" href="{esc(row["external_url"])}" target="_blank" rel="noopener noreferrer">Open external portal</a>'
+    body=f'''<section class="section"><div class="academic-detail"><div class="academic-kicker">{esc(row["category"])} · {esc(row["kind"])}</div><h1>{esc(row["title"])}</h1><p class="academic-lead">{esc(row["description"])}</p><div class="academic-detail-grid"><div><span>Course</span><strong>{esc(row["course"] or "All")}</strong></div><div><span>Semester</span><strong>{esc(row["semester"] or "All")}</strong></div><div><span>Subject</span><strong>{esc(row["subject"] or "All")}</strong></div><div><span>Date</span><strong>{esc(row["event_date"] or row["created_at"])}</strong></div></div><div class="actions academic-detail-actions">{file_button}{external}<a class="btn dark" href="/updates">Back to updates</a></div></div></section>'''
+    return layout("Academic Update",body)
+
+@app.route("/academic-update-file/<int:uid>")
+@student_required
+def academic_update_file(uid):
+    con=db(); row=con.execute("SELECT file_name,original_name,mime_type,file_data FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
+    if not row or (not row["file_name"] and row["file_data"] is None): abort(404)
+    if row["file_data"] is not None:
+        name=row["original_name"] or row["file_name"] or "academic-document"
+        return send_file(io.BytesIO(bytes(row["file_data"])),mimetype=row["mime_type"] or mimetypes.guess_type(name)[0] or "application/octet-stream",as_attachment=False,download_name=name)
+    path=UPLOAD_DIR/row["file_name"]
+    if not path.is_file(): abort(404)
+    return send_file(path,mimetype=row["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream",as_attachment=False,download_name=row["original_name"] or path.name)
+
+@app.route("/apps")
+@student_required
+def academic_apps():
+    body='''<section class="academic-hero academic-compact section"><div class="academic-kicker">STUDENT APPLICATIONS</div><h1>Useful study tools.</h1><p class="academic-lead">Small tools for everyday academic work, built directly into VYBE.</p></section><section class="section"><div class="academic-app-grid"><article class="academic-app-card"><div class="academic-tool-mark">SG</div><h2>SGPA Calculator</h2><p>Enter subjects, credits and grades to calculate your semester grade point average.</p><div id="sgpaRows" class="sgpa-rows"></div><div class="actions"><button class="btn academic-btn" type="button" onclick="window.addSgpaRow()">Add subject</button><button class="btn dark" type="button" onclick="window.calculateSgpa()">Calculate SGPA</button></div><div id="sgpaResult" class="sgpa-result" aria-live="polite"></div></article><article class="academic-app-card"><div class="academic-tool-mark">AC</div><h2>Academic shortcuts</h2><p>Jump directly to the resources students use most.</p><div class="academic-shortcuts"><a href="/papers">Previous papers</a><a href="/updates?kind=Result">Results</a><a href="/updates?kind=Date%20Sheet">Date sheets</a><a href="/updates?kind=Admit%20Card">Admit cards</a><a href="/updates?kind=Exam%20Form">Exam forms</a><a href="/academics">Study material</a></div></article></div></section><script>(function(){function row(){var d=document.createElement("div");d.className="sgpa-row";d.innerHTML="<input type=number min=0.5 step=0.5 placeholder=Credits aria-label=Credits><select aria-label=Grade><option value=10>O</option><option value=9>A+</option><option value=8>A</option><option value=7>B+</option><option value=6>B</option><option value=5>C</option><option value=4>D</option><option value=0>F</option></select><button type=button aria-label=Remove>Remove</button>";d.querySelector("button").onclick=function(){d.remove()};document.getElementById("sgpaRows").appendChild(d)}window.addSgpaRow=row;window.calculateSgpa=function(){var rows=[].slice.call(document.querySelectorAll(".sgpa-row"));var total=0,credits=0;rows.forEach(function(r){var c=parseFloat(r.querySelector("input").value||0),g=parseFloat(r.querySelector("select").value||0);if(c>0){credits+=c;total+=c*g}});document.getElementById("sgpaResult").textContent=credits?"SGPA: "+(total/credits).toFixed(2):"Add at least one subject with credits."};row();row()})();</script>'''
+    return layout("Apps",body)
 
 
 @app.route("/resource/<int:rid>")
@@ -3169,14 +3289,14 @@ def issues():
                 <p class="campus-faculty-role">{esc(x["designation"])}</p>
                 <a class="campus-faculty-email" href="mailto:{esc(x["email"])}">{esc(x["email"])}</a>
             </div>
-            <a class="campus-mail-btn" href="mailto:{esc(x["email"])}" aria-label="Email {esc(x["name"])}">✉</a>
+            <a class="campus-mail-btn" href="mailto:{esc(x["email"])}" aria-label="Email {esc(x["name"])}"></a>
         </article>'''
         for x in faculty
     )
 
     if not faculty_cards:
         faculty_cards = '''<div class="campus-empty-state">
-            <div class="campus-empty-icon">✉</div>
+            <div class="campus-empty-icon"></div>
             <h3>Faculty contacts coming soon</h3>
             <p>Faculty contact details will appear here once they are added by VYBE admin.</p>
         </div>'''
@@ -3233,7 +3353,7 @@ def issues():
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
         <div class="campus-hero-top">
-          <div class="campus-hero-icon">🏫</div>
+          <div class="campus-hero-icon"></div>
           <div>
             <div class="badge">CAMPUS SUPPORT</div>
             <h1>Report campus problems.</h1>
@@ -3249,7 +3369,7 @@ def issues():
       </div>
 
       <div class="campus-tools-row">
-        <label class="campus-search"><span>⌕</span><input id="campusFacultySearch" type="search" placeholder="Search by name or designation..." autocomplete="off"></label>
+        <label class="campus-search"><span>S</span><input id="campusFacultySearch" type="search" placeholder="Search by name or designation..." autocomplete="off"></label>
       </div>
 
       <div class="campus-faculty-grid" id="campusFacultyGrid">{faculty_cards}</div>
@@ -3279,7 +3399,7 @@ def issues():
 
 
 def _render_solution_card(row,my_student_id):
-    button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\">💡 Helpful answer</button></form>"
+    button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\"> Helpful answer</button></form>"
     return f'<div class="bubble"><strong>{esc(row["author_name"])}</strong><div>{esc(row["text"])}</div><div class="small">{esc(row["created_at"])}</div>{button}</div>'
 
 @app.route("/community", methods=["GET"])
@@ -3826,7 +3946,7 @@ def community_problems():
     empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
     body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Report a problem or share practical solutions for problems reported by students.</p></div>
 <section class="section"><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{my_cards or '<div class="empty">No active reports yet.</div>'}</div></div></section>
-<section class="section"><div class="card"><h2>📁 Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>
+<section class="section"><div class="card"><h2> Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>
 <section class="section"><h2>Campus problems</h2><div class="community-problem-list">{blocks or empty_problems}</div></section></section>'''
     return layout("Solve Campus Problem", body)
 
@@ -3920,14 +4040,14 @@ def admin_login():
     <h1>Admin access.</h1>
     <p class=\"muted\">Choose how you want to sign in.</p>
     <div class=\"card\" style=\"margin:16px 0;padding:18px\">
-      <h2>📱 Passkey</h2>
+      <h2> Passkey</h2>
       <p class=\"small\">Use your registered phone/device passkey. No admin password is required.</p>
       <button class=\"btn accent\" id=\"loginPasskey\" type=\"button\" {('disabled' if passkey_count == 0 else '')}>Continue with Passkey →</button>
       <div id=\"loginPkMsg\" class=\"small\" style=\"margin-top:10px\"></div>
       {('<div class=\"small\" style=\"margin-top:8px\">No passkey is registered yet. Use the password option below to set up your first passkey.</div>' if passkey_count == 0 else '')}
     </div>
     <div class=\"card\" style=\"padding:18px\">
-      <h2>🔐 Admin Password</h2>
+      <h2> Admin Password</h2>
       <p class=\"small\">Password login is not enough by itself. After the password is accepted, VYBE will require your registered passkey.</p>
       <form class=\"form\" method=\"post\">
         <div class="password-wrap{" password-error" if password_error else ""}"><input id="adminLoginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Admin password"><button type="button" class="password-toggle toggle-password" data-target="adminLoginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div>
@@ -4046,25 +4166,25 @@ def admin_panel():
       <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
       <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
       <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
+      <a class="card" href="/admin/academic-hub"><div class="kpi">AH</div><h3>Academic Hub</h3><p class="muted">Manage results, datesheets, forms, portals and academic updates.</p></a>
       <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
       <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
       <a class="card" href="/admin/campus"><div class="kpi">{stats["faculty"]}</div><h3>Campus</h3><p class="muted">Manage faculty names, designations and email contacts.</p></a>
       <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
       <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
-      <a class="card" href="/admin/assistant"><div class="kpi">🧠</div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
-      <a class="card" href="/admin/timetable"><div class="kpi">🗓️</div><h3>Timetable</h3><p class="muted">Post and manage student timetables separately.</p></a>
+      <a class="card" href="/admin/assistant"><div class="kpi"></div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
+      <a class="card" href="/admin/timetable"><div class="kpi"></div><h3>Timetable</h3><p class="muted">Post and manage student timetables separately.</p></a>
       <a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
-      <a class="card" href="/admin/command-center"><div class="kpi">◎</div><h3>University Command Center</h3><p class="muted">University setup, faculty, departments, clubs, permissions, integrations, alerts and analytics.</p></a>
     </div>
     <section class="section grid2">
-      <div class="card"><h2>✨ VYBE Assistant</h2><p class="small">Status: <strong>{"🟢 ON" if assistant_enabled else "🔴 OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{"🔴 Turn Assistant OFF" if assistant_enabled else "🟢 Turn Assistant ON"}</button></form></div>
-      <div class="card"><h2>🧠 What it can answer</h2><p class="muted">Announcements, updates, events, notes/files, resources, uploaded timetable data, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
+      <div class="card"><h2> VYBE Assistant</h2><p class="small">Status: <strong>{" ON" if assistant_enabled else " OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{" Turn Assistant OFF" if assistant_enabled else " Turn Assistant ON"}</button></form></div>
+      <div class="card"><h2> What it can answer</h2><p class="muted">Announcements, updates, events, notes/files, resources, uploaded timetable data, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
     </section>
     <section class="section grid2">
-      <div class="card"><h2>🌐 VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
+      <div class="card"><h2> VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{" ONLINE" if online else " OFFLINE"}</strong></p>
       <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
-      <form method="post" action="/admin/status">{('<button class="btn danger">🔴 Take VYBE Offline</button>' if online else '<button class="btn good">🟢 Bring VYBE Online</button>')}</form></div>
-      <div class="card"><h2>🔐 Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
+      <form method="post" action="/admin/status">{('<button class="btn danger"> Take VYBE Offline</button>' if online else '<button class="btn good"> Bring VYBE Online</button>')}</form></div>
+      <div class="card"><h2> Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
     </section></section>'''
     return layout("Admin", body, admin=True)
 
@@ -4115,15 +4235,15 @@ def admin_assistant():
             flash("File added to VYBE Assistant Knowledge. "+("Its text was indexed." if readable else "The file was saved, but its format could not be read automatically."))
             return redirect(url_for("admin_assistant"))
     rows=con.execute("SELECT id,title,description,original_name,source_type,content,created_at FROM assistant_knowledge ORDER BY id DESC").fetchall(); con.close()
-    state="🟢 ON" if current else "🔴 OFF"; action_label="🔴 Turn Assistant OFF" if current else "🟢 Turn Assistant ON"; tone="danger" if current else "good"
+    state=" ON" if current else " OFF"; action_label=" Turn Assistant OFF" if current else " Turn Assistant ON"; tone="danger" if current else "good"
     cards=[]
     for r in rows:
         title_html=esc(r["title"]); rid=int(r["id"]); date_html=esc(r["created_at"]); desc_html=esc(r["description"] or "No description"); preview=esc((r["content"] or "")[:280]); source=esc("Permanent note" if r["source_type"]=="note" else (r["original_name"] or "Uploaded file"))
         cards.append('<div class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h3 style="margin:0 0 5px">'+title_html+'</h3><p class="small">'+source+' · added '+date_html+'</p></div><a class="btn danger" href="/admin/assistant/knowledge/'+str(rid)+'/delete" onclick="return confirm(\'Delete this assistant knowledge item?\')">Delete</a></div><p class="muted">'+desc_html+'</p><div class="small" style="white-space:pre-wrap;max-height:150px;overflow:auto">'+preview+'</div></div>')
     body='<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1>'
     body+='<div class="card"><h2>'+state+'</h2><p class="muted">The assistant answers from VYBE campus data plus its own persistent Knowledge Space. Anything added here stays in the database for future questions until the admin updates or deletes it.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn '+tone+'">'+action_label+'</button></form></div>'
-    body+='<section class="section grid2"><div class="card"><h2>📚 Upload Assistant Knowledge</h2><p class="muted">Upload PDF, images, Word, PowerPoint, Excel, text, CSV, JSON, HTML and other files. Readable formats are indexed automatically; image uploads can be OCR-read before saving.</p><form id="assistantKnowledgeFileForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="file"><input name="title" placeholder="Knowledge title (optional)"><input name="description" placeholder="What is this file about? (optional)"><input id="assistantKnowledgeFile" type="file" name="file" required><input id="assistantKnowledgeText" type="hidden" name="assistant_text"><div id="assistantKnowledgeStatus" class="small">Maximum upload follows VYBE 25 MB limit.</div><button class="btn accent">Add to Assistant Knowledge →</button></form>'+_resource_ocr_script("assistantKnowledgeFileForm","assistantKnowledgeFile","assistantKnowledgeText","assistantKnowledgeStatus")+'</div>'
-    body+='<div class="card"><h2>🧠 Save Assistant Memory</h2><p class="muted">Use this for permanent facts, rules, procedures or updates that the assistant should remember for future students.</p><form class="form" method="post"><input type="hidden" name="action" value="note"><input name="title" placeholder="Memory title" required><input name="description" placeholder="Short description"><textarea name="content" rows="9" maxlength="50000" placeholder="Example: From 1 October, the library closes at 7 PM on weekdays..." required></textarea><button class="btn accent">Save Memory →</button></form></div></section>'
+    body+='<section class="section grid2"><div class="card"><h2> Upload Assistant Knowledge</h2><p class="muted">Upload PDF, images, Word, PowerPoint, Excel, text, CSV, JSON, HTML and other files. Readable formats are indexed automatically; image uploads can be OCR-read before saving.</p><form id="assistantKnowledgeFileForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="file"><input name="title" placeholder="Knowledge title (optional)"><input name="description" placeholder="What is this file about? (optional)"><input id="assistantKnowledgeFile" type="file" name="file" required><input id="assistantKnowledgeText" type="hidden" name="assistant_text"><div id="assistantKnowledgeStatus" class="small">Maximum upload follows VYBE 25 MB limit.</div><button class="btn accent">Add to Assistant Knowledge →</button></form>'+_resource_ocr_script("assistantKnowledgeFileForm","assistantKnowledgeFile","assistantKnowledgeText","assistantKnowledgeStatus")+'</div>'
+    body+='<div class="card"><h2> Save Assistant Memory</h2><p class="muted">Use this for permanent facts, rules, procedures or updates that the assistant should remember for future students.</p><form class="form" method="post"><input type="hidden" name="action" value="note"><input name="title" placeholder="Memory title" required><input name="description" placeholder="Short description"><textarea name="content" rows="9" maxlength="50000" placeholder="Example: From 1 October, the library closes at 7 PM on weekdays..." required></textarea><button class="btn accent">Save Memory →</button></form></div></section>'
     body+='<section class="section"><div class="badge">ASSISTANT KNOWLEDGE SPACE · '+str(len(rows))+' ITEMS</div><h2>Stored knowledge.</h2><div class="grid2">'+(''.join(cards) if cards else '<div class="card"><p class="muted">No assistant knowledge has been added yet.</p></div>')+'</div></section></section>'
     return layout("Assistant",body,admin=True)
 
@@ -4148,8 +4268,8 @@ def admin_status():
         flash("VYBE is now offline." if current else "VYBE is now online.")
         return redirect(url_for("admin_status"))
     con.close()
-    state = "🟢 ONLINE" if current else "🔴 OFFLINE"
-    action = "🔴 Take VYBE Offline" if current else "🟢 Bring VYBE Online"
+    state = " ONLINE" if current else " OFFLINE"
+    action = " Take VYBE Offline" if current else " Bring VYBE Online"
     tone = "danger" if current else "good"
     body = f'<section class="section"><div class="badge">PUBLIC STATUS CONTROL</div><h1>VYBE availability.</h1><div class="card"><h2>{state}</h2><p class="muted">When VYBE is offline, public and student routes are blocked while admin access remains available.</p><form method="post"><button class="btn {tone}">{action}</button></form></div></section>'
     return layout("Online / Offline", body, admin=True)
@@ -4325,7 +4445,7 @@ def admin_events():
         return redirect(url_for("admin_events"))
     rows=con.execute("SELECT * FROM events ORDER BY event_date ASC,event_time ASC,id DESC").fetchall()
     con.close()
-    html_rows="".join(f'''<tr><td>{esc(r["event_date"])}</td><td><strong>{esc(r["title"])}</strong><br><span class="small">🕒 {esc(r["event_time"] or "TBA")} · 📍 {esc(r["location"] or "TBA")}</span></td><td>{esc(r["description"][:180])}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
+    html_rows="".join(f'''<tr><td>{esc(r["event_date"])}</td><td><strong>{esc(r["title"])}</strong><br><span class="small"> {esc(r["event_time"] or "TBA")} ·  {esc(r["location"] or "TBA")}</span></td><td>{esc(r["description"][:180])}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
     body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Details</th><th>Action</th></tr>{html_rows or '<tr><td colspan="4">No events yet.</td></tr>'}</table></div></section></section>'''
     return layout("Events",body,admin=True)
 
@@ -4401,6 +4521,44 @@ def delete_timetable(tid):
         con.execute("DELETE FROM timetables WHERE id=?",(tid,)); con.commit(); flash("Timetable deleted.")
     else: flash("Timetable not found.")
     con.close(); return redirect(url_for("admin_timetable"))
+
+
+@app.route("/admin/academic-hub", methods=["GET", "POST"])
+@admin_required
+def admin_academic_hub():
+    con=db()
+    if request.method=="POST":
+        kind=request.form.get("kind","General Update").strip()[:80]; category=request.form.get("category","General").strip()[:80]; title=request.form.get("title","").strip()[:180]; description=request.form.get("description","").strip()[:4000]; course=request.form.get("course","").strip()[:100]; semester=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:120]; event_date=request.form.get("event_date","").strip()[:80]; external_url=request.form.get("external_url","").strip()[:500]
+        f=request.files.get("file")
+        if not title or not description:
+            con.close(); flash("Title and description are required."); return redirect(url_for("admin_academic_hub"))
+        if external_url:
+            parsed=urlparse(external_url)
+            if parsed.scheme not in ("http","https") or not parsed.netloc:
+                con.close(); flash("Use a valid http or https external URL."); return redirect(url_for("admin_academic_hub"))
+        filename=original_name=mime_type=None; file_data=None
+        if f and f.filename:
+            suffix=Path(f.filename).suffix.lower()
+            if suffix not in ALLOWED_EXT:
+                con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_hub"))
+            original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+            if len(file_data)>20*1024*1024:
+                con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_hub"))
+            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now())); con.commit(); con.close(); flash("Academic update published."); return redirect(url_for("admin_academic_hub"))
+    rows=con.execute("SELECT * FROM academic_updates ORDER BY id DESC").fetchall(); con.close()
+    table="".join(f'''<tr><td><span class="academic-tag">{esc(r["kind"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["category"])} · {esc(r["event_date"] or r["created_at"])}</span></td><td>{esc(r["course"] or "All")}</td><td>{esc(r["semester"] or "All")}</td><td><a class="btn danger" href="/admin/academic-update/{r["id"]}/delete" onclick="return confirm('Delete this academic update?')">Delete</a></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="academic-kicker">ACADEMIC HUB ADMIN</div><h1>Academic updates.</h1><p class="muted">Publish results, datesheets, admit-card notices, exam forms, online classes, e-books, support information and other academic updates without changing the existing VYBE resource system.</p><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option><option>Helpdesk</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="Describe the update" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish academic update</button></form></div><div class="card"><h2>Resource library</h2><p class="muted">Notes, study material and previous-year papers continue to use the existing VYBE resource uploader, so the existing data and routes remain compatible.</p><a class="btn dark" href="/admin/resources">Manage study resources</a></div></div><section class="section card tablewrap"><table><tr><th>Type</th><th>Update</th><th>Course</th><th>Semester</th><th>Action</th></tr>{table or '<tr><td colspan="5">No academic updates yet.</td></tr>'}</table></section></section>'''
+    return layout("Academic Hub Admin",body,admin=True)
+
+@app.route("/admin/academic-update/<int:uid>/delete")
+@admin_required
+def admin_delete_academic_update(uid):
+    con=db(); row=con.execute("SELECT file_name FROM academic_updates WHERE id=?",(uid,)).fetchone()
+    if row and row["file_name"]:
+        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
+        except Exception: pass
+    con.execute("DELETE FROM academic_updates WHERE id=?",(uid,)); con.commit(); con.close(); flash("Academic update deleted."); return redirect(url_for("admin_academic_hub"))
 
 
 @app.route("/admin/resources")
@@ -4525,17 +4683,17 @@ def admin_settings():
     con.close()
     body = f'''<section class="section"><h1>Settings.</h1>
     <div class="grid2">
-      <div class="card"><h2>☁️ Google Drive</h2><form class="form" method="post">
+      <div class="card"><h2>AI Google Drive</h2><form class="form" method="post">
         <input name="google_drive_url" value="{esc(drive)}" required>
         <div class="small">Students can only see this link after login.</div>
-        <h2 style="margin-top:18px">💬 WhatsApp Community</h2>
+        <h2 style="margin-top:18px"> WhatsApp Community</h2>
         <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
         <button class="btn accent">Save configuration</button></form></div>
-      <div class="card"><h2>💬 Student Community Chat</h2><p class="small">Status: <strong>{"🟢 ON" if chat_enabled else "🔴 OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2>🧠 VYBE Assistant</h2><p class="muted">Assistant data is managed separately. Upload PDFs, images, Word, PowerPoint, Excel, text and other knowledge files, save permanent memories, or remove outdated knowledge.</p><a class="btn accent" href="/admin/assistant">Open Assistant Control →</a></div>
-      <div class="card"><h2>🗓️ Timetable</h2><p class="muted">Timetable uploads are only for student class schedules. They are kept separate from the Assistant Knowledge Space.</p><a class="btn dark" href="/admin/timetable">Manage timetable →</a></div>
-      <div class="card"><h2>🌐 Public status</h2><p class="{"online" if online else "offline"}"><strong>{"🟢 ONLINE" if online else "🔴 OFFLINE"}</strong></p>
-        <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{"🔴 Take VYBE Offline" if online else "🟢 Bring VYBE Online"}</button></form>
-        <h2 style="margin-top:22px">📱 Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
+      <div class="card"><h2> Student Community Chat</h2><p class="small">Status: <strong>{" ON" if chat_enabled else " OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2> VYBE Assistant</h2><p class="muted">Assistant data is managed separately. Upload PDFs, images, Word, PowerPoint, Excel, text and other knowledge files, save permanent memories, or remove outdated knowledge.</p><a class="btn accent" href="/admin/assistant">Open Assistant Control →</a></div>
+      <div class="card"><h2> Timetable</h2><p class="muted">Timetable uploads are only for student class schedules. They are kept separate from the Assistant Knowledge Space.</p><a class="btn dark" href="/admin/timetable">Manage timetable →</a></div>
+      <div class="card"><h2> Public status</h2><p class="{"online" if online else "offline"}"><strong>{" ONLINE" if online else " OFFLINE"}</strong></p>
+        <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{" Take VYBE Offline" if online else " Bring VYBE Online"}</button></form>
+        <h2 style="margin-top:22px"> Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
       </div>
     </div></section>'''
     return layout("Settings", body, admin=True)
@@ -4668,21 +4826,21 @@ def admin_password():
         registration_note = "Verify your current passkey before registering another passkey."
     body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1>
     <div class="two">
-      <div class="card"><h2>📱 Passkeys</h2>
+      <div class="card"><h2> Passkeys</h2>
         <p class="muted">Current credentials: {count}. Adding a second or later passkey requires verification of an existing passkey first.</p>
         <p class="small">WebAuthn: {web_status}</p>
         <button class="btn accent" id="registerPasskey">Register New Passkey</button>
         <div id="pkMsg" class="small" style="margin-top:10px">{esc(registration_note)}</div>
         <p style="margin-top:14px"><a class="btn dark" href="/admin/verify">Verify Current Passkey</a></p>
       </div>
-      <div class="card"><h2>🔐 Change Admin Password</h2>
+      <div class="card"><h2> Change Admin Password</h2>
         <p class="muted">You do not need the current password. A fresh current-passkey verification authorizes the change.</p>
         <form class="form" method="post" style="margin-top:16px">
           <div class="password-wrap"><input id="newPassword" type="password" name="new_password" placeholder="New password (12+ chars)" minlength="12" required autocomplete="new-password"><button type="button" class="password-toggle toggle-password" data-target="newPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div>
           <div class="password-wrap"><input id="confirmPassword" type="password" name="confirm_password" placeholder="Confirm new password" minlength="12" required autocomplete="new-password"><button type="button" class="password-toggle toggle-password" data-target="confirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div>
           <button class="btn accent" {"disabled" if not session.get("passkey_verified") else ""}>Change Password</button>
         </form>
-        <div class="small">{"Current passkey verified ✓" if session.get("passkey_verified") else "Verify current passkey above before changing the password."}</div>
+        <div class="small">{"Current passkey verified " if session.get("passkey_verified") else "Verify current passkey above before changing the password."}</div>
       </div>
     </div></section><script>{WEBAUTHN_JS}</script>'''
     return layout("Security", body, admin=True)
@@ -4789,8 +4947,8 @@ def admin_community_chat():
     bubbles = ""
     for r in rows:
         bubbles += f'''<div class="bubble"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><strong>{esc(r["name"])}</strong> <span class="small">({esc(r["student_id"])})</span><div style="margin-top:5px;white-space:pre-wrap;word-break:break-word">{esc(r["message"])}</div><div class="small" style="margin-top:5px">{esc(r["created_at"])}</div></div><form method="post" onsubmit="return confirm('Delete this message?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="message_id" value="{r["id"]}"><button class="btn danger">Delete</button></form></div></div>'''
-    status = "🟢 ON" if enabled else "🔴 OFF"
-    body = f'''<section class="section"><div class="badge">COMMUNITY CHAT CONTROL</div><h1>Community Chat.</h1><div class="grid2"><div class="card"><h2>{status}</h2><p class="muted">Students can {"send and read messages" if enabled else "not use the chat while it is disabled"}.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn {"danger" if enabled else "good"}">{"🔴 Turn Chat OFF" if enabled else "🟢 Turn Chat ON"}</button></form></div><div class="card"><h2>Moderation</h2><p class="muted">Delete individual messages or clear the entire community chat.</p><form method="post" onsubmit="return confirm('Delete ALL community chat messages? This cannot be undone.')"><input type="hidden" name="action" value="delete_all"><button class="btn danger">Delete all messages</button></form></div></div><section class="section"><div class="card"><h2>Recent messages</h2><div class="chat">{bubbles or '<div class="empty">No community messages yet.</div>'}</div></div></section></section>'''
+    status = " ON" if enabled else " OFF"
+    body = f'''<section class="section"><div class="badge">COMMUNITY CHAT CONTROL</div><h1>Community Chat.</h1><div class="grid2"><div class="card"><h2>{status}</h2><p class="muted">Students can {"send and read messages" if enabled else "not use the chat while it is disabled"}.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn {"danger" if enabled else "good"}">{" Turn Chat OFF" if enabled else " Turn Chat ON"}</button></form></div><div class="card"><h2>Moderation</h2><p class="muted">Delete individual messages or clear the entire community chat.</p><form method="post" onsubmit="return confirm('Delete ALL community chat messages? This cannot be undone.')"><input type="hidden" name="action" value="delete_all"><button class="btn danger">Delete all messages</button></form></div></div><section class="section"><div class="card"><h2>Recent messages</h2><div class="chat">{bubbles or '<div class="empty">No community messages yet.</div>'}</div></div></section></section>'''
     return layout("Community Chat Control", body, admin=True)
 
 
@@ -4854,7 +5012,7 @@ if(loginPk)loginPk.onclick=async()=>{const msg=document.getElementById("loginPkM
 const reg=document.getElementById("registerPasskey");
 if(reg)reg.onclick=async()=>{const msg=document.getElementById("pkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");reg.disabled=true;reg.textContent="Waiting for device…";msg.textContent="Choose your phone or another passkey device when your browser asks.";let o=await postJSON("/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/passkey/register/verify",serializeCredential(c));msg.textContent="Phone passkey registered successfully.";setTimeout(()=>location.reload(),500)}catch(e){msg.textContent=pkError(e);reg.disabled=false;reg.textContent="Register New Passkey"}}
 const ver=document.getElementById("verifyPasskey");
-if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified.";ver.textContent="Passkey verified ✓";if(location.pathname==="/admin/verify")setTimeout(()=>location.href="/admin/panel",400)}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Current Passkey"}}
+if(ver)ver.onclick=async()=>{const msg=document.getElementById("authMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys.");ver.disabled=true;ver.textContent="Waiting for device…";let o=await postJSON("/passkey/auth/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/passkey/auth/verify",serializeCredential(c));msg.textContent="Phone passkey verified.";ver.textContent="Passkey verified ";if(location.pathname==="/admin/verify")setTimeout(()=>location.href="/admin/panel",400)}catch(e){msg.textContent=pkError(e);ver.disabled=false;ver.textContent="Verify Current Passkey"}}
 '''
 
 
@@ -4877,7 +5035,7 @@ init_db()
 @app.route('/admin/login-history/delete/<int:history_id>', methods=['POST'])
 @admin_required
 def admin_delete_login_history(history_id):
-    con = get_db()
+    con = db()
     try:
         # Delete by primary key from the actual login-log table.
         cur = con.execute("SELECT id FROM admin_login_logs WHERE id = ?", (int(history_id),))
@@ -4902,7 +5060,7 @@ def admin_delete_login_history(history_id):
 @app.route('/admin/login-history/delete-all', methods=['POST'])
 @admin_required
 def admin_delete_all_login_history():
-    con = get_db()
+    con = db()
     try:
         con.execute("DELETE FROM admin_login_logs")
         con.commit()
@@ -4917,328 +5075,7 @@ def admin_delete_all_login_history():
         con.close()
     return redirect("/admin/login-history")
 
-# ---------------------------------------------------------------------------
-# VYBE enterprise feature extension. Additive only.
-# ---------------------------------------------------------------------------
-def _ent_now(): return now()
-def _ent_uid(con):
-    r=con.execute("SELECT id FROM universities ORDER BY id LIMIT 1").fetchone()
-    return r["id"] if r else None
-
-def _enterprise_init():
-    con=db(); pg=con.is_pg
-    defs = [
-      ("universities", "id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, code TEXT, description TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, code TEXT, description TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL"),
-      ("departments", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(university_id,name)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(university_id,name)"),
-      ("faculty_accounts", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, department_id BIGINT, name TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, designation TEXT NOT NULL DEFAULT 'Faculty', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_login TEXT, UNIQUE(university_id,email)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, department_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, designation TEXT NOT NULL DEFAULT 'Faculty', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_login TEXT, UNIQUE(university_id,email)"),
-      ("clubs", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Community', created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Community', created_at TEXT NOT NULL"),
-      ("club_members", "id BIGSERIAL PRIMARY KEY, club_id BIGINT NOT NULL, student_id BIGINT NOT NULL, joined_at TEXT NOT NULL, UNIQUE(club_id,student_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, club_id INTEGER NOT NULL, student_id INTEGER NOT NULL, joined_at TEXT NOT NULL, UNIQUE(club_id,student_id)"),
-      ("emergency_alerts", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'info', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL"),
-      ("targeted_announcements", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all', created_at TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'all', created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1"),
-      ("saved_resources", "id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL, resource_id BIGINT NOT NULL, saved_at TEXT NOT NULL, UNIQUE(student_id,resource_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL, resource_id INTEGER NOT NULL, saved_at TEXT NOT NULL, UNIQUE(student_id,resource_id)"),
-      ("university_permissions", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, role TEXT NOT NULL, permission_key TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE(university_id,role,permission_key)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, role TEXT NOT NULL, permission_key TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, UNIQUE(university_id,role,permission_key)"),
-      ("integration_settings", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, provider TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TEXT NOT NULL, UNIQUE(university_id,provider)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, provider TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, UNIQUE(university_id,provider)"),
-      ("audit_events", "id BIGSERIAL PRIMARY KEY, university_id BIGINT, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, target TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, target TEXT, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL"),
-      ("onboarding_steps", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, step_key TEXT NOT NULL, completed BOOLEAN NOT NULL DEFAULT FALSE, UNIQUE(university_id,step_key)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, step_key TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE(university_id,step_key)"),
-      ("digital_ids", "id BIGSERIAL PRIMARY KEY, university_id BIGINT NOT NULL, student_id BIGINT NOT NULL, campus_identifier TEXT NOT NULL, issued_at TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE(university_id,student_id)" if pg else "id INTEGER PRIMARY KEY AUTOINCREMENT, university_id INTEGER NOT NULL, student_id INTEGER NOT NULL, campus_identifier TEXT NOT NULL, issued_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, UNIQUE(university_id,student_id)"),
-    ]
-    for name,cols in defs: con.execute("CREATE TABLE IF NOT EXISTS %s (%s)"%(name,cols))
-    u=con.execute("SELECT * FROM universities ORDER BY id LIMIT 1").fetchone()
-    if not u:
-        con.execute("INSERT INTO universities(name,slug,code,description,created_at,updated_at) VALUES(?,?,?,?,?,?)",("VYBE Campus","vybe-campus","VYBE","Default VYBE university workspace",_ent_now(),_ent_now()))
-        u=con.execute("SELECT * FROM universities ORDER BY id LIMIT 1").fetchone()
-    for key in ("university","departments","students","faculty","timetable","resources","permissions","launch"):
-        if not con.execute("SELECT id FROM onboarding_steps WHERE university_id=? AND step_key=?",(u["id"],key)).fetchone(): con.execute("INSERT INTO onboarding_steps(university_id,step_key) VALUES(?,?)",(u["id"],key))
-    con.commit(); con.close()
-
-_enterprise_init()
-
-def _ent_audit(con,action,target='',details='',role='admin'):
-    con.execute("INSERT INTO audit_events(university_id,actor_role,actor_id,action,target,details,created_at) VALUES(?,?,?,?,?,?,?)",(_ent_uid(con),role,str(session.get('student_db_id') or 'admin'),action,target,details,_ent_now()))
-
-@app.route('/admin/command-center')
-@admin_required
-def admin_command_center():
-    con=db(); uid=_ent_uid(con); u=con.execute("SELECT * FROM universities WHERE id=?",(uid,)).fetchone(); stats=[('Students',con.execute('SELECT COUNT(*) c FROM students').fetchone()['c']),('Faculty',con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c']),('Departments',con.execute('SELECT COUNT(*) c FROM departments WHERE university_id=?',(uid,)).fetchone()['c']),('Clubs',con.execute('SELECT COUNT(*) c FROM clubs WHERE university_id=?',(uid,)).fetchone()['c']),('Alerts',con.execute('SELECT COUNT(*) c FROM emergency_alerts WHERE university_id=? AND active=1',(uid,)).fetchone()['c']),('Help Desk',con.execute('SELECT COUNT(*) c FROM issues').fetchone()['c'])]; con.close()
-    links=[('/admin/university','University setup'),('/admin/departments','Departments'),('/admin/faculty','Faculty management'),('/admin/clubs','Clubs & communities'),('/admin/emergency','Emergency alerts'),('/admin/targeted-announcements','Targeted announcements'),('/admin/permissions','Permissions'),('/admin/integrations','Integration layer'),('/admin/enterprise-analytics','Analytics'),('/admin/audit','Security & audit')]
-    grid=''.join('<a class="card" href="%s"><div class="kpi">→</div><h3>%s</h3><p class="muted">Manage this area.</p></a>'%x for x in links)
-    metrics=''.join('<div class="card"><div class="kpi">%s</div><h3>%s</h3></div>'%(v,k) for k,v in stats)
-    return layout('University Command Center',f'<section class="section"><div class="badge">UNIVERSITY COMMAND CENTER</div><h1>{esc(u["name"])}.</h1><div class="grid">{metrics}</div><div class="grid">{grid}</div></section>',admin=True)
-
-@app.route('/admin/university',methods=['GET','POST'])
-@admin_required
-def admin_university_setup():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        name=request.form.get('name','').strip()[:160] or 'VYBE Campus'; code=request.form.get('code','').strip()[:40]; desc=request.form.get('description','').strip()[:1000]; slug=re.sub(r'[^a-z0-9]+','-',name.lower()).strip('-') or 'university'
-        if con.execute('SELECT id FROM universities WHERE slug=? AND id<>?',(slug,uid)).fetchone(): slug=slug+'-'+str(uid)
-        con.execute('UPDATE universities SET name=?,code=?,description=?,slug=?,updated_at=?,status=? WHERE id=?',(name,code,desc,slug,_ent_now(),'active',uid)); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='university'",(uid,)); _ent_audit(con,'university_updated','university',name); con.commit(); flash('University configuration saved.'); return redirect(url_for('admin_university_setup'))
-    u=con.execute('SELECT * FROM universities WHERE id=?',(uid,)).fetchone(); steps=con.execute('SELECT * FROM onboarding_steps WHERE university_id=? ORDER BY id',(uid,)).fetchall(); con.close(); checklist=''.join('<li>%s: <strong>%s</strong></li>'%(esc(x['step_key'].replace('_',' ').title()),'Complete' if x['completed'] else 'Pending') for x in steps)
-    return layout('University Setup',f'<section class="section"><div class="badge">ONBOARDING</div><h1>University configuration.</h1><div class="grid2"><div class="card"><form method="post" class="form"><input name="name" value="{esc(u["name"])}" placeholder="University name" required><input name="code" value="{esc(u["code"] or "")}" placeholder="University code"><textarea name="description" placeholder="Description">{esc(u["description"])}</textarea><button class="btn accent">Save configuration</button></form></div><div class="card"><h2>Launch checklist</h2><ul>{checklist}</ul></div></div></section>',admin=True)
-
-@app.route('/admin/departments',methods=['GET','POST'])
-@admin_required
-def admin_departments():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        n=request.form.get('name','').strip()[:120]; c=request.form.get('code','').strip()[:30]
-        if n:
-            try: con.execute('INSERT INTO departments(university_id,name,code,created_at) VALUES(?,?,?,?)',(uid,n,c,_ent_now())); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='departments'",(uid,)); _ent_audit(con,'department_created','department',n); con.commit(); flash('Department added.')
-            except Exception: con.rollback(); flash('That department already exists.')
-        return redirect(url_for('admin_departments'))
-    rows=con.execute('SELECT * FROM departments WHERE university_id=? ORDER BY name',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p></div>'%(esc(x['name']),esc(x['code'] or 'No code')) for x in rows) or '<div class="empty">No departments yet.</div>'
-    return layout('Departments',f'<section class="section"><div class="badge">DEPARTMENTS</div><h1>Departments.</h1><div class="card"><form method="post" class="form two"><input name="name" placeholder="Department name" required><input name="code" placeholder="Code"><button class="btn accent">Add department</button></form></div><div class="grid">{cards}</div></section>',admin=True)
-
-@app.route('/admin/faculty',methods=['GET','POST'])
-@admin_required
-def admin_faculty_management():
-    con=db(); uid=_ent_uid(con); deps=con.execute('SELECT id,name FROM departments WHERE university_id=? ORDER BY name',(uid,)).fetchall()
-    if request.method=='POST':
-        n=request.form.get('name','').strip()[:120]; email=request.form.get('email','').strip().lower()[:160]; pw=request.form.get('password','') or secrets.token_urlsafe(10); dep=request.form.get('department_id') or None; des=request.form.get('designation','').strip()[:100] or 'Faculty'
-        try: con.execute('INSERT INTO faculty_accounts(university_id,department_id,name,email,password_hash,designation,status,created_at) VALUES(?,?,?,?,?,?,?,?)',(uid,dep,n,email,hash_password(pw),des,'active',_ent_now())); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key='faculty'",(uid,)); _ent_audit(con,'faculty_created','faculty',email); con.commit(); flash('Faculty account created. Temporary password: '+pw)
-        except Exception: con.rollback(); flash('Could not create that faculty account. The email may already exist.')
-        return redirect(url_for('admin_faculty_management'))
-    rows=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.university_id=? ORDER BY f.name',(uid,)).fetchall(); con.close(); opts=''.join('<option value="%s">%s</option>'%(x['id'],esc(x['name'])) for x in deps); cards=''.join('<div class="card"><h3>%s</h3><p>%s · %s</p><p class="muted">%s</p></div>'%(esc(x['name']),esc(x['designation']),esc(x['department_name'] or 'No department'),esc(x['email'])) for x in rows) or '<div class="empty">No faculty accounts yet.</div>'
-    body=f'<section class="section"><div class="badge">FACULTY MANAGEMENT</div><h1>Faculty accounts.</h1><div class="card"><form method="post" class="form"><div class="two"><input name="name" placeholder="Full name" required><input name="email" type="email" placeholder="Faculty email" required></div><div class="two"><input name="designation" placeholder="Designation"><input name="password" placeholder="Temporary password"></div><select name="department_id"><option value="">No department</option>{opts}</select><button class="btn accent">Create faculty account</button></form></div><div class="grid">{cards}</div></section>'
-    return layout('Faculty Management',body,admin=True)
-
-def faculty_required(fn):
-    @wraps(fn)
-    def wrap(*a,**kw):
-        fid=session.get('faculty_account_id')
-        if not fid: return redirect(url_for('faculty_login'))
-        con=db(); ok=con.execute("SELECT id FROM faculty_accounts WHERE id=? AND status='active'",(fid,)).fetchone(); con.close()
-        if not ok: session.pop('faculty_account_id',None); return redirect(url_for('faculty_login'))
-        return fn(*a,**kw)
-    return wrap
-
-@app.route('/faculty/login',methods=['GET','POST'])
-def faculty_login():
-    if request.method=='POST':
-        email=request.form.get('email','').strip().lower(); pw=request.form.get('password',''); con=db(); r=con.execute("SELECT * FROM faculty_accounts WHERE email=? AND status='active'",(email,)).fetchone()
-        if r and check_password(pw,r['password_hash']): con.execute('UPDATE faculty_accounts SET last_login=? WHERE id=?',(_ent_now(),r['id'])); con.commit(); con.close(); session.clear(); session['faculty_account_id']=r['id']; return redirect(url_for('faculty_dashboard'))
-        con.close(); flash('Invalid faculty email or password.')
-    return layout('Faculty Login','<section class="section narrow"><div class="badge">FACULTY PORTAL</div><h1>Faculty sign in.</h1><div class="card"><form method="post" class="form"><input name="email" type="email" placeholder="Faculty email" required><input name="password" type="password" placeholder="Password" required><button class="btn accent">Sign in</button></form></div></section>')
-
-@app.route('/faculty/dashboard')
-@faculty_required
-def faculty_dashboard():
-    con=db(); f=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.id=?',(session['faculty_account_id'],)).fetchone(); con.close(); links=[('/faculty/timetable','Personal timetable'),('/faculty/classes','Classes'),('/faculty/materials','Study materials'),('/faculty/questions','Student questions'),('/faculty/announcements','Announcements'),('/faculty/profile','Faculty profile')]; grid=''.join('<a class="card" href="%s"><div class="kpi">→</div><h3>%s</h3><p class="muted">Open faculty area.</p></a>'%x for x in links); return layout('Faculty Dashboard',f'<section class="section"><div class="badge">FACULTY PORTAL</div><h1>Welcome, {esc(f["name"])}.</h1><p class="muted">{esc(f["designation"])} · {esc(f["department_name"] or "Department access")}</p><div class="grid">{grid}</div></section>')
-
-@app.route('/faculty')
-def faculty_root(): return redirect(url_for('faculty_dashboard'))
-@app.route('/faculty/logout')
-def faculty_logout(): session.pop('faculty_account_id',None); return redirect(url_for('faculty_login'))
-@app.route('/faculty/timetable')
-@faculty_required
-def faculty_timetable():
-    con=db(); rows=con.execute('SELECT title,original_name,assistant_text,created_at FROM timetables ORDER BY id DESC LIMIT 20').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p><p>%s</p></div>'%(esc(x['title']),esc(x['original_name'] or ''),esc((x['assistant_text'] or '')[:600])) for x in rows) or '<div class="empty">No timetable uploaded.</div>'; return layout('Faculty Timetable',f'<section class="section"><div class="badge">TIMETABLE</div><h1>Personal timetable.</h1><div class="grid">{cards}</div></section>')
-@app.route('/faculty/classes')
-@faculty_required
-def faculty_classes():
-    con=db(); rows=con.execute('SELECT id,name,code FROM departments ORDER BY name').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">Department class area · %s</p></div>'%(esc(x['name']),esc(x['code'])) for x in rows) or '<div class="empty">No departments configured.</div>'; return layout('Faculty Classes',f'<section class="section"><div class="badge">CLASSES</div><h1>Classes.</h1><div class="grid">{cards}</div></section>')
-@app.route('/faculty/materials')
-@faculty_required
-def faculty_materials():
-    con=db(); rows=con.execute('SELECT id,title,course,semester,subject FROM resources ORDER BY id DESC LIMIT 100').fetchall(); con.close(); cards=''.join('<a class="card" href="/resource/%s"><h3>%s</h3><p class="muted">%s · %s · %s</p></a>'%(x['id'],esc(x['title']),esc(x['subject']),esc(x['course']),esc(x['semester'])) for x in rows) or '<div class="empty">No materials available.</div>'; return layout('Faculty Materials',f'<section class="section"><div class="badge">STUDY MATERIALS</div><h1>Materials.</h1><div class="grid">{cards}</div></section>')
-@app.route('/faculty/questions')
-@faculty_required
-def faculty_questions():
-    con=db(); rows=con.execute('SELECT i.title,i.description,i.status,s.name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 100').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p></div>'%(esc(x['title']),esc(x['description']),esc(x['name']),esc(x['status'])) for x in rows) or '<div class="empty">No student questions yet.</div>'; return layout('Student Questions',f'<section class="section"><div class="badge">QUESTIONS</div><h1>Student questions.</h1><div class="grid">{cards}</div></section>')
-@app.route('/faculty/announcements')
-@faculty_required
-def faculty_announcements():
-    con=db(); rows=con.execute('SELECT * FROM announcements ORDER BY id DESC LIMIT 50').fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['body'] if 'body' in x.keys() else x['message'] if 'message' in x.keys() else '')) for x in rows) or '<div class="empty">No announcements yet.</div>'; return layout('Faculty Announcements',f'<section class="section"><div class="badge">ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid">{cards}</div></section>')
-@app.route('/faculty/profile')
-@faculty_required
-def faculty_profile():
-    con=db(); x=con.execute('SELECT f.*,d.name department_name FROM faculty_accounts f LEFT JOIN departments d ON d.id=f.department_id WHERE f.id=?',(session['faculty_account_id'],)).fetchone(); con.close(); return layout('Faculty Profile',f'<section class="section"><div class="badge">PROFILE</div><h1>{esc(x["name"])}</h1><div class="card"><p>Email: {esc(x["email"])}</p><p>Designation: {esc(x["designation"])}</p><p>Department: {esc(x["department_name"] or "Not assigned")}</p></div></section>')
-
-@app.route('/admin/clubs',methods=['GET','POST'])
-@admin_required
-def admin_clubs():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        n=request.form.get('name','').strip()[:120]; d=request.form.get('description','').strip()[:800]; c=request.form.get('category','').strip()[:60] or 'Community'
-        if n: con.execute('INSERT INTO clubs(university_id,name,description,category,created_at) VALUES(?,?,?,?,?)',(uid,n,d,c,_ent_now())); _ent_audit(con,'club_created','club',n); con.commit(); flash('Club created.')
-        return redirect(url_for('admin_clubs'))
-    rows=con.execute('SELECT c.*,COUNT(cm.id) members FROM clubs c LEFT JOIN club_members cm ON cm.club_id=c.id WHERE c.university_id=? GROUP BY c.id ORDER BY c.name',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s members</p></div>'%(esc(x['name']),esc(x['category']),esc(x['description']),x['members']) for x in rows) or '<div class="empty">No clubs yet.</div>'; body=f'<section class="section"><div class="badge">CLUBS</div><h1>Clubs & communities.</h1><div class="card"><form method="post" class="form"><input name="name" placeholder="Club name" required><input name="category" placeholder="Category"><textarea name="description" placeholder="Description"></textarea><button class="btn accent">Create club</button></form></div><div class="grid">{cards}</div></section>'; return layout('Clubs',body,admin=True)
-
-@app.route('/clubs')
-@student_required
-def student_clubs():
-    con=db(); uid=_ent_uid(con); sid=session['student_db_id']; rows=con.execute('SELECT c.*,COUNT(cm.id) members FROM clubs c LEFT JOIN club_members cm ON cm.club_id=c.id WHERE c.university_id=? GROUP BY c.id ORDER BY c.name',(uid,)).fetchall(); joined={x['club_id'] for x in con.execute('SELECT club_id FROM club_members WHERE student_id=?',(sid,)).fetchall()}; con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s · %s members</p><p class="muted">%s</p><form method="post" action="/clubs/%s/join"><button class="btn dark">%s</button></form></div>'%(esc(x['name']),esc(x['category']),x['members'],esc(x['description']),x['id'],'Joined' if x['id'] in joined else 'Join club') for x in rows) or '<div class="empty">No clubs yet.</div>'; return layout('Clubs & Communities',f'<section class="section"><div class="badge">COMMUNITIES</div><h1>Clubs & communities.</h1><div class="grid">{cards}</div></section>')
-@app.route('/clubs/<int:club_id>/join',methods=['POST'])
-@student_required
-def student_join_club(club_id):
-    con=db()
-    try: con.execute('INSERT INTO club_members(club_id,student_id,joined_at) VALUES(?,?,?)',(club_id,session['student_db_id'],_ent_now())); con.commit()
-    except Exception: con.rollback()
-    con.close(); return redirect(url_for('student_clubs'))
-
-@app.route('/admin/emergency',methods=['GET','POST'])
-@admin_required
-def admin_emergency():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        t=request.form.get('title','').strip()[:180]; m=request.form.get('message','').strip()[:2000]; sev=request.form.get('severity','info')[:20]
-        if t and m: con.execute('INSERT INTO emergency_alerts(university_id,title,message,severity,active,created_at) VALUES(?,?,?,?,?,?)',(uid,t,m,sev,True,_ent_now())); _ent_audit(con,'emergency_alert_created','alert',t); con.commit(); flash('Emergency alert published.')
-        return redirect(url_for('admin_emergency'))
-    rows=con.execute('SELECT * FROM emergency_alerts WHERE university_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p><form method="post" action="/admin/emergency/%s/toggle"><button class="btn dark">Toggle active</button></form></div>'%(esc(x['title']),esc(x['message']),esc(x['severity']),'Active' if x['active'] else 'Inactive',x['id']) for x in rows) or '<div class="empty">No alerts.</div>'; body=f'<section class="section"><div class="badge">EMERGENCY ALERTS</div><h1>Emergency campus alerts.</h1><div class="card"><form method="post" class="form"><input name="title" placeholder="Alert title" required><textarea name="message" placeholder="Alert message" required></textarea><select name="severity"><option>info</option><option>warning</option><option>critical</option></select><button class="btn accent">Publish alert</button></form></div><div class="grid">{cards}</div></section>'; return layout('Emergency Alerts',body,admin=True)
-@app.route('/admin/emergency/<int:alert_id>/toggle',methods=['POST'])
-@admin_required
-def admin_emergency_toggle(alert_id):
-    con=db(); con.execute('UPDATE emergency_alerts SET active=CASE WHEN active THEN FALSE ELSE TRUE END WHERE id=?',(alert_id,)); con.commit(); con.close(); return redirect(url_for('admin_emergency'))
-@app.route('/alerts')
-@student_required
-def student_alerts():
-    con=db(); rows=con.execute('SELECT * FROM emergency_alerts WHERE university_id=? AND active=1 ORDER BY id DESC',(_ent_uid(con),)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">%s · %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['severity']),esc(x['created_at'])) for x in rows) or '<div class="empty">No active emergency alerts.</div>'; return layout('Emergency Alerts',f'<section class="section"><div class="badge">CAMPUS ALERTS</div><h1>Emergency alerts.</h1><div class="grid">{cards}</div></section>')
-
-@app.route('/admin/targeted-announcements',methods=['GET','POST'])
-@admin_required
-def admin_targeted_announcements():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        t=request.form.get('title','').strip()[:180]; m=request.form.get('message','').strip()[:3000]; a=request.form.get('audience','all')[:120]
-        if t and m: con.execute('INSERT INTO targeted_announcements(university_id,title,message,audience,created_at,active) VALUES(?,?,?,?,?,?)',(uid,t,m,a,_ent_now(),True)); _ent_audit(con,'targeted_announcement_created','announcement',t); con.commit(); flash('Targeted announcement published.')
-        return redirect(url_for('admin_targeted_announcements'))
-    rows=con.execute('SELECT * FROM targeted_announcements WHERE university_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">Audience: %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['audience'])) for x in rows) or '<div class="empty">No targeted announcements.</div>'; body=f'<section class="section"><div class="badge">TARGETED COMMUNICATION</div><h1>Targeted announcements.</h1><div class="card"><form method="post" class="form"><input name="title" placeholder="Title" required><textarea name="message" placeholder="Message" required><select name="audience"><option value="all">All students</option><option value="department">Department</option><option value="year">Year / batch</option></select><button class="btn accent">Publish</button></form></div><div class="grid">{cards}</div></section>'; return layout('Targeted Announcements',body,admin=True)
-@app.route('/announcements/targeted')
-@student_required
-def student_targeted_announcements():
-    con=db(); rows=con.execute('SELECT * FROM targeted_announcements WHERE university_id=? AND active=1 ORDER BY id DESC',(_ent_uid(con),)).fetchall(); con.close(); cards=''.join('<div class="card"><h3>%s</h3><p>%s</p><p class="muted">Target: %s</p></div>'%(esc(x['title']),esc(x['message']),esc(x['audience'])) for x in rows) or '<div class="empty">No targeted announcements right now.</div>'; return layout('Targeted Announcements',f'<section class="section"><div class="badge">FOR YOU</div><h1>Targeted announcements.</h1><div class="grid">{cards}</div></section>')
-
-@app.route('/campus-search')
-@student_required
-def campus_search():
-    q=request.args.get('q','').strip()[:100]; con=db(); out=[]
-    if q:
-        like='%'+q+'%'; out += [('Resource',x['title'],'/resource/%s'%x['id'],x['description'] or x['subject']) for x in con.execute('SELECT id,title,description,subject FROM resources WHERE title LIKE ? OR subject LIKE ? OR description LIKE ? LIMIT 30',(like,like,like)).fetchall()]; out += [('Event',x['title'],'/events','Campus event') for x in con.execute('SELECT * FROM events WHERE title LIKE ? LIMIT 20',(like,)).fetchall()]; out += [('Club',x['name'],'/clubs',x['description']) for x in con.execute('SELECT name,description FROM clubs WHERE name LIKE ? OR description LIKE ? LIMIT 20',(like,like)).fetchall()]
-    con.close(); cards=''.join('<a class="card" href="%s"><div class="small">%s</div><h3>%s</h3><p class="muted">%s</p></a>'%(esc(u),esc(t),esc(n),esc(d or '')) for t,n,u,d in out) or ('<div class="empty">No matching campus results.</div>' if q else '<div class="empty">Search resources, events and clubs.</div>'); return layout('Campus Search',f'<section class="section"><div class="badge">CAMPUS SEARCH</div><h1>Search campus.</h1><div class="card"><form method="get" class="form"><input name="q" value="{esc(q)}" placeholder="Search campus..."><button class="btn accent">Search</button></form></div><div class="grid">{cards}</div></section>')
-
-@app.route('/calendar')
-@student_required
-def campus_calendar():
-    con=db(); ev=con.execute('SELECT * FROM events ORDER BY id DESC LIMIT 100').fetchall(); an=con.execute('SELECT * FROM announcements ORDER BY id DESC LIMIT 50').fetchall(); con.close(); ec=''.join('<div class="card"><div class="small">EVENT</div><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['event_date'] if 'event_date' in x.keys() else 'Date TBA')) for x in ev); ac=''.join('<div class="card"><div class="small">ANNOUNCEMENT</div><h3>%s</h3><p>%s</p></div>'%(esc(x['title']),esc(x['body'] if 'body' in x.keys() else x['message'] if 'message' in x.keys() else '')) for x in an); return layout('Campus Calendar',f'<section class="section"><div class="badge">CAMPUS CALENDAR</div><h1>Smart campus calendar.</h1><div class="grid">{ec or "<div class=empty>No events.</div>"}{ac or "<div class=empty>No announcements.</div>"}</div></section>')
-
-@app.route('/student/security')
-@student_required
-def student_security_center():
-    con=db(); s=con.execute('SELECT name,student_id,status,last_login,last_seen FROM students WHERE id=?',(session['student_db_id'],)).fetchone(); con.close(); return layout('Security Center',f'<section class="section"><div class="badge">ACCOUNT & SECURITY</div><h1>Security center.</h1><div class="grid2"><div class="card"><h3>Account</h3><p>{esc(s["name"])} · {esc(s["student_id"])}</p><p>Status: {esc(s["status"])}</p></div><div class="card"><h3>Session</h3><p>Last login: {esc(s["last_login"] or "—")}</p><p>Last active: {esc(s["last_seen"] or "—")}</p><a class="btn dark" href="/change-password">Change password</a></div></div></section>')
-
-@app.route('/student/id')
-@student_required
-def student_digital_id():
-    con=db(); uid=_ent_uid(con); sid=session['student_db_id']; r=con.execute('SELECT d.*,s.name,s.student_id FROM digital_ids d JOIN students s ON s.id=d.student_id WHERE d.university_id=? AND d.student_id=?',(uid,sid)).fetchone()
-    if not r:
-        ident='VYBE-%s-%s-%s'%(uid,sid,secrets.token_hex(3).upper()); con.execute('INSERT INTO digital_ids(university_id,student_id,campus_identifier,issued_at,active) VALUES(?,?,?,?,?)',(uid,sid,ident,_ent_now(),True)); con.commit(); r=con.execute('SELECT d.*,s.name,s.student_id FROM digital_ids d JOIN students s ON s.id=d.student_id WHERE d.university_id=? AND d.student_id=?',(uid,sid)).fetchone()
-    con.close(); return layout('Digital Campus ID',f'<section class="section narrow"><div class="badge">DIGITAL CAMPUS ID</div><h1>Campus ID foundation.</h1><div class="card"><h2>{esc(r["name"])}</h2><p>Student ID: {esc(r["student_id"])}</p><p>Campus identifier: <strong>{esc(r["campus_identifier"])}</strong></p><p class="muted">Issued {esc(r["issued_at"])}.</p></div></section>')
-
-@app.route('/admin/permissions',methods=['GET','POST'])
-@admin_required
-def admin_permissions():
-    con=db(); uid=_ent_uid(con)
-    if request.method=='POST':
-        role=request.form.get('role','student')[:40]; key=request.form.get('permission_key','').strip()[:100]; enabled=request.form.get('enabled')=='1'
-        if con.is_pg: con.execute('INSERT INTO university_permissions(university_id,role,permission_key,enabled) VALUES(?,?,?,?) ON CONFLICT(university_id,role,permission_key) DO UPDATE SET enabled=EXCLUDED.enabled',(uid,role,key,enabled))
-        else: con.execute('INSERT INTO university_permissions(university_id,role,permission_key,enabled) VALUES(?,?,?,?) ON CONFLICT(university_id,role,permission_key) DO UPDATE SET enabled=excluded.enabled',(uid,role,key,enabled))
-        con.commit(); return redirect(url_for('admin_permissions'))
-    rows=con.execute('SELECT * FROM university_permissions WHERE university_id=? ORDER BY role,permission_key',(uid,)).fetchall(); con.close(); trs=''.join('<tr><td>%s</td><td>%s</td><td>%s</td></tr>'%(esc(x['role']),esc(x['permission_key']),'Enabled' if x['enabled'] else 'Disabled') for x in rows) or '<tr><td colspan="3">No custom permissions.</td></tr>'; return layout('Permissions',f'<section class="section"><div class="badge">ROLE BASED ACCESS</div><h1>Permissions.</h1><div class="card"><form method="post" class="form two"><select name="role"><option>student</option><option>faculty</option><option>admin</option></select><input name="permission_key" placeholder="permission.key" required><select name="enabled"><option value="1">Enabled</option><option value="0">Disabled</option></select><button class="btn accent">Save</button></form></div><div class="card tablewrap"><table><tr><th>Role</th><th>Permission</th><th>Status</th></tr>{trs}</table></div></section>',admin=True)
-
-@app.route('/admin/integrations',methods=['GET','POST'])
-@admin_required
-def admin_integrations():
-    con=db(); uid=_ent_uid(con); providers=['API','SSO','ERP','LMS','Google','Microsoft']
-    if request.method=='POST':
-        p=request.form.get('provider','API')[:40]; cfg=request.form.get('config_json','{}')[:5000]; enabled=request.form.get('enabled')=='1'
-        try: json.loads(cfg or '{}')
-        except Exception: cfg='{}'
-        if con.is_pg: con.execute('INSERT INTO integration_settings(university_id,provider,config_json,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(university_id,provider) DO UPDATE SET config_json=EXCLUDED.config_json,enabled=EXCLUDED.enabled,updated_at=EXCLUDED.updated_at',(uid,p,cfg,enabled,_ent_now()))
-        else: con.execute('INSERT INTO integration_settings(university_id,provider,config_json,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(university_id,provider) DO UPDATE SET config_json=excluded.config_json,enabled=excluded.enabled,updated_at=excluded.updated_at',(uid,p,cfg,enabled,_ent_now()))
-        con.commit(); return redirect(url_for('admin_integrations'))
-    rows={x['provider']:x for x in con.execute('SELECT * FROM integration_settings WHERE university_id=?',(uid,)).fetchall()}; con.close(); cards=''.join('<div class="card"><h3>%s</h3><p class="muted">%s</p><form method="post" class="form"><input type="hidden" name="provider" value="%s"><textarea name="config_json">%s</textarea><select name="enabled"><option value="1">Enable</option><option value="0">Disable</option></select><button class="btn dark">Save</button></form></div>'%(p,'Enabled' if p in rows and rows[p]['enabled'] else 'Not enabled',p,esc(rows[p]['config_json'] if p in rows else '{}')) for p in providers); return layout('Integrations',f'<section class="section"><div class="badge">INTEGRATION LAYER</div><h1>API, SSO and ecosystem readiness.</h1><p class="muted">Configuration foundation for university systems. Provider-specific authentication can be connected later without changing the VYBE data model.</p><div class="grid2">{cards}</div></section>',admin=True)
-
-@app.route('/admin/enterprise-analytics')
-@admin_required
-def enterprise_analytics():
-    con=db(); uid=_ent_uid(con); vals=[('Active students',con.execute("SELECT COUNT(*) c FROM students WHERE status='approved'").fetchone()['c']),('Faculty',con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c']),('Departments',con.execute('SELECT COUNT(*) c FROM departments WHERE university_id=?',(uid,)).fetchone()['c']),('Help desk',con.execute('SELECT COUNT(*) c FROM issues').fetchone()['c']),('Community activity',con.execute('SELECT COUNT(*) c FROM community_messages').fetchone()['c']),('Resources',con.execute('SELECT COUNT(*) c FROM resources').fetchone()['c']),('Events',con.execute('SELECT COUNT(*) c FROM events').fetchone()['c']),('Club memberships',con.execute('SELECT COUNT(*) c FROM club_members').fetchone()['c'])]; con.close(); grid=''.join('<div class="card"><div class="kpi">%s</div><h3>%s</h3></div>'%(v,k) for k,v in vals); return layout('University Analytics',f'<section class="section"><div class="badge">ANALYTICS</div><h1>University analytics.</h1><p class="muted">Live operational counts from VYBE data. These records can be aggregated into daily and weekly trends.</p><div class="grid">{grid}</div></section>',admin=True)
-
-@app.route('/admin/audit')
-@admin_required
-def admin_enterprise_audit():
-    con=db(); rows=con.execute('SELECT * FROM audit_events ORDER BY id DESC LIMIT 100').fetchall(); con.close(); trs=''.join('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'%(esc(x['created_at']),esc(x['actor_role']),esc(x['action']),esc(x['target'] or '')) for x in rows) or '<tr><td colspan="4">No enterprise audit events yet.</td></tr>'; return layout('Security Audit',f'<section class="section"><div class="badge">SECURITY & AUDIT</div><h1>Command-center audit.</h1><div class="card tablewrap"><table><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr>{trs}</table></div></section>',admin=True)
-
-@app.route('/admin/import',methods=['GET','POST'])
-@admin_required
-def admin_bulk_import():
-    if request.method=='POST':
-        kind=request.form.get('kind','students'); f=request.files.get('file')
-        if not f or not f.filename.lower().endswith('.csv'): flash('Upload a CSV file.'); return redirect(url_for('admin_bulk_import'))
-        import csv
-        text=f.stream.read().decode('utf-8-sig','replace'); rows=list(csv.DictReader(io.StringIO(text))); con=db(); uid=_ent_uid(con); count=0
-        try:
-            if kind=='students':
-                for r in rows:
-                    name=(r.get('name') or r.get('Name') or '').strip()[:80]; sid=(r.get('student_id') or r.get('Student ID') or r.get('id') or '').strip()[:80]; pw=r.get('password') or r.get('Password') or secrets.token_urlsafe(9)
-                    if name and sid:
-                        try: con.execute('INSERT INTO students(name,student_id,password_hash,status,created_at) VALUES(?,?,?,?,?)',(name,sid,hash_password(pw),'approved',_ent_now())); count+=1
-                        except Exception: pass
-            else:
-                for r in rows:
-                    name=(r.get('name') or r.get('Name') or '').strip()[:120]; email=(r.get('email') or r.get('Email') or '').strip().lower()[:160]; pw=r.get('password') or r.get('Password') or secrets.token_urlsafe(9)
-                    if name and email:
-                        try: con.execute('INSERT INTO faculty_accounts(university_id,name,email,password_hash,designation,status,created_at) VALUES(?,?,?,?,?,?,?)',(uid,name,email,hash_password(pw),r.get('designation') or 'Faculty','active',_ent_now())); count+=1
-                        except Exception: pass
-            con.commit(); con.execute("UPDATE onboarding_steps SET completed=1 WHERE university_id=? AND step_key=?",(uid,'students' if kind=='students' else 'faculty')); flash('%s %s imported.'%(count,kind))
-        except Exception: con.rollback(); flash('Import failed. No partial changes were committed.')
-        con.close(); return redirect(url_for('admin_bulk_import'))
-    body='<section class="section"><div class="badge">BULK IMPORT</div><h1>University data import.</h1><div class="grid2"><div class="card"><h2>Students</h2><p class="muted">CSV columns: name, student_id, password. Password is optional and generated if omitted.</p><form method="post" enctype="multipart/form-data" class="form"><input type="hidden" name="kind" value="students"><input type="file" name="file" accept=".csv" required><button class="btn accent">Import students</button></form></div><div class="card"><h2>Faculty</h2><p class="muted">CSV columns: name, email, password, designation.</p><form method="post" enctype="multipart/form-data" class="form"><input type="hidden" name="kind" value="faculty"><input type="file" name="file" accept=".csv" required><button class="btn accent">Import faculty</button></form></div></div></section>'
-    return layout('Bulk Import',body,admin=True)
-
-@app.route('/admin/export')
-@admin_required
-def admin_enterprise_export():
-    con=db(); uid=_ent_uid(con); data={}
-    for table,where in [('universities','id=?'),('departments','university_id=?'),('faculty_accounts','university_id=?'),('clubs','university_id=?'),('emergency_alerts','university_id=?'),('targeted_announcements','university_id=?'),('university_permissions','university_id=?'),('audit_events','university_id=?')]:
-        try: data[table]=[dict(x) for x in con.execute('SELECT * FROM '+table+' WHERE '+where,(uid,)).fetchall()]
-        except Exception: data[table]=[]
-    con.close(); return jsonify(exported_at=_ent_now(),university_id=uid,data=data)
-
-@app.route('/admin/backup')
-@admin_required
-def admin_backup():
-    return redirect(url_for('admin_enterprise_export'))
-
-@app.route('/admin/data-management',methods=['GET','POST'])
-@admin_required
-def admin_data_management():
-    if request.method=='POST' and request.form.get('confirm')=='DELETE-ENTERPRISE-DATA':
-        con=db(); uid=_ent_uid(con)
-        for table in ('club_members','clubs','emergency_alerts','targeted_announcements','university_permissions','integration_settings','audit_events','onboarding_steps','digital_ids','faculty_accounts','departments'):
-            try: con.execute('DELETE FROM '+table+' WHERE '+('student_id IN (SELECT id FROM students)' if table=='club_members' else 'university_id=?'),(uid,))
-            except Exception: pass
-        con.commit(); con.close(); flash('Enterprise tenant data was deleted. Existing legacy VYBE student/resource data was left untouched.'); return redirect(url_for('admin_data_management'))
-    return layout('Data Management','<section class="section"><div class="badge">DATA MANAGEMENT</div><h1>Export and deletion.</h1><div class="grid2"><div class="card"><h2>Export</h2><p class="muted">Export university-scoped command-center records as JSON.</p><a class="btn accent" href="/admin/export">Export data</a></div><div class="card"><h2>Delete enterprise data</h2><p class="muted">Deletes the new enterprise workspace only. Existing VYBE legacy tables are not touched.</p><form method="post" class="form"><input name="confirm" placeholder="Type DELETE-ENTERPRISE-DATA"><button class="btn danger">Delete enterprise data</button></form></div></div></section>',admin=True)
-
-@app.route('/admin/integrations/api-token',methods=['POST'])
-@admin_required
-def admin_create_api_token():
-    con=db(); uid=_ent_uid(con); raw='vybe_'+secrets.token_urlsafe(32); digest=hashlib.sha256(raw.encode()).hexdigest()
-    con.execute('CREATE TABLE IF NOT EXISTS api_tokens (id %s PRIMARY KEY, university_id %s NOT NULL, token_hash TEXT UNIQUE NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, active %s NOT NULL)'%((('BIGSERIAL' if con.is_pg else 'INTEGER'),('BIGINT' if con.is_pg else 'INTEGER'),('BOOLEAN DEFAULT TRUE' if con.is_pg else 'INTEGER DEFAULT 1'))))
-    con.execute('INSERT INTO api_tokens(university_id,token_hash,label,created_at,active) VALUES(?,?,?,?,?)',(uid,digest,'Integration',_ent_now(),True)); con.commit(); con.close(); return jsonify(token=raw,message='Store this token securely. It will not be shown again.')
-
-@app.route('/api/v1/campus/summary')
-def campus_api_summary():
-    token=request.headers.get('Authorization','').replace('Bearer ','',1).strip()
-    if not token: return jsonify(error='Bearer token required'),401
-    digest=hashlib.sha256(token.encode()).hexdigest(); con=db()
-    try: row=con.execute('SELECT * FROM api_tokens WHERE token_hash=? AND active=1',(digest,)).fetchone()
-    except Exception: row=None
-    if not row: con.close(); return jsonify(error='Invalid API token'),403
-    uid=row['university_id']; out={'university':dict(con.execute('SELECT id,name,slug,code FROM universities WHERE id=?',(uid,)).fetchone()),'departments':[dict(x) for x in con.execute('SELECT id,name,code FROM departments WHERE university_id=?',(uid,)).fetchall()],'faculty_count':con.execute('SELECT COUNT(*) c FROM faculty_accounts WHERE university_id=?',(uid,)).fetchone()['c'],'clubs':[dict(x) for x in con.execute('SELECT id,name,category FROM clubs WHERE university_id=?',(uid,)).fetchall()]}; con.close(); return jsonify(data=out)
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
