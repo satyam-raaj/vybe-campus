@@ -2144,6 +2144,26 @@ main,.main,.wrap{position:relative}
 }
 
 
+
+/* ===== FINAL PHONE LOGIN + FOOTER COLORS ===== */
+@media (max-width:850px){
+  .auth{min-height:calc(100svh - 70px)!important;width:100%!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding:24px 12px 32px!important;box-sizing:border-box!important}
+  .authbox{width:100%!important;max-width:460px!important;margin:0!important;padding:20px!important;border-radius:18px!important;box-sizing:border-box!important}
+  .authbox h1{font-size:32px!important;line-height:1.08!important;margin:12px 0 8px!important}
+  .authbox p{font-size:13px!important;line-height:1.5!important}
+  .authbox .form{width:100%!important;gap:11px!important}
+  .authbox input,.authbox select,.authbox textarea{width:100%!important;min-width:0!important;height:46px!important;box-sizing:border-box!important}
+  .authbox .password-wrap{width:100%!important;box-sizing:border-box!important}
+  .authbox .password-wrap input{padding-right:48px!important}
+  .authbox .btn{width:100%!important;min-height:46px!important;box-sizing:border-box!important}
+  .authbox .actions{display:grid!important;grid-template-columns:1fr!important;width:100%!important}
+  .authbox .actions .btn{width:100%!important}
+  #vybeStudentBottomNav{background:#202124!important;background-image:none!important;border-top:1px solid #55585d!important;box-shadow:0 -8px 24px rgba(0,0,0,.28)!important}
+  #vybeStudentBottomNav > #vybeBottomMenuButton,#vybeStudentBottomNav > .mobile-home-nav,#vybeStudentBottomNav > .mobile-profile-nav{background:#303236!important;color:#f5f5f5!important;border:1px solid #62656a!important}
+  #vybeStudentBottomNav > .mobile-home-nav.active{background:#f4f4f4!important;color:#17181a!important;border-color:#f4f4f4!important}
+  #vybeStudentBottomNav > #vybeBottomMenuButton:hover,#vybeStudentBottomNav > .mobile-profile-nav:hover{background:#3b3e43!important;color:#fff!important;border-color:#7a7e84!important}
+}
+
 """
 
 
