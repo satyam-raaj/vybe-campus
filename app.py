@@ -1978,6 +1978,52 @@ main,.main,.wrap{position:relative}
 }
 
 
+/* ===== FINAL MOBILE NAV + SEARCH POLISH ===== */
+.student-search-suggestions{display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;margin:7px auto 0;max-width:700px;overflow:hidden}
+.student-search-suggestions a{display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 10px;border:1px solid #dfe7df;border-radius:9px;background:#f7faf6;color:#50606c;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap;transition:.18s ease}
+.student-search-suggestions a:hover{background:#eef7e8;border-color:#b9d69e;color:#4e7f25;transform:translateY(-1px)}
+@media(min-width:851px){
+  .student-control-row{display:flex!important;flex-direction:column!important;align-items:center!important;padding:4px 30px 11px!important}
+  .student-control-row .student-search{width:min(520px,48vw)!important;max-width:520px!important;margin:0 auto!important}
+  .student-search-suggestions{max-width:760px!important}
+  .student-mobile-menu .mobile-only-menu-links{display:none!important}
+  .student-mobile-menu > a{display:flex!important}
+}
+@media(max-width:850px){
+  .student-nav-compact{min-height:58px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important}
+  .student-nav-compact .student-desktop-links{display:none!important}
+  .student-header-tools{margin-left:auto!important;display:flex!important;align-items:center!important}
+  .student-header-updates{display:inline-flex!important;height:36px!important;padding:0 12px!important;border:1px solid #dce7d7!important;border-radius:10px!important;background:#f4f9f0!important;color:#4e7f25!important;font-size:12px!important;font-weight:800!important}
+  .student-nav-compact .student-menu{display:none!important}
+  .student-control-row{display:block!important;padding:6px 12px 9px!important;background:#fff!important}
+  .student-control-row .student-search{display:block!important;width:100%!important;max-width:none!important;margin:0!important}
+  .student-search input{height:42px!important;border-radius:12px!important;font-size:13px!important;padding:0 13px!important}
+  .student-search-suggestions{justify-content:flex-start!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;max-width:none!important;margin:7px -1px 0!important;padding:1px 1px 3px!important;scrollbar-width:none!important}
+  .student-search-suggestions::-webkit-scrollbar{display:none!important}
+  .student-search-suggestions a{min-height:30px!important;padding:0 10px!important;border-radius:9px!important;background:#f5f8f4!important;font-size:10.5px!important;flex:0 0 auto!important}
+  /* Only the bottom Menu button opens the phone drawer. This removes the duplicate Menu key. */
+  .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:5000!important;height:66px!important;padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;background:rgba(255,255,255,.98)!important;border-top:1px solid #dfe7df!important;box-shadow:0 -10px 28px rgba(40,60,45,.09)!important}
+  .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{height:48px!important;margin:0 3px!important;border-radius:12px!important;color:#65717c!important;background:transparent!important;border:1px solid transparent!important;font-size:12px!important;font-weight:800!important}
+  .student-bottom-nav button.mobile-menu-nav{cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important}
+  .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important}
+  .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
+  .student-bottom-nav a.active,.student-bottom-nav button.mobile-menu-nav[aria-expanded="true"]{background:#eef7e8!important;border-color:#d9e9d0!important;color:#4e7f25!important}
+  .student-bottom-nav a:hover,.student-bottom-nav button.mobile-menu-nav:hover{background:#f5f8f4!important;color:#4e7f25!important}
+  .student-bottom-spacer{height:78px!important}
+  /* Phone menu: one clean list, no duplicated desktop items and no alphabet markers. */
+  #vybeMobileNav.student-mobile-menu{position:fixed!important;left:12px!important;right:12px!important;top:62px!important;width:auto!important;max-height:calc(100vh - 145px)!important;overflow-y:auto!important;display:none!important;flex-direction:column!important;gap:4px!important;padding:10px!important;border:1px solid #dfe7df!important;border-radius:18px!important;background:rgba(255,255,255,.99)!important;box-shadow:0 22px 55px rgba(35,55,42,.16)!important;backdrop-filter:blur(18px)!important;z-index:6000!important}
+  #vybeMobileNav.student-mobile-menu.open{display:flex!important}
+  #vybeMobileNav.student-mobile-menu > a{display:none!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:flex!important;flex-direction:column!important;gap:4px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:5px 5px 9px!important;border-bottom:1px solid #edf0ec!important;margin-bottom:3px!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:14px!important;font-weight:900!important;color:#172033!important}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:7px 10px!important;border:1px solid #dfe7df!important;border-radius:9px!important;background:#f6f8f5!important;color:#56616b!important;font-size:11px!important;font-weight:800!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{display:flex!important;align-items:center!important;min-height:42px!important;padding:0 12px!important;border-radius:10px!important;color:#26333d!important;background:transparent!important;text-decoration:none!important;font-size:13px!important;font-weight:700!important}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{background:#f0f7eb!important;color:#4e7f25!important}
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
+}
+
+
 """
 
 
@@ -1997,7 +2043,7 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header = f'''<div class="navin student-nav-compact">{('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">← <span>Back</span></a>' if student_on_subpage else '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>')}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
-<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form></div>'''
+<div class="student-control-row"><form class="student-search" action="/search" method="get"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"></form><div class="student-search-suggestions" aria-label="Quick search suggestions"><a href="/academics?resource_type=Study+material">Study Material</a><a href="/academics?resource_type=Notes">Notes</a><a href="/papers">Previous Papers</a><a href="/updates?kind=Admit%20Card">Admit Card</a><a href="/updates?kind=Date%20Sheet">Date Sheets</a><a href="/timetable">Timetable</a></div></div>'''
         bottom_nav = f'''<nav class="student-bottom-nav" aria-label="Student navigation"><button class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="mobile-menu-icon-lines" aria-hidden="true"><i></i><i></i><i></i></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard">Home</a><a class="mobile-profile-nav" href="/profile">Profile</a></nav><div class="student-bottom-spacer"></div>'''
 
     else:
@@ -2010,7 +2056,7 @@ def layout(title, body, admin=False):
     if student:
         assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div><button class="vybe-assistant-close" id="vybeAssistantClose" type="button" aria-label="Close assistant">Close</button></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div><form class="vybe-assistant-form" method="post" action="/assistant"><input name="question" maxlength="1000" placeholder="Ask about your campus..." autocomplete="off"><button type="submit">Ask</button></form><div class="vybe-assistant-note">Use a shortcut above or type your own campus question.</div></div></section>'''
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}</style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu"></button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{links}<div class="mobile-only-menu-links">{mobile_links if student else ""}</div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
@@ -2037,10 +2083,12 @@ function setMenu(open){{
 (function(){{
   const fields=document.querySelectorAll('.student-search input, .academic-search input, input[name="q"]');
   const suggestions=[
-    'Search notes, papers, subjects...',
-    'Search announcements and events...',
-    'Search timetable and campus help...',
-    'Search study material and PDFs...',
+    'Study Material',
+    'Admit Card',
+    'Date Sheets',
+    'Previous Papers',
+    'Timetable',
+    'Results and Updates',
     'Search your VYBE campus...'
   ];
   fields.forEach(function(input){{
