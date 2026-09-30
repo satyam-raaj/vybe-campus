@@ -1171,6 +1171,7 @@ def _safe_500_page():
     .footer,.vybe-footer{display:none!important}
   }
 
+
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(Exception)
@@ -3008,6 +3009,233 @@ def layout(title, body, admin=False):
 #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover{{
   background:#f0f1f2!important;
   border-color:#777d83!important;
+}}
+
+
+/* ===== GLOBAL PHONE SHELL — HOMEPAGE STYLE, ALL STUDENT PAGES ===== */
+@media (max-width:850px){{
+  html,body{{
+    width:100%!important;
+    max-width:100%!important;
+    overflow-x:hidden!important;
+  }}
+
+  /* Leave room for the floating navigation on every student page. */
+  body:has(.student-nav-compact){{
+    padding-bottom:88px!important;
+  }}
+  body:has(.student-nav-compact) .page-shell{{
+    padding-bottom:18px!important;
+  }}
+
+  /* Floating glass Menu / Home / Profile bar — same on every page. */
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav{{
+    position:fixed!important;
+    left:8px!important;
+    right:8px!important;
+    bottom:8px!important;
+    width:auto!important;
+    height:58px!important;
+    min-height:58px!important;
+    padding:5px!important;
+    margin:0!important;
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:5px!important;
+    box-sizing:border-box!important;
+    background:rgba(255,255,255,.70)!important;
+    background-image:linear-gradient(110deg,rgba(255,255,255,.82),rgba(248,251,255,.66) 52%,rgba(247,252,242,.72))!important;
+    border:1px solid rgba(255,255,255,.96)!important;
+    border-radius:17px!important;
+    box-shadow:0 10px 30px rgba(28,49,69,.16),0 2px 8px rgba(28,49,69,.07),inset 0 1px rgba(255,255,255,1)!important;
+    backdrop-filter:blur(22px) saturate(150%)!important;
+    -webkit-backdrop-filter:blur(22px) saturate(150%)!important;
+    z-index:2147483000!important;
+  }}
+
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > #vybeBottomMenuButton,
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav,
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-profile-nav{{
+    width:100%!important;
+    height:46px!important;
+    min-width:0!important;
+    min-height:46px!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:0 4px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:2px!important;
+    box-sizing:border-box!important;
+    border-radius:12px!important;
+    text-decoration:none!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    line-height:1!important;
+    letter-spacing:0!important;
+    cursor:pointer!important;
+    -webkit-tap-highlight-color:transparent!important;
+    transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease!important;
+  }}
+
+  /* Menu: dark active-looking button exactly like the reference. */
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > #vybeBottomMenuButton{{
+    background:linear-gradient(145deg,#172033,#24334a)!important;
+    color:#fff!important;
+    border:1px solid rgba(67,83,105,.92)!important;
+    box-shadow:0 5px 13px rgba(23,32,51,.18),inset 0 1px rgba(255,255,255,.08)!important;
+  }}
+
+  /* Home: white glass + VYBE blue. */
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav{{
+    background:rgba(255,255,255,.70)!important;
+    color:#2f6fca!important;
+    border:1px solid rgba(202,220,237,.86)!important;
+    box-shadow:inset 0 1px rgba(255,255,255,.95)!important;
+  }}
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav.active{{
+    background:linear-gradient(145deg,rgba(255,255,255,.90),rgba(239,247,255,.82))!important;
+    color:#2f6fca!important;
+    border-color:rgba(178,207,232,.92)!important;
+    box-shadow:0 3px 10px rgba(47,111,202,.08),inset 0 1px rgba(255,255,255,1)!important;
+  }}
+
+  /* Profile: white glass + VYBE green. */
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-profile-nav{{
+    background:linear-gradient(145deg,rgba(255,255,255,.90),rgba(242,249,236,.82))!important;
+    color:#60913d!important;
+    border:1px solid rgba(198,220,180,.92)!important;
+    box-shadow:inset 0 1px rgba(255,255,255,1)!important;
+  }}
+
+  body:has(.student-nav-compact) #vybeStudentBottomNav .vybe-nav-icon{{
+    width:18px!important;
+    height:18px!important;
+    display:grid!important;
+    place-items:center!important;
+    flex:0 0 18px!important;
+  }}
+  body:has(.student-nav-compact) #vybeStudentBottomNav .vybe-nav-icon svg{{
+    width:18px!important;
+    height:18px!important;
+    fill:none!important;
+    stroke:currentColor!important;
+    stroke-width:1.75!important;
+    stroke-linecap:round!important;
+    stroke-linejoin:round!important;
+  }}
+  body:has(.student-nav-compact) #vybeStudentBottomNav .mobile-menu-label{{
+    display:block!important;
+    color:inherit!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    line-height:1!important;
+  }}
+
+  body:has(.student-nav-compact) #vybeStudentBottomNav > *:active{{
+    transform:scale(.97)!important;
+  }}
+
+  /* Same floating AI / Ask VYBE control on EVERY student page. */
+  body:has(.student-nav-compact) .vybe-assistant-fab{{
+    position:fixed!important;
+    right:12px!important;
+    bottom:74px!important;
+    min-height:38px!important;
+    height:38px!important;
+    padding:4px 9px 4px 5px!important;
+    display:flex!important;
+    align-items:center!important;
+    gap:6px!important;
+    border-radius:14px!important;
+    background:rgba(255,255,255,.76)!important;
+    background-image:linear-gradient(110deg,rgba(255,255,255,.88),rgba(244,249,255,.76))!important;
+    color:#263646!important;
+    border:1px solid rgba(255,255,255,.98)!important;
+    box-shadow:0 9px 24px rgba(28,49,69,.15),inset 0 1px rgba(255,255,255,1)!important;
+    backdrop-filter:blur(20px) saturate(150%)!important;
+    -webkit-backdrop-filter:blur(20px) saturate(150%)!important;
+    font-size:11px!important;
+    font-weight:850!important;
+    z-index:2147482990!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-fab .fab-mark{{
+    width:27px!important;
+    height:27px!important;
+    min-width:27px!important;
+    border-radius:9px!important;
+    display:grid!important;
+    place-items:center!important;
+    background:linear-gradient(145deg,#eef7ff,#dfeeff)!important;
+    color:#2f6fca!important;
+    border:1px solid #cfe1f2!important;
+    box-shadow:inset 0 1px rgba(255,255,255,.95)!important;
+    font-size:10px!important;
+    font-weight:950!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-fab:active{{
+    transform:scale(.96)!important;
+  }}
+
+  /* Assistant panel follows the same white/blue/green glass language. */
+  body:has(.student-nav-compact) .vybe-assistant-panel{{
+    right:10px!important;
+    left:10px!important;
+    bottom:122px!important;
+    width:auto!important;
+    max-width:none!important;
+    border-radius:20px!important;
+    background:rgba(255,255,255,.82)!important;
+    border:1px solid rgba(255,255,255,.96)!important;
+    box-shadow:0 20px 50px rgba(28,49,69,.18),inset 0 1px rgba(255,255,255,1)!important;
+    backdrop-filter:blur(24px) saturate(150%)!important;
+    -webkit-backdrop-filter:blur(24px) saturate(150%)!important;
+    color:#263646!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-head{{
+    background:linear-gradient(110deg,rgba(239,247,255,.78),rgba(244,250,238,.70))!important;
+    border-bottom:1px solid #e4ebef!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-suggestion{{
+    background:rgba(248,251,253,.78)!important;
+    border:1px solid #e1e9ef!important;
+    color:#263646!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-suggestion:hover{{
+    background:#eef6ff!important;
+    border-color:#cfe1f2!important;
+    color:#2f6fca!important;
+  }}
+
+  /* Keep the page content above the floating bar. */
+  body:has(.student-nav-compact) #vybeStudentBottomNav + .student-bottom-spacer{{
+    display:block!important;
+    height:0!important;
+  }}
+}}
+
+@media (max-width:380px){{
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav{{
+    left:6px!important;
+    right:6px!important;
+    bottom:6px!important;
+    height:56px!important;
+    min-height:56px!important;
+    border-radius:16px!important;
+  }}
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > #vybeBottomMenuButton,
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav,
+  body:has(.student-nav-compact) #vybeStudentBottomNav.student-bottom-nav > .mobile-profile-nav{{
+    height:44px!important;
+    min-height:44px!important;
+    border-radius:11px!important;
+  }}
+  body:has(.student-nav-compact) .vybe-assistant-fab{{
+    right:9px!important;
+    bottom:70px!important;
+  }}
 }}
 
 </style></head><body>
