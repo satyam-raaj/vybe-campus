@@ -5594,6 +5594,170 @@ def issues():
 .academic-empty{{grid-column:1/-1!important;padding:55px 24px!important;border-radius:20px!important;background:#fff!important;border:1px dashed #ccd7df!important}}
 @media(max-width:900px){{.timetable-list,.academic-update-list{{grid-template-columns:1fr!important}}.academic-filter-form{{grid-template-columns:1fr 1fr 1fr!important}}.academic-filter-form button{{grid-column:1/-1}}.academic-compact{{padding:38px 28px 32px!important}}}}
 @media(max-width:620px){{.timetable-head,.academic-filter-panel,.timetable-list,.academic-update-list{{padding-left:0!important;padding-right:0!important}}.timetable-head{{padding-top:25px!important}}.timetable-head h1,.academic-compact h1{{font-size:39px!important}}.academic-compact{{padding:30px 20px!important;border-radius:22px!important}}.academic-filter-form{{grid-template-columns:1fr!important}}.academic-filter-form button{{grid-column:auto}}.academic-update-card{{min-height:205px!important;padding:17px!important}}.academic-update-card h2{{font-size:18px!important}}.academic-update-foot{{align-items:flex-start!important;flex-direction:column!important;gap:9px!important}}.academic-link{{width:100%;justify-content:center;box-sizing:border-box}}.timetable-card{{border-radius:18px!important}}.timetable-actions .btn{{min-height:46px!important}}}}
+
+
+/* ===== FINAL HOMEPAGE-MATCHED LIGHT GLASS MOBILE NAV ===== */
+@media (max-width:850px){{
+  .page-academics{{
+    padding-bottom:92px!important;
+  }}
+
+  /* The nav is intentionally light and translucent so the page remains visible behind it. */
+  #vybeStudentBottomNav.student-bottom-nav{{
+    position:fixed!important;
+    left:14px!important;
+    right:14px!important;
+    bottom:10px!important;
+    width:auto!important;
+    height:64px!important;
+    min-height:64px!important;
+    padding:6px!important;
+    margin:0!important;
+    display:grid!important;
+    grid-template-columns:1fr 1fr 1fr!important;
+    gap:5px!important;
+    align-items:stretch!important;
+    box-sizing:border-box!important;
+    background:rgba(255,255,255,.62)!important;
+    background-image:linear-gradient(120deg,rgba(255,255,255,.78),rgba(244,249,255,.60) 52%,rgba(246,251,241,.64))!important;
+    border:1px solid rgba(255,255,255,.92)!important;
+    border-radius:20px!important;
+    box-shadow:0 16px 40px rgba(35,61,84,.16),0 3px 12px rgba(35,61,84,.07),inset 0 1px rgba(255,255,255,.95)!important;
+    backdrop-filter:blur(25px) saturate(145%)!important;
+    -webkit-backdrop-filter:blur(25px) saturate(145%)!important;
+    z-index:10000!important;
+  }}
+
+  #vybeStudentBottomNav > .mobile-menu-nav,
+  #vybeStudentBottomNav > .mobile-home-nav,
+  #vybeStudentBottomNav > .mobile-profile-nav{{
+    width:100%!important;
+    height:50px!important;
+    min-width:0!important;
+    min-height:0!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:4px 5px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:3px!important;
+    box-sizing:border-box!important;
+    border:1px solid rgba(214,224,232,.70)!important;
+    border-radius:15px!important;
+    background:rgba(255,255,255,.42)!important;
+    color:#596878!important;
+    box-shadow:inset 0 1px rgba(255,255,255,.85)!important;
+    backdrop-filter:blur(10px)!important;
+    -webkit-backdrop-filter:blur(10px)!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    line-height:1!important;
+    text-decoration:none!important;
+    transition:transform .16s ease,background .16s ease,color .16s ease,border-color .16s ease,box-shadow .16s ease!important;
+    -webkit-tap-highlight-color:transparent!important;
+  }}
+
+  #vybeStudentBottomNav .vybe-nav-icon{{
+    width:19px!important;
+    height:19px!important;
+    display:grid!important;
+    place-items:center!important;
+    flex:0 0 19px!important;
+  }}
+  #vybeStudentBottomNav .vybe-nav-icon svg{{
+    width:19px!important;
+    height:19px!important;
+    fill:none!important;
+    stroke:currentColor!important;
+    stroke-width:1.8!important;
+    stroke-linecap:round!important;
+    stroke-linejoin:round!important;
+  }}
+  #vybeStudentBottomNav .mobile-menu-label{{
+    display:block!important;
+    color:inherit!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    line-height:1!important;
+  }}
+
+  /* Menu = clean neutral glass */
+  #vybeStudentBottomNav > .mobile-menu-nav{{
+    background:rgba(255,255,255,.48)!important;
+    color:#596878!important;
+  }}
+
+  /* Home = the same soft VYBE blue used across the homepage */
+  #vybeStudentBottomNav > .mobile-home-nav.active{{
+    background:linear-gradient(145deg,rgba(238,247,255,.90),rgba(222,239,255,.72))!important;
+    color:#2f6fca!important;
+    border-color:rgba(154,196,231,.72)!important;
+    box-shadow:0 5px 16px rgba(47,111,202,.09),inset 0 1px rgba(255,255,255,.95)!important;
+  }}
+
+  /* Profile = the same soft VYBE green used across the homepage */
+  #vybeStudentBottomNav > .mobile-profile-nav{{
+    background:linear-gradient(145deg,rgba(246,251,241,.82),rgba(235,247,225,.62))!important;
+    color:#5f9139!important;
+    border-color:rgba(183,211,158,.70)!important;
+  }}
+
+  #vybeStudentBottomNav > .mobile-menu-nav:hover,
+  #vybeStudentBottomNav > .mobile-menu-nav:focus-visible{{
+    background:rgba(255,255,255,.76)!important;
+    color:#2f6fca!important;
+    border-color:#c5dced!important;
+  }}
+  #vybeStudentBottomNav > .mobile-profile-nav:hover,
+  #vybeStudentBottomNav > .mobile-profile-nav:focus-visible{{
+    background:rgba(244,250,238,.88)!important;
+    color:#4f812b!important;
+    border-color:#b9d79e!important;
+  }}
+  #vybeStudentBottomNav > a:active,
+  #vybeStudentBottomNav > button:active{{
+    transform:scale(.95)!important;
+  }}
+
+  /* Keep the Ask VYBE control in the same light glass family. */
+  .vybe-assistant-fab{{
+    right:14px!important;
+    bottom:82px!important;
+    min-height:40px!important;
+    padding:8px 11px!important;
+    border-radius:14px!important;
+    background:rgba(255,255,255,.72)!important;
+    color:#263646!important;
+    border:1px solid rgba(255,255,255,.92)!important;
+    box-shadow:0 10px 28px rgba(35,61,84,.16),inset 0 1px rgba(255,255,255,.9)!important;
+    backdrop-filter:blur(20px) saturate(140%)!important;
+    -webkit-backdrop-filter:blur(20px) saturate(140%)!important;
+  }}
+  .vybe-assistant-fab .fab-mark{{
+    background:linear-gradient(145deg,#edf6ff,#e4f0ff)!important;
+    color:#2f6fca!important;
+    border:1px solid #d1e3f5!important;
+  }}
+}}
+
+@media (max-width:380px){{
+  #vybeStudentBottomNav.student-bottom-nav{{
+    left:9px!important;
+    right:9px!important;
+    bottom:8px!important;
+    height:61px!important;
+    min-height:61px!important;
+    border-radius:19px!important;
+  }}
+  #vybeStudentBottomNav > .mobile-menu-nav,
+  #vybeStudentBottomNav > .mobile-home-nav,
+  #vybeStudentBottomNav > .mobile-profile-nav{{
+    height:48px!important;
+    border-radius:14px!important;
+  }}
+}}
 </style>
     <section class="section vybe-campus-wrap">
       <div class="campus-hero">
