@@ -2362,10 +2362,10 @@ def layout(title, body, admin=False):
 
 /* ===== FINAL NAV / FOOTER COLORS ===== */
 .student-bottom-nav{{
-  background:#202326!important;
-  background-image:none!important;
-  border-top:1px solid #4b4f54!important;
-  box-shadow:0 -8px 22px rgba(0,0,0,.18)!important;
+  background:linear-gradient(180deg,#f8fbff 0%,#eaf3fb 100%)!important;
+  background-image:linear-gradient(180deg,#f8fbff 0%,#eaf3fb 100%)!important;
+  border-top:1px solid #c7d7e6!important;
+  box-shadow:0 -8px 22px rgba(47,79,108,.12)!important;
 }}
 .student-bottom-nav > .mobile-menu-nav,
 .student-bottom-nav > .mobile-home-nav,
@@ -2380,23 +2380,23 @@ def layout(title, body, admin=False):
   align-items:center!important;
   justify-content:center!important;
   box-sizing:border-box!important;
-  border:1px solid #666b70!important;
+  border:1px solid #c5d4e2!important;
   border-radius:8px!important;
-  background:#30343a!important;
-  color:#f5f5f5!important;
-  box-shadow:none!important;
+  background:#ffffff!important;
+  color:#171a1d!important;
+  box-shadow:0 2px 8px rgba(42,70,94,.08)!important;
   text-decoration:none!important;
 }}
 .student-bottom-nav > .mobile-home-nav.active{{
-  background:#ffffff!important;
-  color:#111315!important;
-  border-color:#ffffff!important;
+  background:#e8f3ff!important;
+  color:#245f9f!important;
+  border-color:#9fc6e8!important;
 }}
 .student-bottom-nav > .mobile-menu-nav:hover,
 .student-bottom-nav > .mobile-profile-nav:hover{{
-  background:#3a3f45!important;
-  border-color:#8b9095!important;
-  color:#ffffff!important;
+  background:#f1f7fc!important;
+  border-color:#8eb8d8!important;
+  color:#1d527f!important;
 }}
 .student-bottom-nav .mobile-menu-label,
 .student-bottom-nav .mobile-home-nav,
@@ -2410,7 +2410,7 @@ def layout(title, body, admin=False):
 .student-desktop-links > a,
 .navlinks > a,
 .admin-navlinks > a{{
-  border:1px solid #b8bdc3!important;
+  border:1px solid #b8cfe1!important;
   background:#ffffff!important;
   color:#17191c!important;
   border-radius:8px!important;
@@ -4168,10 +4168,10 @@ def issues():
     border-color:#777c82 !important;
   }
   .student-bottom-nav {
-    background:#202326 !important;
-    background-image:none !important;
-    border-top:1px solid #4b4f54 !important;
-    box-shadow:0 -8px 24px rgba(0,0,0,.20) !important;
+    background:linear-gradient(180deg,#020713 0%,#020a16 48%,#01060e 100%) !important;
+    background-image:linear-gradient(180deg,#020713 0%,#020a16 48%,#01060e 100%) !important;
+    border-top:1px solid rgba(61,130,178,.34) !important;
+    box-shadow:0 -10px 28px rgba(0,0,0,.34) !important;
   }
   .student-bottom-nav > .mobile-menu-nav,
   .student-bottom-nav > .mobile-home-nav,
@@ -4185,24 +4185,25 @@ def issues():
     display:flex !important;
     align-items:center !important;
     justify-content:center !important;
-    border:1px solid #656a70 !important;
+    border:1px solid rgba(61,130,178,.38) !important;
     border-radius:9px !important;
-    background:#2c3035 !important;
-    color:#f4f4f4 !important;
+    background:linear-gradient(145deg,rgba(11,34,56,.94),rgba(4,15,27,.96)) !important;
+    color:#e5f4ff !important;
     box-sizing:border-box !important;
     text-decoration:none !important;
     box-shadow:none !important;
   }
   .student-bottom-nav > .mobile-home-nav.active {
-    background:#ffffff !important;
-    color:#15171a !important;
-    border-color:#ffffff !important;
+    background:linear-gradient(145deg,rgba(37,78,108,.72),rgba(9,27,44,.96)) !important;
+    color:#ffffff !important;
+    border-color:rgba(24,179,246,.62) !important;
+    box-shadow:inset 0 1px rgba(255,255,255,.08),0 0 18px rgba(0,130,210,.12) !important;
   }
   .student-bottom-nav > .mobile-menu-nav:hover,
   .student-bottom-nav > .mobile-profile-nav:hover {
-    background:#383d43 !important;
+    background:linear-gradient(145deg,rgba(17,47,72,.96),rgba(6,22,38,.98)) !important;
     color:#ffffff !important;
-    border-color:#858a90 !important;
+    border-color:rgba(75,184,251,.58) !important;
   }
   .student-bottom-nav .mobile-menu-label,
   .student-bottom-nav .mobile-home-nav,
