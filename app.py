@@ -1199,9 +1199,22 @@ def global_online_gate():
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_urlsafe(32)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        # Authentication bootstrap endpoints are protected by the same-origin
+        # check below, but do not depend on an already-established CSRF token.
+        # This is important for first-time login/passkey flows, where the
+        # browser may not yet have a valid VYBE session cookie (or may be
+        # submitting a freshly loaded login page after a deployment).
+        auth_bootstrap_paths = {
+            "/login",
+            "/register",
+            "/forgot-password",
+            "/admin",
+            "/admin/login-passkey/options",
+            "/admin/login-passkey/verify",
+        }
         if not _same_origin_unsafe_request():
             abort(403, description="Cross-site requests are not allowed.")
-        if not _csrf_token_valid():
+        if path not in auth_bootstrap_paths and not _csrf_token_valid():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")

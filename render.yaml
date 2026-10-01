@@ -13,3 +13,7 @@ services:
         sync: false
       - key: VYBE_SECRET_KEY
         generateValue: true
+      - key: VYBE_PASSKEY_RP_ID
+        value: vybe-campus.onrender.com
+      - key: VYBE_PASSKEY_ORIGIN
+        value: https://vybe-campus.onrender.com
