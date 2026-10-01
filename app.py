@@ -826,6 +826,31 @@ def student_required(fn):
     return wrapper
 
 
+PUBLISHER_PERMISSION_CATALOG = [
+    ("announcements", "Announcements", "Publish campus-wide announcements."),
+    ("events", "Events", "Create upcoming campus events."),
+    ("timetable", "Timetable", "Upload new timetable versions."),
+    ("academic_updates", "Academic Updates", "Publish academic notices, results, date sheets and exam updates."),
+    ("academic_resources", "Academic Hub Resources", "Add notes, study material, syllabus and previous-year resources."),
+]
+
+def publisher_permissions(student_id):
+    con = db()
+    row = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{student_id}",)).fetchone()
+    legacy = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{student_id}",)).fetchone()
+    con.close()
+    if row and row["value"]:
+        try:
+            data = json.loads(row["value"])
+            if isinstance(data, list):
+                return {str(x) for x in data}
+        except Exception:
+            pass
+    return {"announcements", "events", "timetable"} if legacy and legacy["value"] == "1" else set()
+
+def publisher_can(student_id, permission):
+    return permission in publisher_permissions(student_id)
+
 def content_manager_required(fn):
     @wraps(fn)
     @student_required
@@ -834,7 +859,7 @@ def content_manager_required(fn):
         con = db()
         row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
         con.close()
-        if not row or row["value"] != "1":
+        if not row or row["value"] != "1" or not publisher_permissions(sid):
             flash("You do not have publisher access.")
             return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
@@ -3506,6 +3531,18 @@ def layout(title, body, admin=False):
     bottom:70px!important;
   }}
 }}
+
+
+/* ===== ADMIN SETTINGS / PUBLISHER CONTROL CENTER ===== */
+.settings-hub,.settings-detail,.publisher-access-page{{max-width:1120px!important;margin:0 auto!important}}
+.settings-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}}
+.settings-tile{{display:flex;align-items:center;gap:16px;min-width:0;padding:22px;border:1px solid #dfe5ea;border-radius:22px;background:rgba(255,255,255,.92);box-shadow:0 10px 28px rgba(31,48,66,.07);text-decoration:none;color:#17202b;transition:.2s ease}}
+.settings-tile:hover{{transform:translateY(-3px);border-color:#c5d8e9;box-shadow:0 18px 36px rgba(31,48,66,.11)}}
+.settings-icon{{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:#edf4ff;font-size:21px}}
+.settings-tile div{{min-width:0;flex:1}}.settings-tile b{{display:block;font-size:17px}}.settings-tile small{{display:block;margin-top:5px;color:#718090;font-size:12px;line-height:1.45}}.settings-tile>strong{{font-size:22px;color:#8a97a3}}.settings-state{{font-size:10px;font-weight:900;letter-spacing:.08em;padding:7px 9px;border-radius:999px;background:#edf4ff;color:#2f6fca;white-space:nowrap}}.settings-state.off{{background:#fff1f1;color:#c45b61}}.settings-footer-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}}.settings-mini{{text-decoration:none;color:#17202b;display:block}}.settings-mini small{{display:block;color:#718090;margin:6px 0 12px}}.settings-mini span{{font-size:12px;color:#2f6fca;font-weight:800}}
+.settings-detail-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;margin-top:20px}}.settings-editor,.settings-preview{{border-radius:24px!important}}.settings-editor-icon{{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:#edf8e6;font-size:23px;margin-bottom:12px}}.settings-check{{display:flex!important;gap:12px;align-items:flex-start;padding:13px;border:1px solid #e1e7ec;border-radius:15px;background:#f8fafb}}.settings-check input{{width:18px!important;flex:0 0 18px;margin-top:2px}}.settings-check b,.settings-check small{{display:block}}.settings-check small{{margin-top:4px;color:#718090}}.preview-row{{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e7ebef;font-size:13px}}.preview-row b{{color:#2f6fca}}.publisher-access-note{{min-width:150px;text-align:center;padding:18px!important}}.publisher-access-note strong{{display:block;font-size:34px}}.publisher-access-note small{{color:#718090}}.publisher-permission-legend{{margin-top:18px}}.publisher-permission-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}}.publisher-permission{{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e0e6eb;border-radius:14px;background:#f8fafc}}.publisher-permission input{{margin-top:3px}}.publisher-permission span{{min-width:0}}.publisher-permission strong{{display:block;font-size:12px}}.publisher-permission small{{display:block;color:#718090;font-size:10px;line-height:1.4;margin-top:3px}}.publisher-student-list{{display:grid;gap:15px;margin-top:18px}}.publisher-student-card{{padding:19px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(31,48,66,.06)}}.publisher-student-head{{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:14px}}.publisher-student-head strong{{display:block;font-size:16px}}.publisher-student-head small{{display:block;color:#718090;margin-top:4px}}.publisher-on{{background:#edf8e6!important;color:#57952a!important}}.publisher-page .publisher-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}}.publisher-page .publisher-permission-summary{{min-width:210px;padding:16px!important}}.publisher-page .publisher-permission-summary strong{{display:block}}.publisher-page .publisher-permission-summary small{{display:block;color:#718090;margin-top:5px;line-height:1.45}}.publisher-page .publisher-grid .card{{border-radius:22px}}
+@media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid,.publisher-permission-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-student-head{{align-items:flex-start;flex-direction:column}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
+@media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.publisher-student-card{{padding:14px;border-radius:18px}}.publisher-permission-grid{{gap:8px}}.publisher-permission{{padding:10px}}.settings-detail-grid{{gap:12px}}}}
 
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
@@ -7161,11 +7198,16 @@ def delete_all_students():
 @app.route("/publisher", methods=["GET", "POST"])
 @content_manager_required
 def publisher():
+    sid = int(session.get("student_db_id"))
+    permissions = publisher_permissions(sid)
     if request.method == "POST":
         kind = request.form.get("kind", "").strip()
+        if kind not in permissions:
+            flash("That publishing permission is not enabled for your account.")
+            return redirect(url_for("publisher"))
         con = db()
         try:
-            if kind == "announcement":
+            if kind == "announcements":
                 title = request.form.get("title", "").strip()[:160]
                 message = request.form.get("message", "").strip()[:3000]
                 priority = request.form.get("priority", "Normal").strip()
@@ -7176,6 +7218,17 @@ def publisher():
                 else:
                     con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
                     con.commit(); flash("Announcement published to VYBE.")
+            elif kind == "events":
+                title = request.form.get("event_title", "").strip()[:160]
+                event_date = request.form.get("event_date", "").strip()[:20]
+                event_time = request.form.get("event_time", "").strip()[:20]
+                location = request.form.get("location", "").strip()[:160]
+                description = request.form.get("description", "").strip()[:1500]
+                if not title or not event_date:
+                    flash("Event title and date are required.")
+                else:
+                    con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
+                    con.commit(); flash("Event added to VYBE.")
             elif kind == "timetable":
                 title = request.form.get("timetable_title", "").strip()[:160]
                 f = request.files.get("timetable_file")
@@ -7193,26 +7246,84 @@ def publisher():
                         f.stream.seek(0); f.save(UPLOAD_DIR/filename)
                         con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
                         con.commit(); flash("Timetable posted to VYBE.")
-            elif kind == "event":
-                title = request.form.get("event_title", "").strip()[:160]
-                event_date = request.form.get("event_date", "").strip()[:20]
-                event_time = request.form.get("event_time", "").strip()[:20]
-                location = request.form.get("location", "").strip()[:160]
-                description = request.form.get("description", "").strip()[:1500]
-                if not title or not event_date:
-                    flash("Event title and date are required.")
+            elif kind == "academic_updates":
+                title=request.form.get("title","").strip()[:180]
+                description=request.form.get("description","").strip()[:4000]
+                category=request.form.get("category","General").strip()[:80]
+                update_kind=request.form.get("update_kind","General Update").strip()[:80]
+                course=request.form.get("course","").strip()[:100]
+                semester=request.form.get("semester","").strip()[:100]
+                subject=request.form.get("subject","").strip()[:120]
+                event_date=request.form.get("event_date","").strip()[:80]
+                external_url=request.form.get("external_url","").strip()[:500]
+                f=request.files.get("file")
+                if not title or not description:
+                    flash("Title and description are required.")
+                elif external_url and (urlparse(external_url).scheme not in ("http","https") or not urlparse(external_url).netloc):
+                    flash("Use a valid http or https external URL.")
                 else:
-                    con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
-                    con.commit(); flash("Event added to VYBE.")
-            else:
-                flash("Invalid publisher action.")
+                    filename=original_name=mime_type=None; file_data=None
+                    if f and f.filename:
+                        suffix=Path(f.filename).suffix.lower()
+                        if suffix not in ALLOWED_EXT:
+                            flash("That file type is not allowed.")
+                            raise ValueError("unsupported academic update file")
+                        original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
+                        mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+                        if len(file_data)>20*1024*1024:
+                            flash("Academic update files must be 20 MB or smaller.")
+                            raise ValueError("academic update file too large")
+                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                    con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
+                    con.commit(); flash("Academic update published.")
+            elif kind == "academic_resources":
+                title=request.form.get("resource_title","").strip()[:150]
+                typ=request.form.get("resource_type","Study material").strip()[:80]
+                course=request.form.get("resource_course","").strip()[:100]
+                sem=request.form.get("resource_semester","").strip()[:100]
+                subject=request.form.get("resource_subject","").strip()[:100]
+                desc=request.form.get("resource_description","").strip()[:1000]
+                f=request.files.get("resource_file")
+                filename=original_name=mime_type=None; file_data=None; assistant_text=request.form.get("resource_assistant_text","").strip()[:50000]
+                if not title or not course or not sem or not subject:
+                    flash("Resource title, course, semester and subject are required.")
+                else:
+                    if f and f.filename:
+                        suffix=Path(f.filename).suffix.lower()
+                        if suffix not in ALLOWED_EXT:
+                            flash("That file type is not allowed.")
+                            raise ValueError("unsupported resource file")
+                        original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
+                        mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+                        if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
+                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                    con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
+                    con.commit(); flash("Academic resource added and indexed for Ask VYBE.")
+        except ValueError:
+            try: con.rollback()
+            except Exception: pass
         except Exception:
             con.rollback(); app.logger.exception("Publisher action failed")
             flash("Could not publish right now. Please try again.")
         finally:
             con.close()
         return redirect(url_for("publisher"))
-    body = f"""<section class="section"><div class="badge">LIMITED PUBLISHER ACCESS</div><h1>Publish.</h1><p class="muted">You can add new announcements, upcoming events and timetable versions. You cannot delete or edit existing posts.</p></section><section class="section grid2"><div class="card"><h2>New announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcement"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>New upcoming event</h2><form class="form" method="post"><input type="hidden" name="kind" value="event"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>New timetable</h2><form id="publisherTimetableForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="timetable"><input name="timetable_title" maxlength="160" placeholder="e.g. Semester 5 Timetable" required><input id="publisherTimetableFile" type="file" name="timetable_file" accept=".pdf,.png,.jpg,.jpeg,.webp" required><input id="publisherTimetableText" type="hidden" name="assistant_text"><div id="publisherTimetableStatus" class="small">PDF text is extracted automatically. Images are read in your browser before upload.</div><button class="btn accent">Post timetable →</button></form>{_timetable_ocr_script("publisherTimetableForm","publisherTimetableFile","publisherTimetableText","publisherTimetableStatus")}</div></section><section class="section"><div class="card"><h2>Permissions</h2><p class="muted">Your publisher permission is limited to creating new announcements, upcoming events and timetable versions. Delete, edit, student management, settings and other admin controls remain unavailable.</p></div></section>"""
+
+    cards=[]
+    if "announcements" in permissions:
+        cards.append('''<div class="card"><div class="admin-page-kicker">ANNOUNCEMENTS</div><h2>Publish announcement</h2><form class="form" method="post"><input type="hidden" name="kind" value="announcements"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><button class="btn accent">Publish announcement →</button></form></div>''')
+    if "events" in permissions:
+        cards.append('''<div class="card"><div class="admin-page-kicker">EVENTS</div><h2>Create event</h2><form class="form" method="post"><input type="hidden" name="kind" value="events"><input name="event_title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div>''')
+    if "timetable" in permissions:
+        cards.append(f'''<div class="card"><div class="admin-page-kicker">TIMETABLE</div><h2>Upload timetable</h2><form id="publisherTimetableForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="timetable"><input name="timetable_title" maxlength="160" placeholder="Semester / class timetable" required><input id="publisherTimetableFile" type="file" name="timetable_file" accept=".pdf,.png,.jpg,.jpeg,.webp" required><input id="publisherTimetableText" type="hidden" name="assistant_text"><div id="publisherTimetableStatus" class="small">PDF text is extracted automatically. Images are read before upload.</div><button class="btn accent">Post timetable →</button></form>{_timetable_ocr_script("publisherTimetableForm","publisherTimetableFile","publisherTimetableText","publisherTimetableStatus")}</div>''')
+    if "academic_updates" in permissions:
+        cards.append('''<div class="card"><div class="admin-page-kicker">ACADEMIC UPDATES</div><h2>Publish academic update</h2><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="academic_updates"><select name="update_kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="What should students know?" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div>''')
+    if "academic_resources" in permissions:
+        cards.append(f'''<div class="card"><div class="admin-page-kicker">ACADEMIC HUB</div><h2>Add study resource</h2><form id="publisherResourceForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="academic_resources"><input name="resource_title" placeholder="Resource title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="resource_course" placeholder="Course" required><input name="resource_semester" placeholder="Semester" required></div><input name="resource_subject" placeholder="Subject" required><textarea name="resource_description" placeholder="Description"></textarea><input id="publisherResourceFile" type="file" name="resource_file"><input id="publisherResourceText" type="hidden" name="resource_assistant_text"><div id="publisherResourceStatus" class="small">Files are indexed for Ask VYBE when supported.</div><button class="btn accent">Add resource →</button></form>{_resource_ocr_script("publisherResourceForm","publisherResourceFile","publisherResourceText","publisherResourceStatus")}</div>''')
+    if not cards:
+        cards.append('<div class="card"><h2>No publishing permissions yet</h2><p class="muted">Ask an admin to enable one or more publishing categories for your account.</p></div>')
+    names=[label for key,label,_ in PUBLISHER_PERMISSION_CATALOG if key in permissions]
+    body=f'''<section class="section publisher-page"><div class="admin-page-head"><div><a href="/dashboard" class="admin-back">← Dashboard</a><span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Publish to VYBE.</h1><p>You can only create content in the categories selected by the admin. Existing content cannot be deleted from this account.</p></div><div class="card publisher-permission-summary"><strong>{len(names)} permissions</strong><small>{esc(", ".join(names) if names else "None")}</small></div></div><div class="publisher-grid">{''.join(cards)}</div><div class="card"><strong>Publisher safety</strong><p class="muted">Your permissions are limited to publishing new student-facing content. Admins retain delete, settings, student-management and security controls.</p></div></section>'''
     return layout("Publisher", body)
 
 
@@ -7286,17 +7397,71 @@ def admin_content_access(sid, action):
     con = db()
     student = con.execute("SELECT id,name,status FROM students WHERE id=?", (sid,)).fetchone()
     if not student:
-        con.close(); flash("Student not found."); return redirect(url_for("admin_students"))
+        con.close(); flash("Student not found."); return redirect(url_for("admin_publisher_access"))
     if action == "grant":
         if student["status"] != "approved":
-            con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_students"))
+            con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_publisher_access"))
         set_setting(con, f"content_manager_{sid}", "1")
+        current = publisher_permissions(sid)
+        if not current:
+            set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
         flash(f"Publisher access granted to {student['name']}.")
     else:
         set_setting(con, f"content_manager_{sid}", "0")
+        set_setting(con, f"publisher_permissions_{sid}", json.dumps([]))
         flash(f"Publisher access revoked from {student['name']}.")
     con.commit(); con.close()
-    return redirect(url_for("admin_students"))
+    return redirect(url_for("admin_publisher_access"))
+
+
+@app.route("/admin/publisher-access", methods=["GET", "POST"])
+@admin_required
+def admin_publisher_access():
+    con = db()
+    if request.method == "POST":
+        try:
+            sid = int(request.form.get("student_id", "0"))
+        except ValueError:
+            sid = 0
+        student = con.execute("SELECT id,name,status FROM students WHERE id=?", (sid,)).fetchone()
+        if not student or student["status"] != "approved":
+            con.close(); flash("Select an approved student first."); return redirect(url_for("admin_publisher_access"))
+        action = request.form.get("action", "permissions")
+        if action == "grant":
+            set_setting(con, f"content_manager_{sid}", "1")
+            current = publisher_permissions(sid)
+            if not current:
+                set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
+            con.commit(); con.close(); flash(f"Publisher access enabled for {student['name']}."); return redirect(url_for("admin_publisher_access"))
+        if action == "revoke":
+            set_setting(con, f"content_manager_{sid}", "0")
+            set_setting(con, f"publisher_permissions_{sid}", json.dumps([]))
+            con.commit(); con.close(); flash(f"Publisher access revoked from {student['name']}."); return redirect(url_for("admin_publisher_access"))
+        allowed={k for k,_,_ in PUBLISHER_PERMISSION_CATALOG}
+        selected = [x for x in request.form.getlist("permissions") if x in allowed]
+        set_setting(con, f"content_manager_{sid}", "1")
+        set_setting(con, f"publisher_permissions_{sid}", json.dumps(selected))
+        con.commit(); con.close()
+        flash(f"Publishing permissions updated for {student['name']}.")
+        return redirect(url_for("admin_publisher_access"))
+
+    approved = con.execute("SELECT id,name,student_id,status FROM students WHERE status='approved' ORDER BY LOWER(name), id").fetchall()
+    rows=[]
+    for srow in approved:
+        sid=int(srow["id"])
+        access_row=con.execute("SELECT value FROM settings WHERE key=?",(f"content_manager_{sid}",)).fetchone()
+        active=bool(access_row and access_row["value"]=="1")
+        selected=publisher_permissions(sid) if active else set()
+        checks=[]
+        for key,label,desc in PUBLISHER_PERMISSION_CATALOG:
+            checked=" checked" if key in selected else ""
+            checks.append(f'<label class="publisher-permission"><input type="checkbox" name="permissions" value="{esc(key)}"{checked}><span><strong>{esc(label)}</strong><small>{esc(desc)}</small></span></label>')
+        status_badge='<span class="pill publisher-on">Publisher active</span>' if active else '<span class="pill">No publisher access</span>'
+        actions=(f'<form method="post"><input type="hidden" name="student_id" value="{sid}"><input type="hidden" name="action" value="permissions"><div class="publisher-permission-grid">{"".join(checks)}</div><div class="actions"><button class="btn accent">Save permissions</button><button class="btn danger" name="action" value="revoke" onclick="return confirm(\'Revoke publisher access from this student?\')">Revoke access</button></div></form>' if active else f'<form method="post"><input type="hidden" name="student_id" value="{sid}"><input type="hidden" name="action" value="grant"><button class="btn accent">Give publisher access →</button></form>')
+        rows.append(f'<div class="publisher-student-card"><div class="publisher-student-head"><div><strong>{esc(srow["name"])}</strong><small>Student ID: {esc(srow["student_id"])}</small></div>{status_badge}</div>{actions}</div>')
+    con.close()
+    body=f'''<section class="section publisher-access-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Who can publish?</h1><p>Give trusted students publisher access, then choose exactly what they are allowed to publish. Admin delete, security and settings controls stay private.</p></div><div class="card publisher-access-note"><strong>{len(approved)}</strong><small>approved students</small></div></div><div class="card publisher-permission-legend"><strong>Available publishing controls</strong><div class="publisher-permission-grid">{''.join(f'<div class="publisher-permission"><span><strong>{esc(label)}</strong><small>{esc(desc)}</small></span></div>' for _,label,desc in PUBLISHER_PERMISSION_CATALOG)}</div></div><div class="publisher-student-list">{''.join(rows) or '<div class="card"><h2>No approved students</h2><p class="muted">Approve a student first, then return here to grant publisher access.</p></div>'}</div></section>'''
+    return layout("Publisher Access", body, admin=True)
 
 
 @app.route("/admin/timetable", methods=["GET","POST"])
@@ -7515,59 +7680,36 @@ def admin_campus():
     return layout("Campus", body, admin=True)
 
 
-@app.route("/admin/settings", methods=["GET","POST"])
+@app.route("/admin/settings")
 @admin_required
 def admin_settings():
-    con = db()
-    if request.method == "POST":
-        wa = request.form.get("whatsapp_link", "").strip()[:500]
-        drive = request.form.get("google_drive_url", "").strip()[:500]
-        wa_version = request.form.get("whatsapp_api_version", "v23.0").strip()[:30] or "v23.0"
-        wa_phone_id = request.form.get("whatsapp_phone_number_id", "").strip()[:100]
-        wa_token = request.form.get("whatsapp_access_token", "").strip()[:1000]
-        wa_admin = request.form.get("whatsapp_admin_number", "").strip()[:30]
-        chat_enabled = "1" if request.form.get("community_chat_enabled") == "1" else "0"
-        if wa and not valid_url(wa):
-            flash("WhatsApp community link must be a valid URL.")
-        elif drive and not valid_url(drive):
-            flash("Google Drive URL must be a valid URL.")
-        else:
-            set_setting(con, "whatsapp_link", wa)
-            set_setting(con, "google_drive_url", drive or DRIVE_URL)
-            set_setting(con, "whatsapp_api_version", wa_version)
-            set_setting(con, "whatsapp_phone_number_id", wa_phone_id)
-            set_setting(con, "whatsapp_access_token", wa_token)
-            set_setting(con, "whatsapp_admin_number", wa_admin)
-            set_setting(con, "community_chat_enabled", chat_enabled)
-            con.commit()
-            flash("Configuration saved.")
-        con.close()
-        return redirect(url_for("admin_settings"))
-    wa = setting(con, "whatsapp_link", "")
-    drive = setting(con, "google_drive_url", DRIVE_URL)
-    online = setting(con, "vybe_online", "1") == "1"
-    pk = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
-    wa_version = setting(con, "whatsapp_api_version", "v23.0")
-    wa_phone_id = setting(con, "whatsapp_phone_number_id", "")
-    wa_admin = setting(con, "whatsapp_admin_number", "")
-    chat_enabled = setting(con, "community_chat_enabled", "1") == "1"
+    con=db()
+    online=setting(con,"vybe_online","1")=="1"
+    wa=setting(con,"whatsapp_link","")
+    pk=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+    pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE 'content_manager_%' AND value='1'").fetchone()["c"]
     con.close()
-    body = f'''<section class="section"><h1>Settings.</h1>
-    <div class="grid2">
-      <div class="card"><h2>AI Google Drive</h2><form class="form" method="post">
-        <input name="google_drive_url" value="{esc(drive)}" required>
-        <div class="small">Students can only see this link after login.</div>
-        <h2 style="margin-top:18px"> WhatsApp Community</h2>
-        <input name="whatsapp_link" value="{esc(wa)}" placeholder="https://chat.whatsapp.com/...">
-        <button class="btn accent">Save configuration</button></form></div>
-      <div class="card"><h2> Student Community Chat</h2><p class="small">Status: <strong>{" ON" if chat_enabled else " OFF"}</strong></p><p class="small">Students see each other's messages and registered names only. Student IDs remain hidden from the public chat.</p><a class="btn dark" href="/admin/community-chat">Open chat controls →</a></div><div class="card"><h2> VYBE Assistant</h2><p class="muted">Assistant data is managed separately. Upload PDFs, images, Word, PowerPoint, Excel, text and other knowledge files, save permanent memories, or remove outdated knowledge.</p><a class="btn accent" href="/admin/assistant">Open Assistant Control →</a></div>
-      <div class="card"><h2> Timetable</h2><p class="muted">Timetable uploads are only for student class schedules. They are kept separate from the Assistant Knowledge Space.</p><a class="btn dark" href="/admin/timetable">Manage timetable →</a></div>
-      <div class="card"><h2> Public status</h2><p class="{"online" if online else "offline"}"><strong>{" ONLINE" if online else " OFFLINE"}</strong></p>
-        <form method="post" action="/admin/status"><button class="btn {"danger" if online else "good"}">{" Take VYBE Offline" if online else " Bring VYBE Online"}</button></form>
-        <h2 style="margin-top:22px"> Phone passkey</h2><p class="muted">Registered credentials: {pk}</p><a class="btn dark" href="/admin/password">Security center →</a>
-      </div>
-    </div></section>'''
-    return layout("Settings", body, admin=True)
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    return layout("Settings",body,admin=True)
+
+
+@app.route("/admin/whatsapp-community", methods=["GET","POST"])
+@admin_required
+def admin_whatsapp_community():
+    con=db()
+    if request.method=="POST":
+        link=request.form.get("whatsapp_link","").strip()[:500]
+        chat_enabled="1" if request.form.get("community_chat_enabled")=="1" else "0"
+        if link and not valid_url(link):
+            con.close(); flash("WhatsApp group link must be a valid URL."); return redirect(url_for("admin_whatsapp_community"))
+        set_setting(con,"whatsapp_link",link)
+        set_setting(con,"community_chat_enabled",chat_enabled)
+        con.commit(); con.close(); flash("WhatsApp Community settings saved."); return redirect(url_for("admin_whatsapp_community"))
+    link=setting(con,"whatsapp_link","")
+    chat=setting(con,"community_chat_enabled","1")=="1"
+    con.close()
+    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">WHATSAPP COMMUNITY</span><h1>Community links.</h1><p>Put the current WhatsApp group link here. Students will see the same link in their Community area.</p></div></div><div class="settings-detail-grid"><div class="card settings-editor"><div class="settings-editor-icon">💬</div><h2>Student WhatsApp group</h2><p class="muted">Paste a WhatsApp invite link. Students can tap the Community button to open it.</p><form class="form" method="post"><label>WhatsApp group link</label><input name="whatsapp_link" value="{esc(link)}" placeholder="https://chat.whatsapp.com/..." autocomplete="off"><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>Enable VYBE Community Chat</b><small>Allow students to use the built-in student-to-student chat.</small></span></label><button class="btn accent">Save Community settings →</button></form></div><div class="card settings-preview"><span class="admin-page-kicker">STUDENT SIDE</span><h2>What students get</h2><div class="preview-row"><span>WhatsApp Community</span><b>{'Available' if link else 'Not configured'}</b></div><div class="preview-row"><span>VYBE Community Chat</span><b>{'ON' if chat else 'OFF'}</b></div>{('<a class="btn dark" target="_blank" rel="noopener" href="'+esc(link)+'">Test WhatsApp link →</a>') if link else '<p class="small">Save a WhatsApp link to enable the test button.</p>'}</div></div></section>'''
+    return layout("WhatsApp Community",body,admin=True)
 
 
 # ---------------------------------------------------------------------------
