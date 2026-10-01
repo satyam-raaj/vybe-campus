@@ -14,8 +14,8 @@ import sqlite3
 import zlib
 import zipfile
 import threading
-import queue
 import time
+from queue import LifoQueue, Empty
 import socket
 import ipaddress
 from collections import defaultdict, deque
@@ -109,74 +109,42 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
-class _PgPool:
-    """Small in-process PostgreSQL connection pool.
-
-    Render/Gunicorn workers otherwise paid the full TLS+authentication cost for
-    a new PostgreSQL connection on almost every request. Connections are
-    returned to the pool after each request/route instead.
-    """
-    def __init__(self, size=6):
-        self.size = size
-        self._q = queue.LifoQueue(maxsize=size)
-        self._lock = threading.Lock()
-        self._created = 0
-
-    def acquire(self):
-        try:
-            return self._q.get_nowait()
-        except queue.Empty:
-            pass
-        with self._lock:
-            if self._created < self.size:
-                pg_url = DATABASE_URL
-                if _PRODUCTION and "sslmode=" not in pg_url.lower():
-                    pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
-                con = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=5)
-                self._created += 1
-                return con
-        return self._q.get()
-
-    def release(self, con):
-        try:
-            con.rollback()
-        except Exception:
-            try: con.close()
-            except Exception: pass
-            return
-        try:
-            self._q.put_nowait(con)
-        except queue.Full:
-            try: con.close()
-            except Exception: pass
-
-_PG_POOL = None
+_PG_POOL = LifoQueue(maxsize=5)
 _PG_POOL_LOCK = threading.Lock()
-
-def _pg_pool():
-    global _PG_POOL
-    if _PG_POOL is None:
-        with _PG_POOL_LOCK:
-            if _PG_POOL is None:
-                _PG_POOL = _PgPool(6)
-    return _PG_POOL
-
+_PG_POOL_URL = None
 
 class DB:
-    """Tiny database abstraction for SQLite and PostgreSQL."""
+    """Small SQLite/PostgreSQL abstraction with a tiny PostgreSQL connection pool.
+
+    Supabase/Render requests used to open a brand-new PostgreSQL connection for
+    every query/page. Reusing a handful of connections removes that repeated
+    connection/TLS setup cost while keeping the existing route code unchanged.
+    """
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
-        self._returned = False
+        self._pooled = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            self.conn = _pg_pool().acquire()
+            pg_url = DATABASE_URL
+            if _PRODUCTION and "sslmode=" not in pg_url.lower():
+                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+            global _PG_POOL_URL
+            with _PG_POOL_LOCK:
+                if _PG_POOL_URL != pg_url:
+                    while True:
+                        try: _PG_POOL.get_nowait().close()
+                        except Empty: break
+                    _PG_POOL_URL = pg_url
+            try:
+                self.conn = _PG_POOL.get_nowait()
+                self._pooled = True
+            except Empty:
+                self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys = ON")
-            self.conn.execute("PRAGMA journal_mode = WAL")
-            self.conn.execute("PRAGMA synchronous = NORMAL")
 
     def _sql(self, sql):
         return sql.replace("?", "%s") if self.is_pg else sql
@@ -186,24 +154,42 @@ class DB:
 
     def executescript(self, statements):
         for statement in statements:
-            if statement.strip(): self.execute(statement)
+            if statement.strip():
+                self.execute(statement)
 
-    def commit(self): self.conn.commit()
-    def rollback(self): self.conn.rollback()
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
 
     def close(self):
-        if self._returned: return
-        self._returned = True
-        if self.is_pg:
-            _pg_pool().release(self.conn)
+        if self.is_pg and self._pooled:
+            try:
+                self.conn.rollback()
+                _PG_POOL.put_nowait(self.conn)
+            except Exception:
+                try: self.conn.close()
+                except Exception: pass
+        elif self.is_pg:
+            try:
+                self.conn.rollback()
+                _PG_POOL.put_nowait(self.conn)
+            except Exception:
+                try: self.conn.close()
+                except Exception: pass
         else:
             self.conn.close()
+
 
 def db():
     return DB()
 
+
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+def now_window(seconds=15):
+    return (datetime.now(timezone.utc)-timedelta(seconds=seconds)).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 def _ensure_password_reset_schema(con):
     if con.is_pg:
@@ -418,14 +404,6 @@ def create_admin_notification(kind, title, message, student_id=None):
         # password-reset request because this optional audit/alert failed.
         return sent
 
-
-def bump_live_revision(con):
-    """Increment one tiny DB value used by student live-update polling."""
-    current = int(setting(con, "live_revision", "0") or 0)
-    set_setting(con, "live_revision", str(current + 1))
-
-def live_revision(con):
-    return int(setting(con, "live_revision", "0") or 0)
 
 def setting(con, key, default=""):
     row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -1005,8 +983,6 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
-    # One-time/idempotent cleanup for exact duplicate admin uploads from older builds.
-    _cleanup_exact_duplicate_content(con)
     con.commit()
     con.close()
 
@@ -1029,22 +1005,61 @@ def student_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         sid = session.get("student_db_id")
-        if not sid: return redirect(url_for("login"))
-        checked = float(session.get("_student_auth_checked_at", 0) or 0)
-        cached_status = session.get("_student_status")
-        # Live endpoints are hit every ~1 second. Rechecking PostgreSQL for each
-        # poll defeats the purpose of live updates. Revalidate at most every 10s.
-        if cached_status == "approved" and time.time() - checked < 10:
-            return fn(*args, **kwargs)
+        if not sid:
+            return redirect(url_for("login"))
         try:
-            con = db(); row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone(); con.close()
+            con = db()
+            row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone()
+            con.close()
         except Exception as exc:
-            app.logger.error("Student authentication check failed: %s: %s", type(exc).__name__, exc)
-            session.clear(); flash("VYBE could not verify your account right now. Please try again."); return redirect(url_for("login"))
+            app.logger.error("Student authentication check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+            session.clear()
+            flash("VYBE could not verify your account right now. Please try again.")
+            return redirect(url_for("login"))
         if not row or row["status"] != "approved":
-            session.clear(); flash("Your student access is not currently approved."); return redirect(url_for("login"))
-        session["_student_status"] = "approved"
-        session["_student_auth_checked_at"] = time.time()
+            session.clear()
+            flash("Your student access is not currently active.")
+            return redirect(url_for("login"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+PUBLISHER_PERMISSION_CATALOG = [
+    ("announcements", "Announcements", "Publish campus-wide announcements."),
+    ("events", "Events", "Create upcoming campus events."),
+    ("timetable", "Timetable", "Upload new timetable versions."),
+    ("academic_updates", "Academic Updates", "Publish academic notices, results, date sheets and exam updates."),
+    ("academic_resources", "Academic Hub Resources", "Add notes, study material, syllabus and previous-year resources."),
+]
+
+def publisher_permissions(student_id):
+    con = db()
+    row = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{student_id}",)).fetchone()
+    legacy = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{student_id}",)).fetchone()
+    con.close()
+    if row and row["value"]:
+        try:
+            data = json.loads(row["value"])
+            if isinstance(data, list):
+                return {str(x) for x in data}
+        except Exception:
+            pass
+    return {"announcements", "events", "timetable"} if legacy and legacy["value"] == "1" else set()
+
+def publisher_can(student_id, permission):
+    return permission in publisher_permissions(student_id)
+
+def content_manager_required(fn):
+    @wraps(fn)
+    @student_required
+    def wrapper(*args, **kwargs):
+        sid = session.get("student_db_id")
+        con = db()
+        row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
+        con.close()
+        if not row or row["value"] != "1" or not publisher_permissions(sid):
+            flash("You do not have publisher access.")
+            return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
     return wrapper
 
@@ -1071,38 +1086,6 @@ def admin_required(fn):
                 return redirect(url_for("admin_login"))
             if count > 0 and not session.get("passkey_verified"):
                 return redirect(url_for("admin_verify"))
-        return fn(*args, **kwargs)
-    return wrapper
-
-
-def content_manager_required(fn):
-    """Allow the admin or an approved publisher/content manager to publish content."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if session.get("admin_authenticated"):
-            # Reuse the normal admin security checks for admin users.
-            if not session.get("passkey_verified"):
-                try:
-                    con = db()
-                    count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
-                    con.close()
-                except Exception:
-                    count = 0
-                if count > 0:
-                    return redirect(url_for("admin_verify"))
-            return fn(*args, **kwargs)
-        sid = session.get("student_db_id")
-        if not sid:
-            return redirect(url_for("login"))
-        try:
-            con = db()
-            row = con.execute("SELECT status, publisher_access FROM students WHERE id=?", (sid,)).fetchone()
-            con.close()
-        except Exception:
-            return redirect(url_for("login"))
-        if not row or row["status"] != "approved" or not row["publisher_access"]:
-            flash("Publisher access is required.")
-            return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
     return wrapper
 
@@ -1238,67 +1221,45 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
-@app.after_request
-def _vybe_live_revision_after_request(response):
-    # Successful state-changing requests advertise a new campus revision.
-    # Exclude authentication/session-only endpoints so ordinary login traffic
-    # does not wake every student's live-update loop.
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and 200 <= response.status_code < 400:
-        path = request.path
-        if not (path in {"/login", "/register", "/forgot-password", "/admin", "/admin/logout"} or path.startswith("/passkey/")):
-            try:
-                con = db(); bump_live_revision(con); con.commit(); con.close()
-            except Exception:
-                app.logger.debug("Live revision bump skipped", exc_info=True)
-    if request.path == "/admin/status" and response.status_code < 400:
-        try:
-            con = db(); _invalidate_online_cache(setting(con, "vybe_online", "1") == "1"); con.close()
-        except Exception: pass
-    if request.path.startswith("/api/live/") or request.path == "/community/chat/messages":
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-    return response
-
-_ONLINE_CACHE = {"value": True, "expires": 0.0}
-_ONLINE_CACHE_LOCK = threading.Lock()
-
-def _online_state():
-    now_m = time.monotonic()
-    with _ONLINE_CACHE_LOCK:
-        if now_m < _ONLINE_CACHE["expires"]:
-            return _ONLINE_CACHE["value"]
-    try:
-        con = db(); value = setting(con, "vybe_online", "1") == "1"; con.close()
-    except Exception:
-        value = True
-    with _ONLINE_CACHE_LOCK:
-        _ONLINE_CACHE.update(value=value, expires=now_m + 1.0)
-    return value
-
-def _invalidate_online_cache(value=None):
-    with _ONLINE_CACHE_LOCK:
-        _ONLINE_CACHE["value"] = True if value is None else bool(value)
-        _ONLINE_CACHE["expires"] = time.monotonic() + 1.0
-
 @app.before_request
 def global_online_gate():
     path = request.path
     if _PRODUCTION and _ALLOWED_HOSTS_RAW:
         host = (request.host or "").split(":", 1)[0].lower().strip(".")
-        if host not in _ALLOWED_HOSTS: abort(400, description="Unrecognized VYBE host.")
+        if host not in _ALLOWED_HOSTS:
+            abort(400, description="Unrecognized VYBE host.")
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_urlsafe(32)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        if not _same_origin_unsafe_request(): abort(403, description="Cross-site requests are not allowed.")
-        auth_bootstrap_paths = {"/login", "/register", "/forgot-password", "/admin", "/admin/login-passkey/options", "/admin/login-passkey/verify"}
-        if path not in auth_bootstrap_paths and not _csrf_token_valid(): abort(403, description="Security verification failed. Refresh the page and try again.")
-    if _rate_limited(request.method, path): abort(429, description="Too many requests. Please try again shortly.")
+        if not _same_origin_unsafe_request():
+            abort(403, description="Cross-site requests are not allowed.")
+        if not _csrf_token_valid():
+            abort(403, description="Security verification failed. Refresh the page and try again.")
+    if _rate_limited(request.method, path):
+        abort(429, description="Too many requests. Please try again shortly.")
+    try:
+        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
+    except Exception:
+        pass
     if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
-    if not _online_state(): return redirect(url_for("offline"))
-    # Do NOT open another database connection on every page request just to
-    # update last_seen. Authentication routes already touch the student row.
-    # This removes a major source of latency and connection churn.
+    try:
+        con = db()
+        online = setting(con, "vybe_online", "1") == "1"
+        con.close()
+    except Exception:
+        online = True
+    if not online:
+        return redirect(url_for("offline"))
+    active_student = session.get("student_db_id")
+    if active_student:
+        try:
+            con = db()
+            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
+            con.commit()
+            con.close()
+        except Exception:
+            pass
     return None
 
 
@@ -3392,10 +3353,10 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
-        try:
-            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],1000); _header_con.close()
-        except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x["unread"])
+        # Do not query the entire campus update feed on every page request.
+        # The notification panel loads its small notification payload only when opened.
+        _header_updates=[]
+        _unread_count=0
         _alert_items=[]
         for x in _header_updates:
             seen_action=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}'
@@ -4065,6 +4026,23 @@ def layout(title, body, admin=False):
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
+<style id="vybe-performance-patch">
+/* Performance layer: preserve the glass UI while reducing GPU-heavy effects. */
+.nav,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-header-alert-panel{{backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;}}
+.btn,.button,button,a.card,a.academic-resource-card,.academic-quick,.timetable-card,.feed-item{{transform:translateZ(0);backface-visibility:hidden;}}
+.btn:active,.button:active,button:active,.academic-quick:active,.timetable-card:active{{transform:scale(.985);transition:transform .08s ease!important;}}
+@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important;}}}}
+</style>
+<script>
+/* Prevent accidental double submissions: one tap = one request. */
+document.addEventListener('submit',function(e){{
+  const f=e.target; if(!f || f.dataset.vybeSubmitLocked==='1') return;
+  if((f.method||'get').toLowerCase()!=='post') return;
+  f.dataset.vybeSubmitLocked='1';
+  const b=f.querySelector('button[type="submit"],input[type="submit"]');
+  if(b){{ b.disabled=true; b.dataset.vybeOriginalText=b.textContent||''; b.style.opacity='.72'; b.style.pointerEvents='none'; }}
+}},{{capture:true}});
+</script>
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
@@ -4217,8 +4195,7 @@ if(notificationBell){{
       notificationBell.setAttribute('aria-expanded','false');
     }}
   }});
-  refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,1000);
+  // Notifications are loaded only when the bell is opened; no background polling.
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -4302,7 +4279,7 @@ if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPro
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
-<script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();<script>(function(){{if({str(not student).lower()}||location.pathname==='/community/chat'||!document.body||document.body.dataset.vybeLiveWatcher==='1')return;document.body.dataset.vybeLiveWatcher='1';let rev=null,busy=false;async function check(){{if(busy||document.hidden)return;busy=true;try{{const r=await fetch('/api/live/updates?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!r.ok)return;const d=await r.json();if(rev===null){{rev=d.revision;return;}}if(Number(d.revision)!==Number(rev)){{rev=d.revision;window.location.reload();}}}}catch(e){{}}finally{{busy=false;}}}}setTimeout(check,800);setInterval(check,1800);document.addEventListener('visibilitychange',function(){{if(!document.hidden)check();}});}})();</script></script></body></html>'''
+<script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
 
 
 # ---------------------------------------------------------------------------
@@ -4599,94 +4576,25 @@ def logout():
     session.clear(); return redirect(url_for("home"))
 
 
-
-
-def _dedupe_rows(rows, fields):
-    """Hide accidental repeated content while preserving the first/latest row.
-
-    Older VYBE deployments can contain exact duplicate uploads created by repeated
-    form submissions or older publishing flows. This keeps one visible copy without
-    changing the content itself.
-    """
-    seen=set()
-    out=[]
-    for row in rows:
-        key=[]
-        for field in fields:
-            try:
-                value=row[field]
-            except Exception:
-                value=getattr(row, field, None)
-            if isinstance(value, bytes):
-                value=value.hex()
-            key.append(str(value or '').strip().lower())
-        marker=tuple(key)
-        if marker in seen:
-            continue
-        seen.add(marker)
-        out.append(row)
-    return out
-
-
-def _cleanup_exact_duplicate_content(con):
-    """Remove exact duplicate admin content created by older publishing flows.
-
-    Only records with identical user-visible content are collapsed. The oldest row
-    is retained so existing links/ordering remain stable.
-    """
-    specs={
-        'announcements': ['title','message','priority','expires_at'],
-        'events': ['title','event_date','event_time','location','location_url','description'],
-        'resources': ['title','resource_type','course','semester','subject','description','original_name','mime_type','file_data'],
-        'timetables': ['title','original_name','file_name','file_data'],
-        'academic_updates': ['kind','category','title','description','course','semester','subject','event_date','external_url','original_name','mime_type','file_data'],
-    }
-    for table, fields in specs.items():
-        try:
-            rows=con.execute(f"SELECT id,{','.join(fields)} FROM {table} ORDER BY id ASC").fetchall()
-            seen=set(); duplicates=[]
-            for row in rows:
-                vals=[]
-                for field in fields:
-                    value=row[field]
-                    if isinstance(value, bytes): value=value.hex()
-                    vals.append(str(value or '').strip().lower())
-                key=tuple(vals)
-                if key in seen:
-                    duplicates.append(row['id'])
-                else:
-                    seen.add(key)
-            for rid in duplicates:
-                con.execute(f"DELETE FROM {table} WHERE id=?", (rid,))
-        except Exception:
-            # A legacy deployment may not have one of these tables/columns yet.
-            try: con.rollback()
-            except Exception: pass
-    try: con.commit()
-    except Exception: pass
-
 def _active_announcements(con, limit=6):
     current=now()
-    rows=con.execute(
+    return con.execute(
         "SELECT * FROM announcements WHERE (publish_at IS NULL OR publish_at='' OR publish_at<=?) AND (expires_at IS NULL OR expires_at='' OR expires_at>?) ORDER BY CASE WHEN priority='High' THEN 0 WHEN priority='Important' THEN 1 ELSE 2 END, id DESC LIMIT ?",
-        (current,current,limit*3)
+        (current,current,limit)
     ).fetchall()
-    return _dedupe_rows(rows, ("title","message","priority","expires_at"))[:limit]
 
 
 def _upcoming_events(con, limit=6):
     from zoneinfo import ZoneInfo
     today=datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
-    rows=con.execute(
+    return con.execute(
         "SELECT * FROM events WHERE (publish_at IS NULL OR publish_at='' OR publish_at<=?) AND event_date>=? ORDER BY event_date ASC, event_time ASC, id ASC LIMIT ?",
-        (now(),today,limit*3)
+        (now(),today,limit)
     ).fetchall()
-    return _dedupe_rows(rows, ("title","event_date","event_time","location","location_url","description"))[:limit]
 
 
 def _latest_timetables(con, limit=20):
-    rows=con.execute("SELECT * FROM timetables ORDER BY id DESC LIMIT ?", (limit*3,)).fetchall()
-    return _dedupe_rows(rows, ("title","original_name","file_name","file_data"))[:limit]
+    return con.execute("SELECT * FROM timetables ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
 
 def _decode_pdf_literal(value):
@@ -5500,7 +5408,7 @@ def student_notifications_read():
 @app.route("/announcements")
 @student_required
 def announcements():
-    con=db(); rows=_active_announcements(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"announcement","announcements"); con.commit(); con.close()
+    con=db(); rows=_dedupe_content_rows(_active_announcements(con,30), ("title","message","priority","expires_at")); _mark_all_page_items_seen(con,session["student_db_id"],"announcement","announcements"); con.commit(); con.close()
     cards=""
     for r in rows:
         badge=" "+esc(r["priority"]) if r["priority"] in ("High","Important") else " Announcement"
@@ -5512,7 +5420,7 @@ def announcements():
 @app.route("/events")
 @student_required
 def events():
-    con=db(); rows=_upcoming_events(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"event","events"); con.commit(); con.close()
+    con=db(); rows=_dedupe_content_rows(_upcoming_events(con,30), ("title","event_date","event_time","location","description","location_url")); _mark_all_page_items_seen(con,session["student_db_id"],"event","events"); con.commit(); con.close()
     cards=""
     for r in rows:
         cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p>{(f'<p><a class="btn" href="{esc(r["location_url"])}" target="_blank" rel="noopener">Open location in Google Maps ↗</a></p>' if r["location_url"] else "")}<p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
@@ -5527,7 +5435,7 @@ TIMETABLE_PAGE_CSS = """<style>
 @app.route("/timetable")
 @student_required
 def timetable():
-    con=db(); rows=_latest_timetables(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"timetable","timetables"); con.commit(); con.close()
+    con=db(); rows=_dedupe_content_rows(_latest_timetables(con,30), ("title","original_name")); _mark_all_page_items_seen(con,session["student_db_id"],"timetable","timetables"); con.commit(); con.close()
     cards=""
     for r in rows:
         # Student-facing timetable cards intentionally hide the uploaded file name
@@ -5840,7 +5748,7 @@ def academics():
     if resource_type:
         sql += " AND resource_type=?"; params.append(resource_type)
     sql += " ORDER BY id DESC"
-    rows = _dedupe_rows(con.execute(sql + " LIMIT 600", params).fetchall(), ("title","resource_type","course","semester","subject","description","original_name","mime_type","file_data"))
+    rows = _dedupe_content_rows(con.execute(sql, params).fetchall(), ("title","resource_type","course","semester","subject","description","original_name"))
     courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE course<>'' ORDER BY course").fetchall()]
     semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' ORDER BY semester").fetchall()]
     subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' ORDER BY subject").fetchall()]
@@ -6371,7 +6279,7 @@ def academic_updates():
     con=db(); sql="SELECT * FROM academic_updates WHERE kind IN (?,?,?,?)"; params=list(allowed_kinds)
     if kind in allowed_kinds: sql+=" AND kind=?"; params.append(kind)
     if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ?)"; params += [f"%{q}%"]*3
-    sql+=" ORDER BY id DESC"; rows=con.execute(sql,params).fetchall()
+    sql+=" ORDER BY id DESC"; rows=_dedupe_content_rows(con.execute(sql,params).fetchall(), ("kind","category","title","description","course","semester","subject","event_date","external_url","original_name"))
     # Do not mark every academic update as viewed merely because the student
     # opened the Academic Updates page. The bell is an unread inbox: only the
     # specific update the student opens should disappear from it.
@@ -7455,31 +7363,13 @@ def community_chat():
       function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
-      let lastChatId=0;
-      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{
-        const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;
-        const url=lastChatId?('/community/chat/messages?after='+encodeURIComponent(lastChatId)):('/community/chat/messages?initial=1');
-        const res=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
-        if(!res.ok)return; const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];
-        msgs.forEach(function(m){{chatWindow.appendChild(build(m));lastChatId=Math.max(lastChatId,Number(m.id)||0);}});
-        wire(chatWindow);
-        if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});
-      }}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;refresh(false);setInterval(function(){{if(!document.hidden)refresh(false);}},1000);document.addEventListener("visibilitychange",function(){{if(!document.hidden)refresh(false);}});}} if(replyCancel)replyCancel.onclick=clearReply;
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},3000);}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
     return layout("Chat with Students", body)
 
-
-
-@app.route("/api/live/updates", methods=["GET"])
-@student_required
-def live_updates():
-    con=db()
-    try:
-        return jsonify({"revision": live_revision(con)})
-    finally: con.close()
 
 
 @app.route("/community/chat/messages", methods=["GET"])
@@ -7488,25 +7378,15 @@ def community_chat_messages():
     """Lightweight live-chat endpoint used by the chat page polling loop."""
     con = db()
     try:
-        try: after_id = max(0, int(request.args.get("after", "0")))
-        except (TypeError, ValueError): after_id = 0
-        if after_id:
-            rows = con.execute(
-                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                "s.name, r.message AS reply_message, rs.name AS reply_name "
-                "FROM community_messages cm JOIN students s ON s.id=cm.student_id "
-                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id "
-                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100", (after_id,)
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                "s.name, r.message AS reply_message, rs.name AS reply_name "
-                "FROM community_messages cm JOIN students s ON s.id=cm.student_id "
-                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id "
-                "ORDER BY cm.id DESC LIMIT 100"
-            ).fetchall()
-            rows = list(reversed(rows))
+        rows = con.execute(
+            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+            "s.name, r.message AS reply_message, rs.name AS reply_name "
+            "FROM community_messages cm "
+            "JOIN students s ON s.id=cm.student_id "
+            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+            "LEFT JOIN students rs ON rs.id=r.student_id "
+            "ORDER BY cm.id ASC LIMIT 300"
+        ).fetchall()
         return jsonify({"messages": [
             {
                 "id": int(r["id"]),
@@ -8083,8 +7963,12 @@ def publisher():
                 if not title or not message:
                     flash("Title and announcement message are required.")
                 else:
-                    con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
-                    con.commit(); flash("Announcement published to VYBE.")
+                    dup=con.execute("SELECT id FROM announcements WHERE title=? AND message=? AND priority=? AND COALESCE(expires_at,'')=COALESCE(?, '') AND created_at>=? ORDER BY id DESC LIMIT 1", (title,message,priority,expires or None,now_window())).fetchone()
+                    if dup:
+                        flash("This announcement was already published. Duplicate submission ignored.")
+                    else:
+                        con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
+                        con.commit(); flash("Announcement published to VYBE.")
             elif kind == "events":
                 title = request.form.get("event_title", "").strip()[:160]
                 event_date = request.form.get("event_date", "").strip()[:20]
@@ -8094,8 +7978,12 @@ def publisher():
                 if not title or not event_date:
                     flash("Event title and date are required.")
                 else:
-                    con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
-                    con.commit(); flash("Event added to VYBE.")
+                    dup=con.execute("SELECT id FROM events WHERE title=? AND event_date=? AND COALESCE(event_time,'')=COALESCE(?, '') AND COALESCE(location,'')=COALESCE(?, '') AND COALESCE(description,'')=COALESCE(?, '') AND created_at>=? ORDER BY id DESC LIMIT 1", (title,event_date,event_time,location,description,now_window())).fetchone()
+                    if dup:
+                        flash("This event was already added. Duplicate submission ignored.")
+                    else:
+                        con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
+                        con.commit(); flash("Event added to VYBE.")
             elif kind == "timetable":
                 title = request.form.get("timetable_title", "").strip()[:160]
                 f = request.files.get("timetable_file")
