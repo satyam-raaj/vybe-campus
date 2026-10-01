@@ -1331,6 +1331,19 @@ def _safe_500_page():
     box-shadow:none!important;
   }
 }
+
+/* FINAL STUDENT PHONE MENU — dark glass, no close button */
+@media (max-width:850px){{
+  #vybeMobileNav.student-mobile-menu{{position:fixed!important;left:10px!important;right:auto!important;top:72px!important;bottom:76px!important;width:min(82vw,270px)!important;max-width:270px!important;min-width:0!important;max-height:calc(100vh - 160px)!important;display:none!important;flex-direction:column!important;gap:8px!important;padding:14px!important;margin:0!important;overflow-y:auto!important;z-index:30000!important;box-sizing:border-box!important;border:1px solid rgba(104,184,235,.28)!important;border-radius:20px!important;background:linear-gradient(145deg,rgba(3,14,25,.96),rgba(7,27,43,.94))!important;color:#eaf7ff!important;box-shadow:0 24px 60px rgba(0,0,0,.52),inset 0 1px rgba(255,255,255,.06)!important;backdrop-filter:blur(24px) saturate(145%)!important;-webkit-backdrop-filter:blur(24px) saturate(145%)!important;}}
+  #vybeMobileNav.student-mobile-menu.open{{display:flex!important;animation:vybeStudentMenuIn .18s ease-out both!important;}}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{display:flex!important;align-items:center!important;justify-content:flex-start!important;min-height:28px!important;padding:2px 4px 9px!important;margin:0 2px 2px!important;border-bottom:1px solid rgba(126,193,229,.16)!important;}}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#f3fbff!important;font-size:13px!important;font-weight:850!important;letter-spacing:.2px!important;}}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-close{{display:none!important}}
+  #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;justify-content:flex-start!important;width:100%!important;min-height:48px!important;margin:0!important;padding:0 13px!important;box-sizing:border-box!important;border:1px solid rgba(111,184,224,.18)!important;border-radius:13px!important;background:rgba(12,39,59,.72)!important;color:#e8f5fc!important;font-size:12px!important;font-weight:750!important;text-decoration:none!important;box-shadow:inset 0 1px rgba(255,255,255,.035),0 5px 16px rgba(0,0,0,.16)!important;}}
+  #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:rgba(24,78,111,.78)!important;border-color:rgba(86,190,242,.42)!important;color:#fff!important;}}
+}}
+@keyframes vybeStudentMenuIn{{from{{opacity:0;transform:translateY(-6px) scale(.985)}}to{{opacity:1;transform:none}}}}
+
 </style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(HTTPException)
@@ -3079,7 +3092,7 @@ def layout(title, body, admin=False):
         _admin_alert_count = f'<span class="admin-password-alert-count">{_admin_pending_password}</span>' if _admin_pending_password else ''
         _admin_alert_class = '' if _admin_pending_password else ' is-clear'
         admin_alert = f"""<div class="admin-password-alert-wrap"><a class="admin-password-alert{_admin_alert_class}" href="/admin/password-requests" title="Password access requests"><span class="admin-password-alert-icon" aria-hidden="true">🔐</span><span class="admin-password-alert-label">Password Access</span>{_admin_alert_count}</a></div>"""
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div style="display:flex;align-items:center;gap:8px">{admin_alert}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">Menu</button></div></div>'
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -3720,6 +3733,36 @@ def layout(title, body, admin=False):
 }}
 
 
+/* ===== ADMIN PHONE MENU — CLEAN DRAWER ===== */
+.admin-header-actions{{display:flex!important;align-items:center!important;gap:8px!important;flex:0 0 auto!important}}
+.admin-menu-toggle{{display:none!important}}
+@media(max-width:850px){{
+  .admin-header{{min-height:58px!important;padding:8px 12px!important;display:flex!important;align-items:center!important}}
+  .admin-header .brand{{display:flex!important;align-items:center!important;gap:8px!important;flex:1 1 auto!important;min-width:0!important;font-size:18px!important}}
+  .admin-header .brandmark{{width:34px!important;height:34px!important;flex:0 0 34px!important;margin:0!important}}
+  .admin-header .brandtext{{display:inline!important;font-size:18px!important;letter-spacing:-.04em!important}}
+  .admin-header-actions{{margin-left:auto!important}}
+  .admin-menu-toggle{{display:grid!important;place-items:center!important;width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;padding:0!important;border:1px solid rgba(88,151,205,.35)!important;border-radius:13px!important;background:linear-gradient(145deg,#14263a,#091522)!important;color:#fff!important;font-size:19px!important;font-weight:900!important;line-height:1!important;box-shadow:0 8px 22px rgba(4,17,29,.20)!important}}
+  .admin-menu-toggle:hover{{background:linear-gradient(145deg,#1a3550,#0b1928)!important;border-color:rgba(103,181,239,.55)!important}}
+  .admin-mobile-menu{{display:none!important;position:fixed!important;top:68px!important;right:12px!important;left:12px!important;width:auto!important;max-width:390px!important;margin-left:auto!important;z-index:9999!important;padding:10px!important;border:1px solid rgba(104,157,202,.25)!important;border-radius:22px!important;background:linear-gradient(180deg,rgba(13,25,39,.98),rgba(6,13,22,.98))!important;box-shadow:0 28px 70px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.025) inset!important;backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;overflow:hidden!important;transform-origin:top right!important}}
+  .admin-mobile-menu.open{{display:grid!important;gap:5px!important;animation:adminMenuIn .18s ease both!important}}
+  .admin-mobile-menu::before{{content:"";display:block;position:absolute;top:0;right:22px;width:80px;height:1px;background:linear-gradient(90deg,transparent,rgba(89,179,239,.7),transparent)!important}}
+  .admin-mobile-menu-head{{display:flex!important;flex-direction:column!important;gap:2px!important;padding:12px 12px 11px!important;margin-bottom:3px!important;border-bottom:1px solid rgba(255,255,255,.08)!important}}
+  .admin-mobile-menu-kicker{{font-size:9px!important;letter-spacing:.16em!important;color:#6eb7eb!important;font-weight:900!important}}
+  .admin-mobile-menu-head strong{{font-size:16px!important;color:#fff!important;letter-spacing:-.02em!important}}
+  .admin-mobile-menu > a{{display:flex!important;align-items:center!important;min-height:48px!important;padding:0 13px!important;border:1px solid rgba(125,159,188,.15)!important;border-radius:14px!important;background:rgba(255,255,255,.045)!important;color:#eaf1f7!important;text-decoration:none!important;font-size:13px!important;font-weight:750!important;box-sizing:border-box!important}}
+  .admin-mobile-menu > a::after{{content:"›";margin-left:auto;color:#7fa7c6;font-size:20px;font-weight:400}}
+  .admin-mobile-menu > a:hover,.admin-mobile-menu > a:active{{background:rgba(48,119,171,.18)!important;border-color:rgba(87,166,220,.34)!important;color:#fff!important}}
+  .admin-mobile-menu > a.admin-nav-logout{{color:#ffb7b7!important;background:rgba(185,66,66,.08)!important;border-color:rgba(208,91,91,.20)!important}}
+  .admin-mobile-menu > a.admin-nav-logout::after{{color:#e17d7d!important}}
+}}
+@keyframes adminMenuIn{{from{{opacity:0;transform:translateY(-8px) scale(.98)}}to{{opacity:1;transform:none}}}}
+@media(max-width:380px){{
+  .admin-header{{padding-left:9px!important;padding-right:9px!important}}
+  .admin-mobile-menu{{top:64px!important;left:9px!important;right:9px!important;border-radius:19px!important}}
+  .admin-mobile-menu > a{{min-height:45px!important;font-size:12px!important}}
+}}
+
 /* ===== ADMIN SETTINGS / PUBLISHER CONTROL CENTER ===== */
 .settings-hub,.settings-detail,.publisher-access-page{{max-width:1120px!important;margin:0 auto!important}}
 .settings-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}}
@@ -3732,7 +3775,7 @@ def layout(title, body, admin=False):
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.publisher-student-card{{padding:14px;border-radius:18px}}.publisher-permission-grid{{gap:8px}}.publisher-permission{{padding:10px}}.settings-detail-grid{{gap:12px}}}}
 
 </style></head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else ""}" id="vybeMobileNav"><div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span><button class="mobile-menu-close" type="button" aria-label="Close menu">Close</button></div>{mobile_links if student else links}<div class="mobile-only-menu-links"></div></div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
@@ -3745,7 +3788,8 @@ function setMenu(open){{
   menu.classList.toggle("open",isOpen);
   if(toggle){{
     toggle.setAttribute("aria-expanded",isOpen?"true":"false");
-    toggle.textContent=isOpen?"Close":"Menu";
+    const isAdminMenu=menu && menu.classList.contains("admin-mobile-menu");
+    toggle.textContent=isAdminMenu?"☰":(isOpen?"Close":"Menu");
   }}
   if(bottomMenu){{
     bottomMenu.setAttribute("aria-expanded",isOpen?"true":"false");
