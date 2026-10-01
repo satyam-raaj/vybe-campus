@@ -1870,6 +1870,8 @@ input,textarea,select{background:#fff!important;color:var(--vybe-ui-text)!import
 @media(max-width:1050px){.academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-tool-grid,.academic-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.home-action-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:700px){.academic-hero{padding-top:42px!important}.academic-quick-grid,.academic-tool-grid,.academic-resource-grid{grid-template-columns:1fr!important}.home-action-grid{grid-template-columns:1fr!important}.student-control-row{padding-left:12px!important;padding-right:12px!important}}
 
+/* ===== ADMIN CONTROL CENTER v2 ===== */
+.admin-home-page{max-width:1180px!important;margin:0 auto!important;padding:46px 0 90px!important}.admin-home-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:30px;margin-bottom:28px}.admin-home-kicker,.admin-page-kicker{display:inline-flex;align-items:center;padding:7px 11px;border-radius:10px;background:#edf4ff;border:1px solid #d7e5f8;color:#2f6fca;font-size:10px;font-weight:800;letter-spacing:.12em}.admin-home-hero h1{font-size:clamp(42px,5.2vw,66px);line-height:.98;letter-spacing:-.055em;margin:16px 0 12px;color:#17202b}.admin-home-hero h1 em{font-style:normal;color:#2f6fca}.admin-home-hero p{max-width:650px;color:#687482;font-size:16px;line-height:1.6;margin:0}.admin-home-status{display:flex;align-items:center;gap:12px;min-width:240px;padding:15px 16px;border:1px solid #dfe5ea;background:#fff;border-radius:18px;box-shadow:0 10px 28px rgba(31,48,66,.06)}.admin-home-status>span{width:10px;height:10px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 5px #edf8e6}.admin-home-status.offline>span{background:#d9534f;box-shadow:0 0 0 5px #fff0f0}.admin-home-status div{display:grid;gap:2px;flex:1}.admin-home-status strong{font-size:13px}.admin-home-status small{font-size:10px;color:#7b8794}.admin-home-status a{font-size:11px;font-weight:800;color:#2f6fca}.admin-home-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 42px}.admin-home-stats div{background:#fff;border:1px solid #e0e6eb;border-radius:16px;padding:15px 16px;box-shadow:0 7px 20px rgba(31,48,66,.045)}.admin-home-stats b{display:block;font-size:24px;letter-spacing:-.04em}.admin-home-stats span{display:block;margin-top:3px;color:#74808d;font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:800}.admin-home-section-title{display:flex;justify-content:space-between;align-items:end;margin-bottom:16px}.admin-home-section-title>div span,.admin-list-head>div span{font-size:10px;letter-spacing:.12em;font-weight:800;color:#7a8794}.admin-home-section-title h2,.admin-list-head h2{font-size:24px;letter-spacing:-.035em;margin:5px 0 0}.admin-home-section-title small{color:#7b8794;font-size:11px}.admin-home-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.admin-home-card{position:relative;display:flex;flex-direction:column;min-height:225px;padding:19px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;color:#17202b;box-shadow:0 9px 28px rgba(31,48,66,.055);overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.admin-home-card:before{content:"";position:absolute;inset:0 auto auto 0;width:100%;height:3px;background:#2f6fca}.admin-home-card-green:before{background:#68b82e}.admin-home-card-purple:before{background:#8068d9}.admin-home-card-orange:before{background:#e39a3a}.admin-home-card:hover{transform:translateY(-4px);border-color:#cdd9e3;box-shadow:0 18px 40px rgba(31,48,66,.11)}.admin-home-card-top{display:flex;justify-content:space-between;align-items:center;color:#83909c;font-size:10px;font-weight:800;letter-spacing:.06em}.admin-home-number{color:#2f6fca}.admin-home-count{background:#f6f8fa;border-radius:999px;padding:5px 8px}.admin-home-icon{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;margin:24px 0 14px;background:#edf4ff;color:#2f6fca;font-size:14px;font-weight:900}.admin-home-card-green .admin-home-icon{background:#edf8e6;color:#68a92e}.admin-home-card-purple .admin-home-icon{background:#f0edff;color:#725ed1}.admin-home-card-orange .admin-home-icon{background:#fff4e5;color:#cf8120}.admin-home-card h2{font-size:20px;letter-spacing:-.035em;margin:0 0 7px}.admin-home-card p{font-size:12px;line-height:1.5;color:#6d7986;margin:0}.admin-home-open{margin-top:auto;padding-top:17px;font-size:11px;font-weight:800;color:#2f6fca;display:flex;justify-content:space-between}.admin-home-open b{font-size:18px;line-height:10px}.admin-home-bottom{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:15px}.admin-home-bottom a{display:flex;align-items:center;gap:12px;padding:14px 15px;border:1px solid #dfe5ea;background:#fff;border-radius:17px;color:#17202b;box-shadow:0 7px 20px rgba(31,48,66,.04)}.admin-home-bottom a>span{width:35px;height:35px;border-radius:11px;display:grid;place-items:center;background:#f1f5f8;color:#2f6fca;font-weight:800}.admin-home-bottom div{flex:1;display:grid;gap:2px}.admin-home-bottom b{font-size:12px}.admin-home-bottom small{font-size:10px;color:#7a8794;line-height:1.4}.admin-home-bottom strong{font-size:18px;color:#8b97a3}.admin-content-page{max-width:1180px!important;margin:0 auto!important;padding:38px 0 90px!important}.admin-page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:25px;margin-bottom:25px}.admin-page-head h1{font-size:clamp(38px,5vw,58px);line-height:1;letter-spacing:-.05em;margin:13px 0 8px}.admin-page-head p{max-width:700px;color:#687482;line-height:1.55;margin:0}.admin-back{display:inline-block;color:#2f6fca;font-size:12px;font-weight:800;margin-bottom:13px}.admin-secondary-btn{display:inline-flex;padding:10px 13px;border:1px solid #d8e2eb;border-radius:12px;background:#fff;color:#2f6fca;font-size:11px;font-weight:800}.admin-editor-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.55fr);gap:16px;margin-bottom:18px}.admin-editor-card,.admin-editor-side{border:1px solid #dfe5ea!important;box-shadow:0 10px 28px rgba(31,48,66,.055)!important}.admin-editor-card h2,.admin-editor-side h2{margin-top:7px}.admin-editor-label{font-size:10px;font-weight:800;letter-spacing:.11em;color:#7c8995}.admin-editor-side{display:flex;flex-direction:column;justify-content:center;min-height:320px}.admin-side-icon{width:48px;height:48px;border-radius:15px;background:#edf4ff;color:#2f6fca;display:grid;place-items:center;font-weight:900;font-size:22px}.admin-editor-side p{color:#6f7b88;line-height:1.6;font-size:13px}.admin-side-rule{height:1px;background:#e4e9ed;margin:14px 0}.admin-editor-side b{font-size:13px;color:#2f6fca}.admin-list-card{background:#fff;border:1px solid #dfe5ea;border-radius:22px;overflow:hidden;box-shadow:0 10px 28px rgba(31,48,66,.055)}.admin-list-head{display:flex;justify-content:space-between;align-items:flex-end;padding:19px 20px;border-bottom:1px solid #e5e9ed}.admin-list-head small{color:#7b8794;font-size:10px}.admin-list-row{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #edf0f2}.admin-list-row:last-child{border-bottom:0}.admin-list-row>div{display:grid;gap:4px;min-width:0}.admin-list-row strong{font-size:13px}.admin-list-row small{font-size:10px;color:#7b8794}.admin-empty{padding:30px 20px;color:#7b8794;text-align:center}.admin-table-card{overflow:auto}.admin-table-card table{min-width:820px}.admin-navlinks .admin-nav-logout{color:#d05b5b!important}.admin-navlinks .admin-nav-logout:hover{background:#fff1f1!important;color:#b94343!important}@media(max-width:1050px){.admin-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-content-page,.admin-home-page{padding-left:16px!important;padding-right:16px!important}}@media(max-width:850px){.admin-home-hero{align-items:flex-start;flex-direction:column}.admin-home-status{width:100%;box-sizing:border-box}.admin-home-stats{grid-template-columns:repeat(3,1fr)}.admin-editor-grid{grid-template-columns:1fr}.admin-page-head{align-items:flex-start;flex-direction:column}.admin-secondary-btn{width:100%;justify-content:center;box-sizing:border-box}.admin-home-bottom{grid-template-columns:1fr}.admin-navlinks{display:none!important}.admin-header .nav-toggle{display:grid!important;place-items:center!important}}@media(max-width:560px){.admin-home-page{padding-top:28px!important}.admin-home-hero h1{font-size:42px}.admin-home-hero p{font-size:14px}.admin-home-stats{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:30px}.admin-home-stats div{padding:13px}.admin-home-grid{grid-template-columns:1fr;gap:11px}.admin-home-card{min-height:190px;border-radius:20px;padding:17px}.admin-home-icon{margin-top:19px}.admin-home-card h2{font-size:19px}.admin-home-card p{font-size:12px}.admin-home-section-title{align-items:flex-start;flex-direction:column;gap:5px}.admin-page-head h1{font-size:39px}.admin-list-head{align-items:flex-start;flex-direction:column;gap:5px}.admin-list-row{align-items:flex-start}.admin-list-row .btn{flex:0 0 auto}.admin-editor-side{min-height:0}.admin-table-card{border-radius:18px}.admin-table-card table{font-size:11px}}
 /* ===== VYBE friendly UI polish ===== */
 :root{--vybe-ui-blue:#2f6fca;--vybe-ui-blue-dark:#245aa8;--vybe-ui-blue-soft:#edf4ff;--vybe-ui-green:#68b82e;--vybe-ui-green-soft:#edf8e6;--vybe-ui-text:#17202b;--vybe-ui-muted:#687482;--vybe-ui-line:#dfe5ea;--vybe-ui-surface:#ffffff;--vybe-ui-shadow:0 8px 24px rgba(31,48,66,.07)}
 body{background:#f6f8fa!important;color:var(--vybe-ui-text)!important}
@@ -2863,7 +2865,7 @@ def student_update_seen(item_type,item_id):
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
-        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/timetable">Timetable</a><a href="/admin/settings">Settings</a><a href="/admin/logout">Logout</a>'
+        links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/analytics">Analytics</a><a href="/admin/assistant">VYBE AI Settings</a><a class="admin-nav-logout" href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">Menu</button></div>'
         bottom_nav = ""
@@ -6884,41 +6886,40 @@ def admin_logout():
 def admin_panel():
     con = db()
     stats = {
-        "students": con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],
+        "students": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],
         "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
-        "issues": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+        "timetables": con.execute("SELECT COUNT(*) AS c FROM timetables").fetchone()["c"],
+        "updates": con.execute("SELECT COUNT(*) AS c FROM academic_updates").fetchone()["c"],
         "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
-        "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+        "problems": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
+        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
     }
     online = setting(con, "vybe_online", "1") == "1"
     con.close()
-    body = f"""<section class="section admin-dashboard-page">
-      <div class="admin-dashboard-hero">
-        <div>
-          <div class="badge admin-eyebrow">PRIVATE VYBE CONTROL CENTER</div>
-          <h1>Admin dashboard.</h1>
-          <p class="admin-dashboard-subtitle">A simple control center for running VYBE. Choose an area below instead of searching through dozens of buttons.</p>
-        </div>
-        <div class="admin-status-pill {{"is-online" if online else "is-offline"}}"><span></span>{{"VYBE is online" if online else "VYBE is offline"}}</div>
+    cards = [
+        ("01", "Students & Access", "Approve requests, block/unblock students and manage publisher access.", "/admin/students", stats["students"], "STUDENTS", "blue"),
+        ("02", "Community", "Turn Community Chat on/off and moderate student messages.", "/admin/community-chat", stats["messages"], "MESSAGES", "purple"),
+        ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green"),
+        ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue"),
+        ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green"),
+        ("06", "Help Desk", "Review student problems, change status and remove old reports.", "/admin/problems", stats["problems"], "REPORTS", "orange"),
+        ("07", "Announcements", "Create campus-wide announcements and remove outdated ones.", "/admin/announcements", stats["announcements"], "LIVE", "orange"),
+        ("08", "Events", "Create upcoming campus events and delete finished or incorrect ones.", "/admin/events", stats["events"], "EVENTS", "purple"),
+    ]
+    card_html = ''.join(f'<a class="admin-home-card admin-home-card-{tone}" href="{href}"><div class="admin-home-card-top"><span class="admin-home-number">{num}</span><span class="admin-home-count">{count} {label}</span></div><div class="admin-home-icon">{num[-1]}</div><h2>{title}</h2><p>{desc}</p><span class="admin-home-open">Open page <b>→</b></span></a>' for num,title,desc,href,count,label,tone in cards)
+    body = f"""<section class="section admin-home-page">
+      <div class="admin-home-hero">
+        <div><span class="admin-home-kicker">PRIVATE VYBE ADMIN</span><h1>Control everything<br><em>from one place.</em></h1><p>Choose exactly what you want to manage. Every card opens its own admin page with the controls for that area.</p></div>
+        <div class="admin-home-status {"online" if online else "offline"}"><span></span><div><strong>{"VYBE is online" if online else "VYBE is offline"}</strong><small>Public access status</small></div><a href="/admin/status">Manage</a></div>
       </div>
-      <div class="admin-stat-strip">
-        <div><strong>{{stats["students"]}}</strong><span>Students</span></div><div><strong>{{stats["pending"]}}</strong><span>Pending</span></div><div><strong>{{stats["issues"]}}</strong><span>Problems</span></div><div><strong>{{stats["resources"]}}</strong><span>Resources</span></div><div><strong>{{stats["community_messages"]}}</strong><span>Chat messages</span></div>
-      </div>
-      <div class="admin-section-heading"><div><span>CONTROL CENTER</span><h2>Manage VYBE</h2></div><a href="/admin/manage" class="admin-open-all">Open all controls <b>→</b></a></div>
-      <div class="admin-main-grid">
-        <a class="admin-control-card admin-card-blue" href="/admin/manage#people"><div class="admin-card-icon">01</div><div class="admin-card-copy"><span class="admin-card-label">PEOPLE</span><h3>Students & access</h3><p>Approve students, manage accounts and review problem history.</p></div><div class="admin-card-arrow">→</div></a>
-        <a class="admin-control-card admin-card-green" href="/admin/manage#academics"><div class="admin-card-icon">02</div><div class="admin-card-copy"><span class="admin-card-label">ACADEMICS</span><h3>Academic content</h3><p>Resources, Academic Hub, timetables and academic updates.</p></div><div class="admin-card-arrow">→</div></a>
-        <a class="admin-control-card admin-card-orange" href="/admin/manage#campus"><div class="admin-card-icon">03</div><div class="admin-card-copy"><span class="admin-card-label">CAMPUS</span><h3>Campus updates</h3><p>Announcements, events and faculty/contact information.</p></div><div class="admin-card-arrow">→</div></a>
-        <a class="admin-control-card admin-card-purple" href="/admin/manage#community"><div class="admin-card-icon">04</div><div class="admin-card-copy"><span class="admin-card-label">COMMUNITY</span><h3>Student community</h3><p>Moderate Community Chat and saved student problem chats.</p></div><div class="admin-card-arrow">→</div></a>
-        <a class="admin-control-card admin-card-dark" href="/admin/manage#assistant"><div class="admin-card-icon">05</div><div class="admin-card-copy"><span class="admin-card-label">VYBE AI</span><h3>Assistant control</h3><p>Manage knowledge, memories and the Assistant ON/OFF state.</p></div><div class="admin-card-arrow">→</div></a>
-        <a class="admin-control-card admin-card-slate" href="/admin/manage#system"><div class="admin-card-icon">06</div><div class="admin-card-copy"><span class="admin-card-label">SYSTEM</span><h3>Security & settings</h3><p>Public status, security, login history, password requests and analytics.</p></div><div class="admin-card-arrow">→</div></a>
-      </div>
-      <div class="admin-quick-row">
-        <a href="/admin/status" class="admin-quick-card"><span class="admin-quick-dot {{"green" if online else "red"}}"></span><div><b>VYBE public status</b><small>{{"Currently online — students can use VYBE." if online else "Currently offline — public/student access is blocked."}}</small></div><span>→</span></a>
-        <a href="/admin/analytics" class="admin-quick-card"><span class="admin-quick-icon">↗</span><div><b>Analytics</b><small>View usage and community activity.</small></div><span>→</span></a>
-      </div>
+      <div class="admin-home-stats"><div><b>{stats["students"]}</b><span>Students</span></div><div><b>{stats["pending"]}</b><span>Pending</span></div><div><b>{stats["updates"]}</b><span>Academic updates</span></div><div><b>{stats["problems"]}</b><span>Help desk</span></div><div><b>{stats["events"]}</b><span>Events</span></div></div>
+      <div class="admin-home-section-title"><div><span>ADMIN AREAS</span><h2>Choose a section</h2></div><small>Each card opens a separate management page.</small></div>
+      <div class="admin-home-grid">{card_html}</div>
+      <div class="admin-home-bottom"><a href="/admin/settings"><span>⚙</span><div><b>Settings</b><small>General VYBE configuration, Drive links and notifications.</small></div><strong>→</strong></a><a href="/admin/analytics"><span>↗</span><div><b>Analytics</b><small>See usage, students, content and community activity.</small></div><strong>→</strong></a><a href="/admin/assistant"><span>✦</span><div><b>VYBE AI Settings</b><small>Manage assistant knowledge and controls.</small></div><strong>→</strong></a></div>
     </section>"""
-    return layout("Admin", body, admin=True)
+    return layout("Admin Dashboard", body, admin=True)
 
 
 @app.route("/admin/manage")
@@ -7286,6 +7287,45 @@ def delete_timetable(tid):
     con.close(); return redirect(url_for("admin_timetable"))
 
 
+@app.route("/admin/academic-updates", methods=["GET", "POST"])
+@admin_required
+def admin_academic_updates():
+    con = db()
+    if request.method == "POST":
+        kind = request.form.get("kind", "General Update").strip()[:80]
+        category = request.form.get("category", "General").strip()[:80]
+        title = request.form.get("title", "").strip()[:180]
+        description = request.form.get("description", "").strip()[:4000]
+        course = request.form.get("course", "").strip()[:100]
+        semester = request.form.get("semester", "").strip()[:100]
+        subject = request.form.get("subject", "").strip()[:120]
+        event_date = request.form.get("event_date", "").strip()[:80]
+        external_url = request.form.get("external_url", "").strip()[:500]
+        f = request.files.get("file")
+        if not title or not description:
+            con.close(); flash("Title and description are required."); return redirect(url_for("admin_academic_updates"))
+        if external_url:
+            parsed = urlparse(external_url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                con.close(); flash("Use a valid http or https external URL."); return redirect(url_for("admin_academic_updates"))
+        filename = original_name = mime_type = None; file_data = None
+        if f and f.filename:
+            suffix = Path(f.filename).suffix.lower()
+            if suffix not in ALLOWED_EXT:
+                con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_updates"))
+            original_name = Path(f.filename).name[:240]; filename = secrets.token_hex(16) + suffix
+            mime_type = f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data = f.read()
+            if len(file_data) > 20 * 1024 * 1024:
+                con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_updates"))
+            f.stream.seek(0); f.save(UPLOAD_DIR / filename)
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
+        con.commit(); con.close(); flash("Academic update published."); return redirect(url_for("admin_academic_updates"))
+    rows = con.execute("SELECT * FROM academic_updates ORDER BY id DESC").fetchall(); con.close()
+    table = "".join(f"<div class='admin-list-row'><div><span class='pill'>{esc(r['kind'])}</span><strong>{esc(r['title'])}</strong><small>{esc(r['category'])} · {esc(r['event_date'] or r['created_at'])}</small></div><a class='btn danger' href='/admin/academic-update/{r['id']}/delete'>Delete</a></div>" for r in rows)
+    body = f"""<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMICS</span><h1>Academic Updates.</h1><p>Publish the notices students need to see. Every published update can be deleted from this page.</p></div><a href="/admin/academic-hub" class="admin-secondary-btn">Academic Hub →</a></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option><option>Helpdesk</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="What should students know?" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon">↗</span><h2>Student visibility</h2><p>New academic updates become available to students through Updates, notifications and Ask VYBE context.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published updates</h2></div><small>Delete anything that is outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>"""
+    return layout("Academic Updates", body, admin=True)
+
+
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
@@ -7363,9 +7403,21 @@ def delete_resource(rid):
 @admin_required
 def admin_problems():
     con=db(); rows=con.execute("SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC").fetchall(); con.close()
-    html_rows="".join(f'<tr><td>#{r["id"]}</td><td>{esc(r["name"])}</td><td>{esc(r["student_id"])}</td><td>{esc(r["title"])}<br><span class="small">{esc(r["description"])}</span></td><td>{esc(r["status"])}</td><td><a class="btn dark" href="/admin/problem/{r["id"]}/status">Next status</a></td></tr>' for r in rows)
-    body=f'''<section class="section"><h1>Campus problems.</h1><p class="muted">Admins manage status only. Community solutions are never moderated here.</p><div class="card tablewrap"><table><tr><th>#</th><th>Reporter</th><th>Private Student ID</th><th>Problem</th><th>Status</th><th>Action</th></tr>{html_rows or '<tr><td colspan="6">No problems.</td></tr>'}</table></div></section>'''
-    return layout("Problems",body,admin=True)
+    html_rows="".join(f"<tr><td>#{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['student_id'])}</td><td><strong>{esc(r['title'])}</strong><br><span class='small'>{esc(r['description'])}</span></td><td><span class='pill'>{esc(r['status'])}</span></td><td><div class='actions'><a class='btn dark' href='/admin/problem/{r['id']}/status'>Next status</a><form method='post' action='/admin/problem/{r['id']}/delete'><button class='btn danger'>Delete</button></form></div></td></tr>" for r in rows)
+    body=f"""<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">CAMPUS SUPPORT</span><h1>Help Desk.</h1><p>Review student problems, move their status forward and remove reports that are no longer needed.</p></div></div><div class="card tablewrap admin-table-card"><table><tr><th>#</th><th>Reporter</th><th>Student ID</th><th>Problem</th><th>Status</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="6">No help desk reports.</td></tr>'}</table></div></section>"""
+    return layout("Help Desk",body,admin=True)
+
+
+@app.route("/admin/problem/<int:iid>/delete", methods=["POST"])
+@admin_required
+def delete_problem(iid):
+    con = db()
+    con.execute("DELETE FROM helpful_votes WHERE solution_id IN (SELECT id FROM solutions WHERE issue_id=?)", (iid,))
+    con.execute("DELETE FROM accepted_solutions WHERE issue_id=?", (iid,))
+    con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
+    con.execute("DELETE FROM issues WHERE id=?", (iid,))
+    con.commit(); con.close(); flash("Help desk report deleted.")
+    return redirect(url_for("admin_problems"))
 
 
 @app.route("/admin/problem/<int:iid>/status")
