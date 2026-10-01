@@ -2910,11 +2910,24 @@ def _admin_update_feed(con, student_id, limit=18):
             elif typ=="event": target="/events"
             else: target=f"/student-admin-solution/{rid}"
             items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
-    items.sort(key=lambda x:x["created_at"],reverse=True); items=items[:limit]
+    # The bell is an UNREAD inbox, not a history list.  Anything already
+    # recorded in student_update_views has been opened/seen and must disappear
+    # from the bell completely.  The view row is intentionally kept in the DB
+    # as the read-state marker so the same item can never come back as NEW.
+    unread_items=[]
     for x in items:
-        try: x["unread"]=not bool(con.execute("SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",(student_id,x["type"],x["id"])).fetchone())
-        except Exception: x["unread"]=False
-    return items
+        try:
+            seen=bool(con.execute(
+                "SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",
+                (student_id,x["type"],x["id"]),
+            ).fetchone())
+        except Exception:
+            seen=True
+        if not seen:
+            x["unread"]=True
+            unread_items.append(x)
+    unread_items.sort(key=lambda x:x["created_at"],reverse=True)
+    return unread_items[:limit]
 
 
 def _mark_admin_update_seen(student_id,item_type,item_id):
@@ -3046,12 +3059,13 @@ def layout(title, body, admin=False):
         _alert_items=[]
         for x in _header_updates:
             href=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}?next={quote(x["url"], safe="/")}'
-            new_cls=' is-new' if x["unread"] else ''
-            state_label='NEW' if x["unread"] else 'VIEWED'
-            _alert_items.append(f'<a class="vybe-header-alert-item{new_cls}" href="{esc(href)}" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">{state_label}</span><span class="vybe-alert-arrow">›</span></a>')
+            # Every item returned by _admin_update_feed is unread.  There is
+            # deliberately no VIEWED state in the bell: opening an item marks
+            # it seen and it disappears from the next bell render.
+            _alert_items.append(f'<a class="vybe-header-alert-item is-new" href="{esc(href)}" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></a>')
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">You are all caught up.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Admin updates you haven't opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
+        header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Only items you have not opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
