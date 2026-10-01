@@ -140,6 +140,39 @@ def now_ist():
     from zoneinfo import ZoneInfo
     return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
 
+def _admin_datetime_to_utc(value):
+    from zoneinfo import ZoneInfo
+    value=(value or "").strip()
+    if not value: return now()
+    try:
+        dt=datetime.fromisoformat(value)
+        if dt.tzinfo is None: dt=dt.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    except Exception: return now()
+
+def _cleanup_expired_campus_content(con):
+    try:
+        con.execute("DELETE FROM announcements WHERE expires_at IS NOT NULL AND expires_at<>'' AND expires_at<=?", (now(),))
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+    try:
+        from zoneinfo import ZoneInfo
+        current=datetime.now(ZoneInfo("Asia/Kolkata"))
+        rows=con.execute("SELECT id,event_date,event_time FROM events").fetchall()
+        for r in rows:
+            try:
+                t=str(r["event_time"] or "23:59")
+                start=datetime.fromisoformat(f"{r['event_date']}T{t}").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+                if current >= start + timedelta(hours=5):
+                    con.execute("DELETE FROM events WHERE id=?", (int(r["id"]),))
+            except Exception: continue
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+    try: con.commit()
+    except Exception: pass
+
 
 def record_admin_login(con, success, event="login"):
     """Record admin authentication activity without storing passwords."""
@@ -628,6 +661,23 @@ def init_db():
             )""",
         ]
     con.executescript(statements)
+    # Additive scheduling/location fields for announcements and events.
+    for _sql in (
+        "ALTER TABLE announcements ADD COLUMN publish_at TEXT",
+        "ALTER TABLE events ADD COLUMN publish_at TEXT",
+        "ALTER TABLE events ADD COLUMN location_url TEXT",
+    ):
+        try: con.execute(_sql)
+        except Exception:
+            try: con.rollback()
+            except Exception: pass
+    try:
+        con.execute("UPDATE announcements SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+        con.execute("UPDATE events SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+        con.commit()
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
     # Additive Academic Hub storage. Existing VYBE tables are left untouched.
     if con.is_pg:
         con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BYTEA, created_at TEXT NOT NULL)""")
@@ -937,6 +987,10 @@ def healthz():
 @app.before_request
 def global_online_gate():
     path = request.path
+    try:
+        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
+    except Exception:
+        pass
     if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
     try:
@@ -4034,17 +4088,19 @@ def logout():
 
 
 def _active_announcements(con, limit=6):
+    current=now()
     return con.execute(
-        "SELECT * FROM announcements WHERE expires_at IS NULL OR expires_at='' OR expires_at>=? "
-        "ORDER BY CASE WHEN priority='High' THEN 0 WHEN priority='Important' THEN 1 ELSE 2 END, id DESC LIMIT ?",
-        (now(), limit)
+        "SELECT * FROM announcements WHERE (publish_at IS NULL OR publish_at='' OR publish_at<=?) AND (expires_at IS NULL OR expires_at='' OR expires_at>?) ORDER BY CASE WHEN priority='High' THEN 0 WHEN priority='Important' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+        (current,current,limit)
     ).fetchall()
 
 
 def _upcoming_events(con, limit=6):
+    from zoneinfo import ZoneInfo
+    today=datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
     return con.execute(
-        "SELECT * FROM events WHERE event_date>=? ORDER BY event_date ASC, event_time ASC, id ASC LIMIT ?",
-        (datetime.now(timezone.utc).strftime("%Y-%m-%d"), limit)
+        "SELECT * FROM events WHERE (publish_at IS NULL OR publish_at='' OR publish_at<=?) AND event_date>=? ORDER BY event_date ASC, event_time ASC, id ASC LIMIT ?",
+        (now(),today,limit)
     ).fetchall()
 
 
@@ -4870,7 +4926,7 @@ def events():
     con=db(); rows=_upcoming_events(con,30); _mark_all_page_items_seen(con,session["student_db_id"],"event","events"); con.commit(); con.close()
     cards=""
     for r in rows:
-        cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p><p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
+        cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p>{(f'<p><a class="btn" href="{esc(r["location_url"])}" target="_blank" rel="noopener">Open location in Google Maps ↗</a></p>' if r["location_url"] else "")}<p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
     body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>What's happening.</h1><p class="muted">Upcoming events and activities around campus.</p></section><section class="section grid">{cards or '<div class="empty">No upcoming events.</div>'}</section>'''
     return layout("Events",body)
 
@@ -7348,18 +7404,22 @@ def admin_announcements():
         title=request.form.get("title","").strip()[:160]
         message=request.form.get("message","").strip()[:3000]
         priority=request.form.get("priority","Normal").strip()
+        publish_at=request.form.get("publish_at","").strip()[:40]
         expires=request.form.get("expires_at","").strip()[:40]
         if priority not in ("Normal","Important","High"): priority="Normal"
-        if not title or not message:
-            con.close(); flash("Title and announcement message are required."); return redirect(url_for("admin_announcements"))
-        con.execute("INSERT INTO announcements(title,message,priority,created_at,expires_at) VALUES(?,?,?,?,?)", (title,message,priority,now(),expires or None))
+        if not title or not message or not publish_at or not expires:
+            con.close(); flash("Title, message, publish date and automatic deletion date are required."); return redirect(url_for("admin_announcements"))
+        publish_utc=_admin_datetime_to_utc(publish_at); expires_utc=_admin_datetime_to_utc(expires)
+        if expires_utc <= publish_utc:
+            con.close(); flash("Automatic deletion must be after the publish date."); return redirect(url_for("admin_announcements"))
+        con.execute("INSERT INTO announcements(title,message,priority,created_at,publish_at,expires_at) VALUES(?,?,?,?,?,?)", (title,message,priority,publish_utc,publish_utc,expires_utc))
         con.commit(); con.close()
         flash("Announcement published to VYBE.")
         return redirect(url_for("admin_announcements"))
     rows=con.execute("SELECT * FROM announcements ORDER BY id DESC").fetchall()
     con.close()
-    html_rows="".join(f'''<tr><td><span class="pill">{esc(r["priority"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"][:220])}</span></td><td>{esc(r["created_at"])}</td><td>{esc(r["expires_at"] or "No expiry")}</td><td><form method="post" action="/admin/announcement/{r["id"]}/delete" onsubmit="return confirm('Delete this announcement?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><input type="datetime-local" name="expires_at"><div class="small">Expiry is optional. Students see active announcements on their dashboard.</div><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>How it works</h2><p class="muted">Published announcements appear on student dashboards, the Announcements page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Priority</th><th>Announcement</th><th>Created</th><th>Expires</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No announcements yet.</td></tr>'}</table></div></section></section>'''
+    html_rows="".join(f'''<tr><td><span class="pill">{esc(r["priority"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["message"][:220])}</span></td><td>{esc(r["publish_at"] or r["created_at"])}</td><td>{esc(r["expires_at"] or "No expiry")}</td><td><form method="post" action="/admin/announcement/{r["id"]}/delete" onsubmit="return confirm('Delete this announcement?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">CAMPUS ANNOUNCEMENTS</div><h1>Announcements.</h1><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Announcement title" required><select name="priority"><option>Normal</option><option>Important</option><option>High</option></select><textarea name="message" maxlength="3000" placeholder="Write the campus update..." required></textarea><div class="two"><label class="small">Date of publish<input type="datetime-local" name="publish_at" required></label><label class="small">Automatic deletion<input type="datetime-local" name="expires_at" required></label></div><div class="small">Shown after publish time and automatically deleted at the deletion time.</div><button class="btn accent">Publish announcement →</button></form></div><div class="card"><h2>How it works</h2><p class="muted">Published announcements appear on student dashboards, the Announcements page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Priority</th><th>Announcement</th><th>Publish date</th><th>Auto-delete</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No announcements yet.</td></tr>'}</table></div></section></section>'''
     return layout("Announcements",body,admin=True)
 
 
@@ -7379,18 +7439,31 @@ def admin_events():
         title=request.form.get("title","").strip()[:160]
         event_date=request.form.get("event_date","").strip()[:20]
         event_time=request.form.get("event_time","").strip()[:20]
-        location=request.form.get("location","").strip()[:160]
+        publish_at=request.form.get("publish_at","").strip()[:40]
+        location=request.form.get("location","").strip()[:240]
+        location_url=request.form.get("location_url","").strip()[:500]
         description=request.form.get("description","").strip()[:1500]
-        if not title or not event_date:
-            con.close(); flash("Event title and date are required."); return redirect(url_for("admin_events"))
-        con.execute("INSERT INTO events(title,event_date,event_time,location,description,created_at) VALUES(?,?,?,?,?,?)", (title,event_date,event_time,location,description,now()))
+        if not title or not event_date or not event_time or not publish_at:
+            con.close(); flash("Event name, publish date, event date and event time are required."); return redirect(url_for("admin_events"))
+        if location_url and (urlparse(location_url).scheme not in ("http","https") or not urlparse(location_url).netloc):
+            con.close(); flash("Use a valid http or https map link."); return redirect(url_for("admin_events"))
+        try:
+            from zoneinfo import ZoneInfo
+            event_dt=datetime.fromisoformat(f"{event_date}T{event_time}").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+            publish_utc=_admin_datetime_to_utc(publish_at)
+            event_utc=event_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            if event_utc <= publish_utc:
+                con.close(); flash("Event publish date must be before the event date and time."); return redirect(url_for("admin_events"))
+        except Exception:
+            con.close(); flash("Please enter a valid event date and time."); return redirect(url_for("admin_events"))
+        con.execute("INSERT INTO events(title,event_date,event_time,location,location_url,description,created_at,publish_at) VALUES(?,?,?,?,?,?,?,?)", (title,event_date,event_time,location,location_url,description,publish_utc,publish_utc))
         con.commit(); con.close()
         flash("Event added to VYBE.")
         return redirect(url_for("admin_events"))
     rows=con.execute("SELECT * FROM events ORDER BY event_date ASC,event_time ASC,id DESC").fetchall()
     con.close()
-    html_rows="".join(f'''<tr><td>{esc(r["event_date"])}</td><td><strong>{esc(r["title"])}</strong><br><span class="small"> {esc(r["event_time"] or "TBA")} ·  {esc(r["location"] or "TBA")}</span></td><td>{esc(r["description"][:180])}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><input type="date" name="event_date" required><input type="time" name="event_time"></div><input name="location" maxlength="160" placeholder="Location"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Details</th><th>Action</th></tr>{html_rows or '<tr><td colspan="4">No events yet.</td></tr>'}</table></div></section></section>'''
+    html_rows="".join(f'''<tr><td>{esc(r["event_date"])}<br><span class="small">{esc(r["event_time"] or "TBA")}</span></td><td><strong>{esc(r["title"])}</strong></td><td>{esc(r["publish_at"] or r["created_at"])}</td><td>{esc(r["description"][:150])}<br><span class="small">{esc(r["location"] or "No location")}</span>{(f'<br><a class="btn" href="{esc(r["location_url"])}" target="_blank" rel="noopener">Open map ↗</a>' if r["location_url"] else '')}</td><td><form method="post" action="/admin/event/{r["id"]}/delete" onsubmit="return confirm('Delete this event?')"><button class="btn danger">Delete now</button></form></td></tr>''' for r in rows)
+    body=f'''<section class="section"><div class="badge">CAMPUS EVENTS</div><h1>Events.</h1><div class="grid2"><div class="card"><h2>Create event</h2><form class="form" method="post"><input name="title" maxlength="160" placeholder="Event name" required><div class="two"><label class="small">Date of publishing<input type="datetime-local" name="publish_at" required></label><label class="small">Date of event<input type="date" name="event_date" required></label></div><label class="small">Time of event<input type="time" name="event_time" required></label><input name="location" maxlength="240" placeholder="Location name / venue"><input name="location_url" maxlength="500" placeholder="Google Maps location link" type="url"><textarea name="description" maxlength="1500" placeholder="Event details"></textarea><div class="small">Automatically deleted 5 hours after the event date and time. You can also delete it manually anytime.</div><button class="btn accent">Create event →</button></form></div><div class="card"><h2>Student experience</h2><p class="muted">Events appear on dashboards, the Events page, search and Ask VYBE context.</p></div></div><section class="section"><div class="card tablewrap"><table><tr><th>Event date</th><th>Event</th><th>Publish date</th><th>Details / location</th><th>Action</th></tr>{html_rows or '<tr><td colspan="5">No events yet.</td></tr>'}</table></div></section></section>'''
     return layout("Events",body,admin=True)
 
 
