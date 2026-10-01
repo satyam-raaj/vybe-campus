@@ -26,7 +26,7 @@ from urllib.parse import urlparse, urljoin, quote
 from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, g, has_request_context
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -149,11 +149,42 @@ class DB:
         self.conn.rollback()
 
     def close(self):
-        self.conn.close()
+        if getattr(self, "_closed", False):
+            return
+        try:
+            self.conn.close()
+        finally:
+            self._closed = True
+            if has_request_context() and getattr(g, "_vybe_db", None) is self:
+                g._vybe_db = None
 
 
 def db():
+    # Reuse one database connection for the entire HTTP request. The previous
+    # implementation opened a connection in before_request and then opened a
+    # second connection again inside the route, which is especially expensive
+    # with Supabase/PostgreSQL.
+    if has_request_context():
+        cached = getattr(g, "_vybe_db", None)
+        if cached is not None and not getattr(cached, "_closed", False):
+            return cached
+        con = DB()
+        g._vybe_db = con
+        return con
     return DB()
+
+
+@app.teardown_request
+def _close_request_db(exception=None):
+    con = getattr(g, "_vybe_db", None)
+    if con is not None and not getattr(con, "_closed", False):
+        try:
+            if exception is not None:
+                con.rollback()
+        except Exception:
+            pass
+        finally:
+            con.close()
 
 
 def now():
@@ -1189,38 +1220,90 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
-def _bump_live_revision_for_admin_change(response):
-    """Bump a DB-backed revision after successful admin/publisher mutations.
+_ONLINE_CACHE_LOCK = threading.Lock()
+_ONLINE_CACHE = {"value": True, "checked": 0.0}
+_CLEANUP_CACHE = {"checked": 0.0}
+_LIVE_REVISION_CACHE = {"value": 0, "checked": 0.0}
 
-    This lets every Gunicorn worker share one tiny live-update signal without
-    keeping websocket state in process memory.
-    """
-    try:
-        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
-            return response
-        if response.status_code >= 400:
-            return response
-        path = request.path or ""
-        # Only content/control mutations should wake the campus live updater.
-        # Student chat already has its own fast incremental polling loop.
-        if not (path.startswith("/admin/") or path.startswith("/publisher")):
-            return response
-        con = db()
-        current = int(setting(con, "vybe_live_revision", "0") or "0")
-        set_setting(con, "vybe_live_revision", str(current + 1))
-        con.commit()
-        con.close()
-    except Exception:
+
+def _cached_online_state(con=None):
+    current = time.monotonic()
+    with _ONLINE_CACHE_LOCK:
+        if current - _ONLINE_CACHE["checked"] < 1.0:
+            return bool(_ONLINE_CACHE["value"])
         try:
-            con.close()
+            own = False
+            if con is None:
+                con = db(); own = True
+            value = setting(con, "vybe_online", "1") == "1"
+            _ONLINE_CACHE["value"] = value
+            _ONLINE_CACHE["checked"] = current
+            if own:
+                con.close()
+            return value
         except Exception:
-            pass
-    return response
+            return bool(_ONLINE_CACHE["value"])
+
+
+def _refresh_live_revision_cache(con=None, force=False):
+    current = time.monotonic()
+    if not force and current - _LIVE_REVISION_CACHE["checked"] < 1.0:
+        return int(_LIVE_REVISION_CACHE["value"])
+    try:
+        own = False
+        if con is None:
+            con = db(); own = True
+        row = con.execute("SELECT value FROM settings WHERE key='live_revision'").fetchone()
+        value = int(row["value"] or 0) if row else 0
+        _LIVE_REVISION_CACHE.update(value=value, checked=current)
+        if own:
+            con.close()
+    except Exception:
+        _LIVE_REVISION_CACHE["checked"] = current
+    return int(_LIVE_REVISION_CACHE["value"])
+
+
+def _bump_live_revision(con):
+    # A monotonic-ish wall-clock token avoids a read/modify/write race when two
+    # admins publish changes at nearly the same time. It is only an opaque
+    # change marker, not a timestamp shown to users.
+    current = time.time_ns()
+    set_setting(con, "live_revision", str(current))
+    _LIVE_REVISION_CACHE.update(value=current, checked=time.monotonic())
+    return current
 
 
 @app.after_request
-def _vybe_live_revision_after_request(response):
-    return _bump_live_revision_for_admin_change(response)
+def _vybe_admin_live_revision(response):
+    # Any successful admin POST can change student-visible state. One revision
+    # bump is much cheaper than making every student poll all content tables.
+    if request.method == "POST" and (request.path.startswith("/admin/") or request.path.startswith("/publisher")) and response.status_code < 400:
+        excluded = ("/admin/login-passkey/", "/admin/passkey/", "/admin/logout")
+        if not request.path.startswith(excluded):
+            try:
+                con = db()
+                _bump_live_revision(con)
+                con.commit()
+            except Exception:
+                pass
+    # Compress large HTML/JSON responses when the client supports gzip. This
+    # is particularly useful because VYBE currently ships a large inline UI
+    # stylesheet with each dynamic page.
+    try:
+        if ("gzip" in request.headers.get("Accept-Encoding", "").lower()
+                and not response.direct_passthrough
+                and response.status_code in (200, 201)
+                and response.headers.get("Content-Encoding") is None
+                and response.content_type in ("text/html", "application/json")
+                and len(response.get_data()) > 2048):
+            raw = response.get_data()
+            import gzip
+            response.set_data(gzip.compress(raw, compresslevel=6, mtime=0))
+            response.headers["Content-Encoding"] = "gzip"
+            response.headers["Vary"] = "Accept-Encoding"
+    except Exception:
+        pass
+    return response
 
 
 @app.before_request
@@ -1239,31 +1322,41 @@ def global_online_gate():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
-    try:
-        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-    except Exception:
-        pass
-    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
-        return None
-    try:
-        con = db()
-        online = setting(con, "vybe_online", "1") == "1"
-        con.close()
-    except Exception:
-        online = True
-    if not online:
-        return redirect(url_for("offline"))
-    active_student = session.get("student_db_id")
-    if active_student:
+
+    # Expiry cleanup used to scan the events table and open/commit a database
+    # connection on EVERY request. Do it at most once per worker per minute.
+    current = time.monotonic()
+    if current - _CLEANUP_CACHE["checked"] >= 60.0:
         try:
             con = db()
-            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
-            con.commit()
-            con.close()
+            _cleanup_expired_campus_content(con)
+            _CLEANUP_CACHE["checked"] = current
         except Exception:
             pass
-    return None
 
+    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
+        return None
+
+    if not _cached_online_state():
+        return redirect(url_for("offline"))
+
+    # last_seen is useful for admin analytics, but writing it on every GET
+    # created another UPDATE+COMMIT on every page load. Throttle it to once per
+    # five minutes per worker/student.
+    active_student = session.get("student_db_id")
+    if active_student:
+        cache = getattr(app, "_last_seen_cache", None)
+        if cache is None:
+            cache = app._last_seen_cache = {}
+        last = cache.get(active_student, 0.0)
+        if current - last >= 300.0:
+            try:
+                con = db()
+                con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
+                cache[active_student] = current
+            except Exception:
+                pass
+    return None
 
 def _safe_500_page():
     # Keep the 500 response independent of the database/layout system so the
@@ -3138,61 +3231,53 @@ a.card textarea{
 
 
 def _admin_update_feed(con, student_id, limit=18):
-    # On the first visit after this feature is deployed, establish a baseline
-    # from the content that already existed. Only subsequently published items
-    # become alerts for that student.
+    """Return only genuinely new campus content without N+1 queries.
+
+    The old implementation fetched up to 80 rows from six tables and then ran
+    a separate student_update_views query for every row. That made every
+    student page load progressively slower as campus data grew. A timestamp
+    baseline plus NOT EXISTS keeps this to one compact UNION query.
+    """
+    baseline_key=f"student_update_baseline_{int(student_id)}"
+    baseline=setting(con,baseline_key,"")
+    if not baseline:
+        baseline=now()
+        set_setting(con,baseline_key,baseline)
+        try: con.commit()
+        except Exception: pass
+        return []
     try:
-        existing_view = con.execute("SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)).fetchone()
-        if not existing_view:
-            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events"),("admin_solution","admin_problem_solutions")):
-                for r in con.execute(f"SELECT id FROM {table}").fetchall():
-                    rid=int(r["id"])
-                    if con.is_pg:
-                        con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING", (student_id,typ,rid,now()))
-                    else:
-                        con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)", (student_id,typ,rid,now()))
-            con.commit()
-            return []
+        rows=con.execute("""
+            SELECT item_type,id,title,detail,created_at FROM (
+              SELECT 'academic' AS item_type,id,title,description AS detail,created_at FROM academic_updates WHERE created_at>?
+              UNION ALL
+              SELECT 'resource',id,title,description AS detail,created_at FROM resources WHERE created_at>?
+              UNION ALL
+              SELECT 'timetable',id,title,original_name AS detail,created_at FROM timetables WHERE created_at>?
+              UNION ALL
+              SELECT 'announcement',id,title,message AS detail,created_at FROM announcements WHERE created_at>?
+              UNION ALL
+              SELECT 'event',id,title,description AS detail,created_at FROM events WHERE created_at>?
+              UNION ALL
+              SELECT 'admin_solution',aps.id,i.title,aps.solution_text,aps.created_at
+              FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id
+              WHERE aps.student_id=? AND aps.created_at>?
+            ) live_items ORDER BY created_at DESC LIMIT ?
+        """,(baseline,baseline,baseline,baseline,baseline,int(student_id),baseline,int(limit))).fetchall()
     except Exception:
-        pass
-    items=[]
-    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates WHERE kind IN ('Result','Date Sheet','Exam Notice','Admit Card') ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
-    for typ,sql,base,label in sources:
-        try:
-            rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
-        except Exception: rows=[]
-        for r in rows:
-            keys=r.keys()
-            detail=str(r["description"] or "")[:120] if "description" in keys else ""
-            if not detail:
-                try: detail=str(r["message"] or r["original_name"] or "")[:120]
-                except Exception: detail=""
-            rid=int(r["id"])
-            if typ=="academic": target=f"/updates#academic-update-{rid}"
-            elif typ=="resource": target=f"/resource/{rid}"
-            elif typ=="timetable": target=f"/timetable-file/{rid}"
-            elif typ=="announcement": target="/announcements"
-            elif typ=="event": target="/events"
-            else: target=f"/student-admin-solution/{rid}"
-            items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
-    # The bell is an UNREAD inbox, not a history list.  Anything already
-    # recorded in student_update_views has been opened/seen and must disappear
-    # from the bell completely.  The view row is intentionally kept in the DB
-    # as the read-state marker so the same item can never come back as NEW.
-    unread_items=[]
-    for x in items:
-        try:
-            seen=bool(con.execute(
-                "SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",
-                (student_id,x["type"],x["id"]),
-            ).fetchone())
-        except Exception:
-            seen=True
-        if not seen:
-            x["unread"]=True
-            unread_items.append(x)
-    unread_items.sort(key=lambda x:x["created_at"],reverse=True)
-    return unread_items[:limit]
+        return []
+    out=[]
+    labels={"academic":"Academic update","resource":"Study resource","timetable":"Timetable","announcement":"Announcement","event":"Campus event","admin_solution":"Admin solution"}
+    for r in rows:
+        typ=str(r["item_type"]); rid=int(r["id"])
+        if typ=="academic": target=f"/updates#academic-update-{rid}"
+        elif typ=="resource": target=f"/resource/{rid}"
+        elif typ=="timetable": target=f"/timetable-file/{rid}"
+        elif typ=="announcement": target="/announcements"
+        elif typ=="event": target="/events"
+        else: target=f"/student-admin-solution/{rid}"
+        out.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":str(r["detail"] or "")[:120],"created_at":str(r["created_at"] or ""),"label":labels.get(typ,typ.title()),"url":target,"unread":True})
+    return out
 
 
 def _mark_admin_update_seen(student_id,item_type,item_id):
@@ -3211,6 +3296,31 @@ def _mark_all_page_items_seen(con,student_id,item_type,table):
             if con.is_pg: con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",(student_id,item_type,rid,now()))
             else: con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)",(student_id,item_type,rid,now()))
     except Exception: pass
+
+
+@app.route("/student/header-updates")
+@student_required
+def student_header_updates():
+    con=db()
+    try:
+        items=_admin_update_feed(con,session["student_db_id"],24)
+        return jsonify({"ok":True,"items":items})
+    finally:
+        con.close()
+
+
+@app.route("/api/live/revision")
+@student_required
+def live_revision():
+    return jsonify({"revision":_refresh_live_revision_cache()})
+
+
+@app.route("/student/live-refresh")
+@student_required
+def student_live_refresh():
+    # Lightweight marker endpoint used by the client. The actual page is only
+    # fetched when the DB-backed revision has changed.
+    return jsonify({"revision":_refresh_live_revision_cache()})
 
 
 @app.route("/student-update-seen/<item_type>/<int:item_id>", methods=["POST"])
@@ -3355,18 +3465,12 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
-        try:
-            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],1000); _header_con.close()
-        except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x["unread"])
-        _alert_items=[]
-        for x in _header_updates:
-            seen_action=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}'
-            # Opening an unread item is a POST state change, preventing a third-party
-            # page from marking notifications as read with a normal link request.
-            _alert_items.append(f'<form class="vybe-header-alert-item-form" method="post" action="{esc(seen_action)}"><input type="hidden" name="next" value="{esc(x["url"])}"><button class="vybe-header-alert-item is-new" type="submit" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></button></form>')
-        _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">You are all caught up.</div>'
-        _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
+        # Do not block the initial page render on the admin-update inbox. It used
+        # to execute hundreds of DB operations while building every student page.
+        # The inbox is populated asynchronously after first paint.
+        _unread_count=0
+        _alert_panel='<div class="vybe-header-alert-empty">Checking for new updates…</div>'
+        _count_badge='<span class="vybe-alert-count" id="vybeHeaderAlertCount" hidden>0</span>'
         header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Only items you have not opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
@@ -3381,15 +3485,20 @@ def layout(title, body, admin=False):
     assistant_widget = ""
     if student:
         try:
-            _ai_con = db()
-            _ai_enabled = setting(_ai_con, "vybe_assistant_enabled", "1") == "1"
-            _ai_raw = setting(_ai_con, "vybe_ai_shortcuts", "[]") or "[]"
-            _ai_con.close()
-            try:
-                _ai_selected = json.loads(_ai_raw)
-                if not isinstance(_ai_selected, list): _ai_selected = []
-            except Exception:
-                _ai_selected = []
+            cache=getattr(app,"_assistant_settings_cache",{"checked":0.0,"enabled":True,"selected":None})
+            if time.monotonic()-cache.get("checked",0.0)>=5.0:
+                _ai_con=db()
+                cache["enabled"]=setting(_ai_con,"vybe_assistant_enabled","1")=="1"
+                raw=setting(_ai_con,"vybe_ai_shortcuts","[]") or "[]"
+                try: selected=json.loads(raw)
+                except Exception: selected=[]
+                cache["selected"]=selected if isinstance(selected,list) else []
+                cache["checked"]=time.monotonic()
+                app._assistant_settings_cache=cache
+            _ai_enabled=bool(cache.get("enabled",True))
+            _ai_selected=list(cache.get("selected") or [])
+            if not _ai_selected:
+                _ai_selected=["study_material","admit_card","date_sheets","previous_papers","timetable","updates"]
         except Exception:
             _ai_enabled = True
             _ai_selected = ["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]
@@ -4029,63 +4138,6 @@ def layout(title, body, admin=False):
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
-/* ===== VYBE LIVE CAMPUS UPDATES =====
-   Admin/publisher changes are detected in the background. The browser
-   refreshes only the visible page content; there is no full page reload. */
-(function(){{
-  const LIVE_REVISION_URL='/api/live/revision';
-  let lastRevision=null, liveBusy=false, liveTimer=null;
-  const isEditable=()=>{{
-    const a=document.activeElement;
-    return !!(a && (a.matches('input,textarea,select,[contenteditable="true"]') || a.closest('form')));
-  }};
-  async function checkLiveRevision(){{
-    if(liveBusy || document.hidden) return;
-    liveBusy=true;
-    try{{
-      const r=await fetch(LIVE_REVISION_URL+'?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
-      if(!r.ok)return;
-      const d=await r.json();
-      const rev=String(d.revision||'0');
-      if(lastRevision===null){{lastRevision=rev;return;}}
-      if(rev===lastRevision)return;
-      lastRevision=rev;
-      // Never overwrite a form while the student is typing. It will catch
-      // the next revision automatically when the form is no longer focused.
-      if(isEditable())return;
-      await softRefreshCampusPage();
-    }}catch(_){{}}finally{{liveBusy=false;}}
-  }}
-  async function softRefreshCampusPage(){{
-    try{{
-      // Live chat has its own incremental message loop; do not replace its
-      // DOM or interrupt its composer when an admin publishes something.
-      if(/^\/(community\/chat|chat)(?:\/|$)/.test(window.location.pathname))return;
-      const shell=document.querySelector('main.page-shell');
-      if(!shell)return;
-      const y=window.scrollY;
-      const r=await fetch(window.location.href+(window.location.search?'&':'?')+'_vybe_live='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Refresh':'1',Accept:'text/html'}}}});
-      if(!r.ok)return;
-      const html=await r.text();
-      const doc=new DOMParser().parseFromString(html,'text/html');
-      const next=doc.querySelector('main.page-shell');
-      if(!next)return;
-      shell.innerHTML=next.innerHTML;
-      window.scrollTo({{top:y,behavior:'auto'}});
-      document.dispatchEvent(new CustomEvent('vybe:live-refresh'));
-      showLiveToast();
-    }}catch(_){{}}
-  }}
-  function showLiveToast(){{
-    let t=document.getElementById('vybeLiveToast');
-    if(!t){{t=document.createElement('div');t.id='vybeLiveToast';t.textContent='VYBE updated';t.style.cssText='position:fixed;right:18px;bottom:86px;z-index:2147483646;padding:9px 13px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(12,20,32,.88);color:#fff;font:700 11px/1 system-ui,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.25);backdrop-filter:blur(14px);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s';document.body.appendChild(t);}}
-    requestAnimationFrame(()=>{{t.style.opacity='1';t.style.transform='translateY(0)';}});
-    clearTimeout(t._timer);t._timer=setTimeout(()=>{{t.style.opacity='0';t.style.transform='translateY(8px)';}},1500);
-  }}
-  function schedule(){{clearInterval(liveTimer);liveTimer=setInterval(checkLiveRevision,1200);}}
-  document.addEventListener('visibilitychange',schedule);
-  if(document.querySelector('main.page-shell')){{checkLiveRevision();schedule();}}
-}})();
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
 const bottomMenu=document.querySelector(".mobile-menu-nav");
@@ -4238,7 +4290,7 @@ if(notificationBell){{
     }}
   }});
   refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,1000);
+  notificationTimer=setInterval(refreshStudentNotifications,5000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -4322,7 +4374,58 @@ if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPro
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
-<script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
+<script>(function(){{
+  const studentPage=!!document.querySelector('.student-nav-compact');
+  if(!studentPage)return;
+  let liveRevision=0, liveBusy=false, lastHeaderLoad=0;
+  async function loadHeaderUpdates(){{
+    if(Date.now()-lastHeaderLoad<1500)return; lastHeaderLoad=Date.now();
+    try{{
+      const r=await fetch('/student/header-updates?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
+      if(!r.ok)return; const data=await r.json(), items=Array.isArray(data.items)?data.items:[];
+      const panel=document.getElementById('vybeHeaderAlertPanel');
+      const count=document.getElementById('vybeHeaderAlertCount');
+      const list=panel&&panel.querySelector('.vybe-header-alert-list');
+      const head=panel&&panel.querySelector('.vybe-header-alert-head span');
+      if(!panel||!list)return;
+      list.innerHTML=items.length?items.map(x=>{{
+        const safe=(v)=>String(v??'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
+        return `<form class="vybe-header-alert-item-form" method="post" action="/student-update-seen/${{encodeURIComponent(x.type)}}/${{x.id}}"><input type="hidden" name="next" value="${{safe(x.url)}}"><button class="vybe-header-alert-item is-new" type="submit"><span class="vybe-alert-type">${{safe(x.label).slice(0,1)}}</span><span class="vybe-alert-copy"><strong>${{safe(x.title)}}</strong><small>${{safe(x.label)}} · ${{safe(x.created_at)}}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></button></form>`;
+      }}).join(''):'<div class="vybe-header-alert-empty">You are all caught up.</div>';
+      if(count){{count.hidden=!items.length;count.textContent=items.length;}}
+      if(head)head.textContent=items.length+' new';
+    }}catch(_){{}}
+  }}
+  async function liveCheck(){{
+    if(liveBusy||document.visibilityState!=='visible')return; liveBusy=true;
+    try{{
+      const r=await fetch('/api/live/revision?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
+      if(!r.ok)return; const data=await r.json(), rev=Number(data.revision||0);
+      if(!liveRevision){{liveRevision=rev;return;}}
+      if(rev!==liveRevision){{
+        liveRevision=rev;
+        // Never replace a form while the student is typing. The next poll will
+        // perform the soft refresh after the interaction finishes.
+        const active=document.activeElement;
+        if(active&&(/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)||active.isContentEditable))return;
+        const page=document.querySelector('main.page-shell');
+        if(page){{
+          const r2=await fetch(location.href,{{credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Refresh':'1'}}}});
+          if(r2.ok){{
+            const text=await r2.text();
+            const doc=new DOMParser().parseFromString(text,'text/html');
+            const next=doc.querySelector('main.page-shell');
+            if(next){{page.replaceWith(next);loadHeaderUpdates();}}
+          }}
+        }}
+      }}
+    }}catch(_){{}}finally{{liveBusy=false;}}
+  }}
+  loadHeaderUpdates();
+  setTimeout(liveCheck,700);
+  setInterval(liveCheck,1500);
+  document.addEventListener('visibilitychange',function(){{if(document.visibilityState==='visible'){{liveCheck();loadHeaderUpdates();}}}});
+}})();</script><script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
 
 
 # ---------------------------------------------------------------------------
@@ -5446,25 +5549,6 @@ def student_notifications_read():
         return jsonify({"ok": False})
     finally:
         con.close()
-
-
-@app.route("/api/live/revision")
-@student_required
-def live_revision():
-    """Tiny DB-backed signal used to detect admin content changes."""
-    con = db()
-    try:
-        revision = setting(con, "vybe_live_revision", "0") or "0"
-        con.close()
-        resp = jsonify({"ok": True, "revision": str(revision)})
-        resp.headers["Cache-Control"] = "no-store, max-age=0"
-        return resp
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
-        return jsonify({"ok": False, "revision": "0"}), 200
 
 
 @app.route("/announcements")
