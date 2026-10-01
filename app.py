@@ -421,6 +421,7 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS contact_terms_consents (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, student_id TEXT NOT NULL, ip_address TEXT NOT NULL, user_agent TEXT NOT NULL DEFAULT '', consented_at TEXT NOT NULL)""",
             """CREATE TABLE IF NOT EXISTS passkeys (
                 id BIGSERIAL PRIMARY KEY,
                 credential_id TEXT NOT NULL UNIQUE,
@@ -564,6 +565,7 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS contact_terms_consents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, student_id TEXT NOT NULL, ip_address TEXT NOT NULL, user_agent TEXT NOT NULL DEFAULT '', consented_at TEXT NOT NULL)""",
             """CREATE TABLE IF NOT EXISTS passkeys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 credential_id TEXT NOT NULL UNIQUE,
@@ -3966,7 +3968,7 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
@@ -5215,7 +5217,7 @@ def dashboard():
     body = f'''<section class="student-home clean-home live-home">
 <div class="home-live-hero">
   <div class="home-live-glow home-live-glow-one"></div><div class="home-live-glow home-live-glow-two"></div>
-  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(s["name"])}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/academics">Open Academic Hub</a></div></div>
+  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(s["name"])}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/contact-terms">Contact / Terms</a></div></div>
   <div class="home-live-orbit"><span class="orbit-dot orbit-dot-a"></span><span class="orbit-dot orbit-dot-b"></span><div class="orbit-core">V</div></div>
 </div>
 <div class="home-section-label">QUICK ACCESS</div>
@@ -8117,6 +8119,76 @@ def admin_campus():
     return layout("Campus", body, admin=True)
 
 
+CONTACT_TERMS_CSS = """<style>
+.contact-terms-page{max-width:980px!important;margin:0 auto!important;padding:48px 0 90px!important}.contact-terms-hero,.contact-terms-card,.admin-contact-card{border:1px solid #dfe5ea;background:#fff;box-shadow:0 14px 40px rgba(31,48,66,.07);border-radius:24px}.contact-terms-hero{padding:30px;background:linear-gradient(135deg,#fff,#f4f9ff)}.contact-terms-kicker,.admin-contact-kicker{font-size:10px;font-weight:900;letter-spacing:.14em;color:#2f6fca}.contact-terms-hero h1{margin:8px 0;font-size:clamp(38px,6vw,62px);letter-spacing:-.05em}.contact-terms-hero p{max-width:720px;color:#687482;line-height:1.65;margin:0}.contact-terms-admin{display:inline-block;margin-top:16px;padding:9px 12px;border-radius:12px;background:#edf8e6;color:#4d8f21;font-size:12px;font-weight:800}.contact-terms-grid,.admin-contact-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;margin-top:18px}.contact-terms-card,.admin-contact-card{padding:23px}.contact-terms-card h2,.admin-contact-card h2{margin:0 0 7px;font-size:21px}.contact-terms-card>p,.admin-contact-card>p{color:#687482;font-size:12px;line-height:1.6;margin:0 0 16px}.contact-terms-list{display:grid;gap:9px;padding:0;margin:0;list-style:none}.contact-terms-list li{display:flex;gap:9px;padding:12px;border:1px solid #e2e8ed;border-radius:14px;background:#f9fbfc;color:#53616d;font-size:12px;line-height:1.5}.contact-terms-list li:before{content:'✓';display:grid;place-items:center;flex:0 0 21px;height:21px;border-radius:7px;background:#edf8e6;color:#57952a;font-weight:900}.contact-terms-form{display:grid;gap:11px}.contact-terms-form label{font-size:10px;font-weight:900;letter-spacing:.07em;color:#687482;text-transform:uppercase}.contact-terms-form input{box-sizing:border-box;width:100%;padding:13px;border:1px solid #dfe5ea;border-radius:13px;background:#fbfcfd;font:inherit}.contact-terms-consent{display:flex!important;gap:10px;align-items:flex-start;padding:13px;border:1px solid #dfe5ea;border-radius:15px;background:#f7fafc}.contact-terms-consent input{width:18px!important;flex:0 0 18px;margin-top:2px}.contact-terms-consent span{font-size:11px;line-height:1.55;text-transform:none;letter-spacing:0;color:#5e6c78}.contact-terms-consent strong{display:block;color:#17202b;margin-bottom:3px}.contact-terms-email{padding:15px;border-radius:16px;background:#172033;color:#fff}.contact-terms-email small{display:block;color:#aeb9c7;font-size:9px;margin-bottom:4px}.contact-terms-email a{color:#fff;font-weight:850;text-decoration:none;word-break:break-word}.contact-terms-locked{padding:15px;border:1px dashed #ccd7e0;border-radius:16px;background:#f8fafc;color:#718090;font-size:11px;line-height:1.5}.contact-terms-foot{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:15px}.contact-terms-ip{font-size:10px;color:#87939e}.admin-consent-list{display:grid;gap:10px;margin-top:15px}.admin-consent-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:12px;align-items:center;padding:14px;border:1px solid #dfe5ea;border-radius:15px;background:#fff}.admin-consent-row strong{display:block;font-size:12px}.admin-consent-row small{display:block;color:#7b8792;font-size:10px;margin-top:3px;word-break:break-word}.admin-consent-pill{padding:6px 8px;border-radius:999px;background:#edf8e6;color:#4d8f21;font-size:9px;font-weight:900}@media(max-width:760px){.contact-terms-page{padding:26px 0 80px!important}.contact-terms-hero{padding:21px;border-radius:20px}.contact-terms-grid,.admin-contact-grid{grid-template-columns:1fr}.contact-terms-card,.admin-contact-card{padding:18px;border-radius:19px}.contact-terms-foot{display:grid}.contact-terms-foot .btn{width:100%;text-align:center}.admin-consent-row{grid-template-columns:1fr;gap:7px}.admin-consent-pill{width:max-content}}
+</style>"""
+
+@app.route("/contact-terms", methods=["GET","POST"])
+def contact_terms():
+    con=db()
+    admin_name=setting(con,"contact_admin_name","VYBE Admin")
+    admin_email=setting(con,"contact_admin_email","")
+    custom_terms=setting(con,"contact_terms_text","")
+    name_prefill=""; sid_prefill=""
+    if session.get("student_db_id"):
+        try:
+            st=con.execute("SELECT name,student_id FROM students WHERE id=?",(int(session["student_db_id"]),)).fetchone()
+            if st: name_prefill=str(st["name"] or ""); sid_prefill=str(st["student_id"] or "")
+        except Exception: pass
+    if request.method=="POST":
+        name=request.form.get("name","").strip()[:160]
+        student_id=request.form.get("student_id","").strip()[:80]
+        if not name or not student_id:
+            con.close(); flash("Please enter your name and Student ID."); return redirect(url_for("contact_terms"))
+        if request.form.get("agree_terms")!="1":
+            con.close(); flash("Please accept the terms before continuing."); return redirect(url_for("contact_terms"))
+        ip=(request.headers.get("X-Forwarded-For",request.remote_addr or "").split(",")[0].strip())[:100]
+        ua=request.headers.get("User-Agent","")[:500]
+        try:
+            con.execute("INSERT INTO contact_terms_consents(name,student_id,ip_address,user_agent,consented_at) VALUES(?,?,?,?,?)",(name,student_id,ip,ua,now_ist()))
+            con.commit(); session["contact_terms_consent"]=True; session["contact_terms_name"]=name; session["contact_terms_student_id"]=student_id
+            flash("Consent recorded. You can now contact the VYBE admin.")
+        except Exception:
+            try: con.rollback()
+            except Exception: pass
+            con.close(); flash("Could not save your consent. Please try again."); return redirect(url_for("contact_terms"))
+        con.close(); return redirect(url_for("contact_terms"))
+    consented=bool(session.get("contact_terms_consent"))
+    if sid_prefill:
+        try: consented=bool(con.execute("SELECT 1 FROM contact_terms_consents WHERE student_id=? LIMIT 1",(sid_prefill,)).fetchone())
+        except Exception: pass
+    name_display=esc(name_prefill or session.get("contact_terms_name","")); sid_display=esc(sid_prefill or session.get("contact_terms_student_id",""))
+    terms_html="""<ul class="contact-terms-list"><li>VYBE keeps the name and Student ID provided for the campus account and support features.</li><li>VYBE may keep operational information such as account timestamps, reported campus problems, solutions, community messages and contribution statistics.</li><li>This contact/terms action records the IP address used when consent is given for the admin audit record.</li><li>Passwords are stored as password hashes rather than plain-text passwords.</li><li>By accepting, you allow the submitted name, Student ID and IP address from this consent to appear on the VYBE admin desk for support and administration.</li><li>The configured admin email is revealed only after the terms are accepted.</li></ul>"""
+    if custom_terms: terms_html += f'<p style="margin-top:14px;white-space:pre-wrap">{esc(custom_terms)}</p>'
+    if consented and admin_email: email_html=f'<div class="contact-terms-email"><small>VYBE ADMIN EMAIL</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a></div>'
+    elif consented: email_html='<div class="contact-terms-locked">Consent recorded. The admin has not configured an email yet.</div>'
+    else: email_html='<div class="contact-terms-locked">Your admin email will appear here after you enter your details and accept the terms.</div>'
+    checked=" checked" if consented else ""
+    body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-hero"><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>Review what VYBE keeps, give the required consent, and then contact the VYBE admin directly.</p><div class="contact-terms-admin">Admin · {esc(admin_name)}</div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>Terms &amp; data use</h2><p>Read these points before revealing the admin contact.</p>{terms_html}</section><section class="contact-terms-card"><h2>Your details</h2><p>Name and Student ID are required before the contact email appears.</p><form class="contact-terms-form" method="post"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div style="margin-top:14px">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">IP is recorded with this consent.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div></section>"""
+    con.close(); return layout("Contact / Terms",body,admin=False)
+
+@app.route("/admin/contact-terms", methods=["GET","POST"])
+@admin_required
+def admin_contact_terms():
+    con=db()
+    if request.method=="POST":
+        admin_name=request.form.get("admin_name","").strip()[:160]
+        admin_email=request.form.get("admin_email","").strip()[:254]
+        custom_terms=request.form.get("custom_terms","").strip()[:10000]
+        if not admin_name or not admin_email or "@" not in admin_email:
+            con.close(); flash("Please enter a valid admin name and email."); return redirect(url_for("admin_contact_terms"))
+        set_setting(con,"contact_admin_name",admin_name); set_setting(con,"contact_admin_email",admin_email); set_setting(con,"contact_terms_text",custom_terms)
+        con.commit(); con.close(); flash("Contact / Terms settings saved."); return redirect(url_for("admin_contact_terms"))
+    admin_name=setting(con,"contact_admin_name","VYBE Admin")
+    admin_email=setting(con,"contact_admin_email","")
+    custom_terms=setting(con,"contact_terms_text","")
+    rows=con.execute("SELECT name,student_id,ip_address,consented_at FROM contact_terms_consents ORDER BY id DESC LIMIT 200").fetchall()
+    con.close()
+    rows_html="".join(f'<div class="admin-consent-row"><div><strong>{esc(r["name"])}</strong><small>ID: {esc(r["student_id"])}</small></div><div><small>IP address</small><strong>{esc(r["ip_address"])}</strong></div><div><small>Consent time</small><strong>{esc(r["consented_at"])}</strong></div><span class="admin-consent-pill">CONSENTED</span></div>' for r in rows)
+    body=f"""{CONTACT_TERMS_CSS}<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Set your admin name and email, add any extra terms, and review consent records.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin contact</h2><p>The email remains hidden from users until they accept the terms.</p><form class="form" method="post"><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form></div><div class="admin-contact-card"><span class="admin-contact-kicker">STUDENT VIEW</span><h2>Preview</h2><p>Students/visitors enter their name and ID, accept the data-use terms, and then see your clickable email.</p><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
+    return layout("Contact / Terms",body,admin=True)
+
+
 @app.route("/admin/settings")
 @admin_required
 def admin_settings():
@@ -8125,8 +8197,9 @@ def admin_settings():
     wa=setting(con,"whatsapp_link","")
     pk=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
+    con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
 
