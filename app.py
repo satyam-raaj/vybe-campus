@@ -283,12 +283,15 @@ def _send_uploaded_content(data, name, mime=None):
     safe_name = Path(name or "uploaded-file").name
     guessed = mime or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
     inline = guessed == "application/pdf" or guessed.startswith("image/")
-    return send_file(
+    response = send_file(
         io.BytesIO(bytes(data)),
         mimetype=guessed,
         as_attachment=not inline,
         download_name=safe_name,
+        max_age=300,
     )
+    response.headers.setdefault("Cache-Control", "private, max-age=300")
+    return response
 
 
 def hash_password(password):
@@ -961,6 +964,12 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
+
+    # Incremental chat polling uses id > after_id; keep that lookup indexed.
+    try:
+        con.execute("CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)")
+    except Exception:
+        pass
     con.commit()
     con.close()
 
@@ -1231,7 +1240,7 @@ def global_online_gate():
     # making the admin Online/Offline switch propagate quickly.
     global _VYBE_ONLINE_CACHE
     now_m = time.monotonic()
-    if now_m - _VYBE_ONLINE_CACHE["at"] >= 5.0:
+    if now_m - _VYBE_ONLINE_CACHE["at"] >= 1.5:
         try:
             con = db()
             _VYBE_ONLINE_CACHE["value"] = setting(con, "vybe_online", "1") == "1"
@@ -3377,7 +3386,7 @@ def layout(title, body, admin=False):
             _ai_selected = ["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]
         _ai_catalog = {
             "study_material": ("Study Material", "/academics?resource_type=Study+material"),
-            "admit_card": ("Admit Card", "/profile#admit-card"),
+            "admit_card": ("Admit Card", "/academic-hub/admit-card"),
             "date_sheets": ("Date Sheets", "/updates?category=Examination"),
             "previous_papers": ("Previous Papers", "/papers"),
             "timetable": ("Timetable", "/timetable"),
@@ -7088,7 +7097,11 @@ def community_chat():
             if mid > 0:
                 try:
                     con.execute("DELETE FROM community_messages WHERE id=? AND student_id=?", (mid, my_id))
-                    con.commit(); flash("Message deleted.")
+                    con.commit()
+                    if request.headers.get("X-VYBE-Live-Chat") == "1":
+                        con.close()
+                        return jsonify({"ok": True, "deleted_id": mid})
+                    flash("Message deleted.")
                 except Exception:
                     con.rollback(); app.logger.exception("Single community message delete failed"); flash("We couldn't delete that message right now. Please try again.")
             con.close(); return redirect(url_for("community_chat"))
@@ -7196,6 +7209,8 @@ def community_chat():
                     app.logger.exception("Student reply notification failed; chat message was preserved")
 
             con.close()
+            if request.headers.get("X-VYBE-Live-Chat") == "1":
+                return jsonify({"ok": True})
             return redirect(url_for("community_chat"))
         except Exception:
             try: con.rollback()
@@ -7331,9 +7346,9 @@ def community_chat():
       function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
-      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},5000);}} if(replyCancel)replyCancel.onclick=clearReply;
-      if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;chatWindow.querySelectorAll('.community-message').forEach(function(e){{last=Math.max(last,Number(e.dataset.messageId)||0);}});const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{chatWindow.appendChild(build(m));}}const temp=[...chatWindow.querySelectorAll('[data-message-id^="temp-"]')].find(function(x){{return x.dataset.tempMessage===String(m.message);}});if(temp)temp.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},700);}} if(replyCancel)replyCancel.onclick=clearReply;
+      if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='46px';clearReply();const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};chatWindow.appendChild(build(optimistic));const tempNode=chatWindow.querySelector('[data-message-id="'+tempId+'"]');if(tempNode)tempNode.dataset.tempMessage=txt;chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('send failed');return r.json();}}).then(function(){{return refresh(true);}}).catch(function(){{if(tempNode)tempNode.remove();sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
     return layout("Chat with Students", body)
@@ -7343,29 +7358,41 @@ def community_chat():
 @app.route("/community/chat/messages", methods=["GET"])
 @student_required
 def community_chat_messages():
-    """Lightweight live-chat endpoint used by the chat page polling loop."""
+    """Fast incremental chat feed; after the initial load only new messages are read."""
     con = db()
     try:
-        rows = con.execute(
-            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-            "s.name, r.message AS reply_message, rs.name AS reply_name "
-            "FROM community_messages cm "
-            "JOIN students s ON s.id=cm.student_id "
-            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-            "LEFT JOIN students rs ON rs.id=r.student_id "
-            "ORDER BY cm.id ASC LIMIT 300"
-        ).fetchall()
+        try:
+            after_id = max(0, int(request.args.get("after_id", "0")))
+        except (TypeError, ValueError):
+            after_id = 0
+        if after_id:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
+                (after_id,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "ORDER BY cm.id DESC LIMIT 300"
+            ).fetchall()
+            rows = list(reversed(rows))
         return jsonify({"messages": [
-            {
-                "id": int(r["id"]),
-                "student_id": int(r["student_id"]),
-                "name": r["name"],
-                "message": r["message"],
-                "created_at": r["created_at"],
-                "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
-                "reply_message": r["reply_message"],
-                "reply_name": r["reply_name"],
-            } for r in rows
+            {"id": int(r["id"]), "student_id": int(r["student_id"]), "name": r["name"],
+             "message": r["message"], "created_at": r["created_at"],
+             "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
+             "reply_message": r["reply_message"], "reply_name": r["reply_name"]}
+            for r in rows
         ]})
     finally:
         con.close()
@@ -7772,7 +7799,7 @@ def admin_assistant():
         ("syllabus", "Syllabus", "Open syllabus resources.", "/academics?resource_type=Syllabus"),
         ("assignments", "Assignments", "Open assignment resources.", "/academics?resource_type=Assignments"),
         ("previous_papers", "Previous Papers", "Open previous-year papers.", "/papers"),
-        ("admit_card", "Admit Card", "Open the student's admit-card area.", "/profile#admit-card"),
+        ("admit_card", "Admit Card", "Open the student's admit-card area.", "/academic-hub/admit-card"),
         ("date_sheets", "Date Sheets", "Open examination/date-sheet updates.", "/updates?category=Examination"),
         ("updates", "Results & Updates", "Open the latest academic updates.", "/updates"),
         ("timetable", "Timetable", "Open the current campus timetable.", "/timetable"),
@@ -8373,9 +8400,7 @@ def add_resource():
         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         file_data=f.read()
         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-        # Vercel functions have an ephemeral/read-only deployment filesystem.
-        # The uploaded bytes are already stored in resources.file_data below,
-        # so do not write a second copy to local disk.
+        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
     con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now())); con.commit(); con.close(); flash("Resource added and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
 
 @app.route("/admin/resource/<int:rid>/delete", methods=["POST"])
