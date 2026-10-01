@@ -1189,6 +1189,30 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
+# Hot-path request state is kept in memory. The previous build opened a new
+# Supabase connection for cleanup, online-state lookup, and last_seen on nearly
+# every request. That made even simple page loads wait on the database.
+_ONLINE_CACHE = {"value": True, "loaded_at": 0.0}
+_ONLINE_CACHE_TTL = 5.0
+_CLEANUP_STATE = {"last_run": 0.0}
+_LAST_SEEN = {}
+
+def _cached_vybe_online():
+    now_m = time.monotonic()
+    if now_m - _ONLINE_CACHE["loaded_at"] < _ONLINE_CACHE_TTL:
+        return _ONLINE_CACHE["value"]
+    try:
+        con = db()
+        value = setting(con, "vybe_online", "1") == "1"
+        con.close()
+        _ONLINE_CACHE["value"] = value
+        _ONLINE_CACHE["loaded_at"] = now_m
+        return value
+    except Exception:
+        # Fail open rather than taking the whole campus offline during a
+        # transient database hiccup. Admin controls remain available.
+        return True
+
 @app.before_request
 def global_online_gate():
     path = request.path
@@ -1205,29 +1229,38 @@ def global_online_gate():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
-    try:
-        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-    except Exception:
-        pass
-    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
-        return None
-    try:
-        con = db()
-        online = setting(con, "vybe_online", "1") == "1"
-        con.close()
-    except Exception:
-        online = True
-    if not online:
-        return redirect(url_for("offline"))
-    active_student = session.get("student_db_id")
-    if active_student:
+
+    # Never block ordinary requests on maintenance work. Cleanup runs at most
+    # once per minute and only when a request happens to reach this process.
+    now_m = time.monotonic()
+    if now_m - _CLEANUP_STATE["last_run"] >= 60.0:
+        _CLEANUP_STATE["last_run"] = now_m
         try:
-            con = db()
-            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
-            con.commit()
-            con.close()
+            cleanup_con = db()
+            _cleanup_expired_campus_content(cleanup_con)
+            cleanup_con.close()
         except Exception:
             pass
+
+    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz", "/"):
+        return None
+
+    if not _cached_vybe_online():
+        return redirect(url_for("offline"))
+
+    # last_seen is useful, but updating Supabase for every request is not.
+    active_student = session.get("student_db_id")
+    if active_student:
+        last = _LAST_SEEN.get(active_student, 0.0)
+        if now_m - last >= 60.0:
+            _LAST_SEEN[active_student] = now_m
+            try:
+                con = db()
+                con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
+                con.commit()
+                con.close()
+            except Exception:
+                pass
     return None
 
 
@@ -4261,10 +4294,9 @@ def offline():
 
 @app.route("/")
 def home():
-    if session.get("student_db_id"):
-        return redirect(url_for("dashboard"))
-    if session.get("admin_authenticated"):
-        return redirect(url_for("admin_panel"))
+    # The public root is always the VYBE landing/front page. Authenticated
+    # users can still use /dashboard or /admin/panel directly. This prevents
+    # a stale browser session from skipping the front page unexpectedly.
     body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
