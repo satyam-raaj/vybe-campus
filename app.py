@@ -113,13 +113,17 @@ _PG_POOL = LifoQueue(maxsize=5)
 _PG_POOL_LOCK = threading.Lock()
 _PG_POOL_URL = None
 
-class DB:
-    """Small SQLite/PostgreSQL abstraction with a tiny PostgreSQL connection pool.
+# Small in-process caches for values that used to cause a database round-trip
+# on every request. They are deliberately short-lived so admin changes become
+# visible quickly without hammering Supabase.
+_ONLINE_CACHE_LOCK = threading.Lock()
+_ONLINE_CACHE_VALUE = None
+_ONLINE_CACHE_EXPIRES = 0.0
+_LAST_SEEN_LOCK = threading.Lock()
+_LAST_SEEN_WRITES = {}
 
-    Supabase/Render requests used to open a brand-new PostgreSQL connection for
-    every query/page. Reusing a handful of connections removes that repeated
-    connection/TLS setup cost while keeping the existing route code unchanged.
-    """
+class DB:
+    """SQLite/PostgreSQL abstraction with a bounded, reusable PG connection pool."""
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
         self._pooled = False
@@ -136,11 +140,23 @@ class DB:
                         try: _PG_POOL.get_nowait().close()
                         except Empty: break
                     _PG_POOL_URL = pg_url
-            try:
-                self.conn = _PG_POOL.get_nowait()
-                self._pooled = True
-            except Empty:
-                self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
+            while True:
+                try:
+                    candidate = _PG_POOL.get_nowait()
+                except Empty:
+                    candidate = None
+                    break
+                try:
+                    if not candidate.closed:
+                        self.conn = candidate
+                        self._pooled = True
+                        break
+                    candidate.close()
+                except Exception:
+                    try: candidate.close()
+                    except Exception: pass
+            if not self._pooled:
+                self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=5)
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -164,23 +180,21 @@ class DB:
         self.conn.rollback()
 
     def close(self):
-        if self.is_pg and self._pooled:
+        if self.is_pg:
             try:
                 self.conn.rollback()
-                _PG_POOL.put_nowait(self.conn)
-            except Exception:
-                try: self.conn.close()
-                except Exception: pass
-        elif self.is_pg:
-            try:
-                self.conn.rollback()
-                _PG_POOL.put_nowait(self.conn)
+                if not self.conn.closed:
+                    try:
+                        _PG_POOL.put_nowait(self.conn)
+                        return
+                    except Exception:
+                        pass
+                self.conn.close()
             except Exception:
                 try: self.conn.close()
                 except Exception: pass
         else:
             self.conn.close()
-
 
 def db():
     return DB()
@@ -935,6 +949,45 @@ def init_db():
             con.execute("ALTER TABLE students ADD COLUMN last_seen TEXT")
     else:
         con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
+
+    # Production indexes: these cover the hot paths used by the student UI,
+    # chat, notifications, publisher, and admin pages. CREATE INDEX is
+    # idempotent and does not alter or delete existing Supabase data.
+    _performance_indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_students_status_id ON students(status,id)",
+        "CREATE INDEX IF NOT EXISTS idx_students_last_seen ON students(last_seen)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_id ON resources(id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_course ON resources(course)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_semester ON resources(semester)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_subject ON resources(subject)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_id ON academic_updates(id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_course ON academic_updates(course)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_semester ON academic_updates(semester)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_subject ON academic_updates(subject)",
+        "CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)",
+        "CREATE INDEX IF NOT EXISTS idx_community_messages_student ON community_messages(student_id,id)",
+        "CREATE INDEX IF NOT EXISTS idx_community_messages_reply ON community_messages(reply_to_id)",
+        "CREATE INDEX IF NOT EXISTS idx_student_notifications_recipient ON student_notifications(recipient_student_id,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_student_notifications_unread ON student_notifications(recipient_student_id,read_at,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_issues_student ON issues(student_id,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_solutions_issue ON solutions(issue_id,id)",
+        "CREATE INDEX IF NOT EXISTS idx_solutions_student ON solutions(student_id,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_announcements_publish ON announcements(publish_at,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_announcements_expiry ON announcements(expires_at)",
+        "CREATE INDEX IF NOT EXISTS idx_events_schedule ON events(event_date,event_time,id)",
+        "CREATE INDEX IF NOT EXISTS idx_events_publish ON events(publish_at,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_password_reset_student_status ON password_reset_requests(student_id,status,id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_login_logs_id ON admin_login_logs(id DESC)",
+    ]
+    for _idx_sql in _performance_indexes:
+        try:
+            con.execute(_idx_sql)
+        except Exception:
+            try: con.rollback()
+            except Exception: pass
     # Student profile/reputation migrations for existing VYBE deployments.
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
@@ -1237,29 +1290,53 @@ def global_online_gate():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
-    try:
-        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-    except Exception:
-        pass
+    # Expiry is handled by the SELECT filters themselves. Running a DELETE
+    # scan against announcements/events on every request was one of the most
+    # expensive hidden costs after moving VYBE to remote PostgreSQL.
     if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
-    try:
-        con = db()
-        online = setting(con, "vybe_online", "1") == "1"
-        con.close()
-    except Exception:
-        online = True
-    if not online:
-        return redirect(url_for("offline"))
-    active_student = session.get("student_db_id")
-    if active_student:
+
+    # Cache the global availability flag for a very short period. The admin
+    # toggle invalidates this cache immediately, so the switch remains useful
+    # without forcing every student request to open a Supabase connection.
+    global _ONLINE_CACHE_VALUE, _ONLINE_CACHE_EXPIRES
+    now_m = time.monotonic()
+    with _ONLINE_CACHE_LOCK:
+        online = _ONLINE_CACHE_VALUE if _ONLINE_CACHE_EXPIRES > now_m else None
+    if online is None:
         try:
             con = db()
-            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
-            con.commit()
+            online = setting(con, "vybe_online", "1") == "1"
             con.close()
         except Exception:
-            pass
+            online = True
+        with _ONLINE_CACHE_LOCK:
+            _ONLINE_CACHE_VALUE = online
+            _ONLINE_CACHE_EXPIRES = time.monotonic() + 2.0
+    if not online:
+        return redirect(url_for("offline"))
+
+    # last_seen is useful for admin presence, but writing it on every page,
+    # image, chat and API request creates needless PostgreSQL writes. Throttle
+    # it to once per student per minute per app worker.
+    active_student = session.get("student_db_id")
+    if active_student:
+        sid = int(active_student)
+        t = time.monotonic()
+        should_write = False
+        with _LAST_SEEN_LOCK:
+            previous = _LAST_SEEN_WRITES.get(sid, 0.0)
+            if t - previous >= 60.0:
+                _LAST_SEEN_WRITES[sid] = t
+                should_write = True
+        if should_write:
+            try:
+                con = db()
+                con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), sid))
+                con.commit()
+                con.close()
+            except Exception:
+                pass
     return None
 
 
@@ -3135,62 +3212,6 @@ a.card textarea{
 
 
 
-def _admin_update_feed(con, student_id, limit=18):
-    # On the first visit after this feature is deployed, establish a baseline
-    # from the content that already existed. Only subsequently published items
-    # become alerts for that student.
-    try:
-        existing_view = con.execute("SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)).fetchone()
-        if not existing_view:
-            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events"),("admin_solution","admin_problem_solutions")):
-                for r in con.execute(f"SELECT id FROM {table}").fetchall():
-                    rid=int(r["id"])
-                    if con.is_pg:
-                        con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING", (student_id,typ,rid,now()))
-                    else:
-                        con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)", (student_id,typ,rid,now()))
-            con.commit()
-            return []
-    except Exception:
-        pass
-    items=[]
-    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates WHERE kind IN ('Result','Date Sheet','Exam Notice','Admit Card') ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
-    for typ,sql,base,label in sources:
-        try:
-            rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
-        except Exception: rows=[]
-        for r in rows:
-            keys=r.keys()
-            detail=str(r["description"] or "")[:120] if "description" in keys else ""
-            if not detail:
-                try: detail=str(r["message"] or r["original_name"] or "")[:120]
-                except Exception: detail=""
-            rid=int(r["id"])
-            if typ=="academic": target=f"/updates#academic-update-{rid}"
-            elif typ=="resource": target=f"/resource/{rid}"
-            elif typ=="timetable": target=f"/timetable-file/{rid}"
-            elif typ=="announcement": target="/announcements"
-            elif typ=="event": target="/events"
-            else: target=f"/student-admin-solution/{rid}"
-            items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
-    # The bell is an UNREAD inbox, not a history list.  Anything already
-    # recorded in student_update_views has been opened/seen and must disappear
-    # from the bell completely.  The view row is intentionally kept in the DB
-    # as the read-state marker so the same item can never come back as NEW.
-    unread_items=[]
-    for x in items:
-        try:
-            seen=bool(con.execute(
-                "SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",
-                (student_id,x["type"],x["id"]),
-            ).fetchone())
-        except Exception:
-            seen=True
-        if not seen:
-            x["unread"]=True
-            unread_items.append(x)
-    unread_items.sort(key=lambda x:x["created_at"],reverse=True)
-    return unread_items[:limit]
 
 
 def _mark_admin_update_seen(student_id,item_type,item_id):
@@ -3202,13 +3223,6 @@ def _mark_admin_update_seen(student_id,item_type,item_id):
     finally: con.close()
 
 
-def _mark_all_page_items_seen(con,student_id,item_type,table):
-    try:
-        for r in con.execute(f"SELECT id FROM {table}").fetchall():
-            rid=int(r["id"])
-            if con.is_pg: con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",(student_id,item_type,rid,now()))
-            else: con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)",(student_id,item_type,rid,now()))
-    except Exception: pass
 
 
 @app.route("/student-update-seen/<item_type>/<int:item_id>", methods=["POST"])
@@ -3333,8 +3347,6 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         try:
             _admin_alert_con = db()
-            _ensure_password_reset_schema(_admin_alert_con)
-            _admin_alert_con.commit()
             _admin_pending_password = int(_admin_alert_con.execute("SELECT COUNT(*) AS c FROM password_reset_requests WHERE status='pending'").fetchone()["c"])
             _admin_alert_con.close()
         except Exception:
@@ -5408,7 +5420,7 @@ def student_notifications_read():
 @app.route("/announcements")
 @student_required
 def announcements():
-    con=db(); rows=_dedupe_content_rows(_active_announcements(con,30), ("title","message","priority","expires_at")); _mark_all_page_items_seen(con,session["student_db_id"],"announcement","announcements"); con.commit(); con.close()
+    con=db(); rows=_active_announcements(con,30); con.close()
     cards=""
     for r in rows:
         badge=" "+esc(r["priority"]) if r["priority"] in ("High","Important") else " Announcement"
@@ -5420,7 +5432,7 @@ def announcements():
 @app.route("/events")
 @student_required
 def events():
-    con=db(); rows=_dedupe_content_rows(_upcoming_events(con,30), ("title","event_date","event_time","location","description","location_url")); _mark_all_page_items_seen(con,session["student_db_id"],"event","events"); con.commit(); con.close()
+    con=db(); rows=_upcoming_events(con,30); con.close()
     cards=""
     for r in rows:
         cards += f'''<div class="card"><div class="badge"> EVENT</div><div class="event-date">{esc(r["event_date"])}</div><h2>{esc(r["title"])}</h2><p class="small"> {esc(r["event_time"] or "Time TBA")} ·  {esc(r["location"] or "Location TBA")}</p>{(f'<p><a class="btn" href="{esc(r["location_url"])}" target="_blank" rel="noopener">Open location in Google Maps ↗</a></p>' if r["location_url"] else "")}<p class="muted" style="white-space:pre-wrap">{esc(r["description"])}</p></div>'''
@@ -5435,7 +5447,7 @@ TIMETABLE_PAGE_CSS = """<style>
 @app.route("/timetable")
 @student_required
 def timetable():
-    con=db(); rows=_dedupe_content_rows(_latest_timetables(con,30), ("title","original_name")); _mark_all_page_items_seen(con,session["student_db_id"],"timetable","timetables"); con.commit(); con.close()
+    con=db(); rows=_latest_timetables(con,20); con.close()
     cards=""
     for r in rows:
         # Student-facing timetable cards intentionally hide the uploaded file name
@@ -5753,7 +5765,6 @@ def academics():
     semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' ORDER BY semester").fetchall()]
     subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' ORDER BY subject").fetchall()]
     types = [r["resource_type"] for r in con.execute("SELECT DISTINCT resource_type FROM resources WHERE resource_type<>'' ORDER BY resource_type").fetchall()]
-    _mark_all_page_items_seen(con, session["student_db_id"], "resource", "resources")
     con.commit()
     con.close()
     resource_cards = ""
@@ -7363,8 +7374,9 @@ def community_chat():
       function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
-      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},3000);}} if(replyCancel)replyCancel.onclick=clearReply;
+      let latestMessageId=0, initialized=false;
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const firstLoad=!initialized,near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;const url=firstLoad?'/community/chat/messages?initial=1':'/community/chat/messages?after_id='+encodeURIComponent(latestMessageId);const res=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];if(firstLoad){{chatWindow.innerHTML='';}}msgs.forEach(function(m){{const id=String(m.id);if(!document.getElementById('community-msg-'+id))chatWindow.appendChild(build(m));const n=Number(m.id);if(n>latestMessageId)latestMessageId=n;}});initialized=true;wire(chatWindow);if((firstLoad||msgs.length)&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{refresh(false).then(function(){{setInterval(function(){{refresh(false);}},5000);}});}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
@@ -7375,18 +7387,34 @@ def community_chat():
 @app.route("/community/chat/messages", methods=["GET"])
 @student_required
 def community_chat_messages():
-    """Lightweight live-chat endpoint used by the chat page polling loop."""
+    """Incremental live-chat endpoint: initial load is capped, later polls fetch only new rows."""
     con = db()
     try:
-        rows = con.execute(
-            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-            "s.name, r.message AS reply_message, rs.name AS reply_name "
-            "FROM community_messages cm "
-            "JOIN students s ON s.id=cm.student_id "
-            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-            "LEFT JOIN students rs ON rs.id=r.student_id "
-            "ORDER BY cm.id ASC LIMIT 300"
-        ).fetchall()
+        try:
+            after_id = max(0, int(request.args.get("after_id", "0") or 0))
+        except (TypeError, ValueError):
+            after_id = 0
+        if after_id:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
+                (after_id,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "ORDER BY cm.id DESC LIMIT 100"
+            ).fetchall()[::-1]
         return jsonify({"messages": [
             {
                 "id": int(r["id"]),
@@ -7869,6 +7897,10 @@ def admin_status():
     if request.method == "POST":
         set_setting(con, "vybe_online", "0" if current else "1")
         con.commit(); con.close()
+        global _ONLINE_CACHE_VALUE, _ONLINE_CACHE_EXPIRES
+        with _ONLINE_CACHE_LOCK:
+            _ONLINE_CACHE_VALUE = not current
+            _ONLINE_CACHE_EXPIRES = time.monotonic() + 30.0
         flash("VYBE is now offline." if current else "VYBE is now online.")
         return redirect(url_for("admin_status"))
     con.close()
@@ -8028,9 +8060,14 @@ def publisher():
                         if len(file_data)>20*1024*1024:
                             flash("Academic update files must be 20 MB or smaller.")
                             raise ValueError("academic update file too large")
-                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-                    con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
-                    con.commit(); flash("Academic update published.")
+                    duplicate=con.execute("SELECT id FROM academic_updates WHERE title=? AND description=? AND course=? AND semester=? AND subject=? AND COALESCE(original_name,'')=COALESCE(?, '') AND created_at>=? ORDER BY id DESC LIMIT 1", (title,description,course,semester,subject,original_name,now_window(30))).fetchone()
+                    if duplicate:
+                        flash("This academic update was already published. Duplicate submission ignored.")
+                    else:
+                        if file_data is not None:
+                            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
+                        con.commit(); flash("Academic update published.")
             elif kind == "academic_resources":
                 title=request.form.get("resource_title","").strip()[:150]
                 typ=request.form.get("resource_type","Study material").strip()[:80]
@@ -8051,9 +8088,14 @@ def publisher():
                         original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
                         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
                         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-                    con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
-                    con.commit(); flash("Academic resource added and indexed for Ask VYBE.")
+                    duplicate=con.execute("SELECT id FROM resources WHERE title=? AND resource_type=? AND course=? AND semester=? AND subject=? AND COALESCE(description,'')=COALESCE(?, '') AND COALESCE(original_name,'')=COALESCE(?, '') AND created_at>=? ORDER BY id DESC LIMIT 1", (title,typ,course,sem,subject,desc,original_name,now_window(30))).fetchone()
+                    if duplicate:
+                        flash("This resource was already added. Duplicate submission ignored.")
+                    else:
+                        if file_data is not None:
+                            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
+                        con.commit(); flash("Academic resource added and indexed for Ask VYBE.")
         except ValueError:
             try: con.rollback()
             except Exception: pass
@@ -9166,4 +9208,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
