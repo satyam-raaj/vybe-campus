@@ -1614,6 +1614,26 @@ def handle_internal_server_error(error):
 
 @app.after_request
 def security_headers(response):
+    # Every successful admin write advances a tiny shared content version.
+    # Student browsers use this version for a lightweight soft-sync, so an
+    # admin publish/edit/delete becomes visible without a browser refresh.
+    if (session.get("admin_authenticated") and request.method in ("POST", "PUT", "PATCH", "DELETE")
+            and 200 <= getattr(response, "status_code", 500) < 400):
+        try:
+            con = db()
+            con.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("student_content_version", now()),
+            )
+            con.commit()
+            con.close()
+        except Exception:
+            try:
+                con.close()
+            except Exception:
+                pass
+            app.logger.warning("Could not advance student content version", exc_info=True)
+
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "same-origin"
@@ -1621,6 +1641,11 @@ def security_headers(response):
     response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://api.openai.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-src 'self' https://drive.google.com https://docs.google.com"
     if session.get("student_db_id"):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    elif request.path == "/" and request.method == "GET":
+        # The public VYBE landing page is database-free and safe to edge-cache.
+        # This lets repeat visits/opening the VYBE link come from the Vercel
+        # edge instead of invoking a Python function every time.
+        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -4283,6 +4308,46 @@ document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")setMenu(false);
 }});
 
+/* VYBE instant navigation warm-up.
+   Start fetching common same-origin GET destinations as soon as the user
+   hovers or touches them. The browser can then reuse the response when the
+   link is opened, making navigation feel near-instant on repeat use without
+   changing the URL or bypassing normal authentication. */
+(function(){{
+  if(window.__vybeLinkWarmup)return;
+  window.__vybeLinkWarmup=true;
+  const warmed=new Set();
+  const skip=(a)=>{{
+    if(!a)return true;
+    const href=a.getAttribute('href')||'';
+    if(!href||href[0]==='#'||href.startsWith('javascript:'))return true;
+    if(a.target&&a.target!==''&&a.target!=='_self')return true;
+    if(a.hasAttribute('download'))return true;
+    if((a.getAttribute('rel')||'').split(/\s+/).includes('external'))return true;
+    try{{
+      const u=new URL(href,location.href);
+      return u.origin!==location.origin || !['http:','https:'].includes(u.protocol);
+    }}catch(_){{return true;}}
+  }};
+  const warm=(a)=>{{
+    if(skip(a))return;
+    const u=new URL(a.href,location.href);
+    const key=u.href;
+    if(warmed.has(key))return;
+    warmed.add(key);
+    // Only warm GET pages; never prefetch a form/action endpoint.
+    fetch(key,{{credentials:'same-origin',cache:'force-cache',priority:'low',headers:{{'X-VYBE-Prefetch':'1'}}}}).catch(()=>{{}});
+  }};
+  document.addEventListener('pointerover',function(e){{
+    const a=e.target.closest&&e.target.closest('a[href]');
+    if(a)warm(a);
+  }},{{passive:true}});
+  document.addEventListener('touchstart',function(e){{
+    const a=e.target.closest&&e.target.closest('a[href]');
+    if(a)warm(a);
+  }},{{passive:true}});
+}})();
+
 document.querySelectorAll(".toggle-password").forEach(function(btn){{
   btn.addEventListener("click",function(){{
     const el=document.getElementById(btn.dataset.target);
@@ -4320,7 +4385,48 @@ if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPro
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
-(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
+(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();(function(){{
+  // Seamless student-side sync: admin changes are detected quickly and the
+  // current page content is replaced in-place, without a browser refresh.
+  // Chat pages keep their own realtime polling so an admin content sync never
+  // interrupts an active conversation.
+  if(!document.body.classList.contains('vybe-student-page') && !document.querySelector('.student-nav-compact')) return;
+  if(window.__vybeContentSyncStarted)return;
+  window.__vybeContentSyncStarted=true;
+  let lastVersion=null;
+  let syncing=false;
+  const syncable=()=>!document.querySelector('.community-chat, #communityChatWindow, .chat-window');
+  async function check(){{
+    if(syncing || !syncable())return;
+    try{{
+      const r=await fetch('/student/content-version',{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
+      if(!r.ok)return;
+      const d=await r.json();
+      const v=String(d.version||'0');
+      if(lastVersion===null){{lastVersion=v;return;}}
+      if(v===lastVersion)return;
+      lastVersion=v;
+      if(document.querySelector('input:focus, textarea:focus, select:focus, [contenteditable="true"]:focus'))return;
+      syncing=true;
+      const y=window.scrollY;
+      const page=await fetch(location.pathname+location.search,{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'text/html','X-VYBE-Silent-Sync':'1'}}}});
+      if(!page.ok){{syncing=false;return;}}
+      const html=await page.text();
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const fresh=doc.querySelector('main.page-shell');
+      const current=document.querySelector('main.page-shell');
+      if(fresh&&current){{
+        current.innerHTML=fresh.innerHTML;
+        current.className=fresh.className;
+        document.title=doc.title;
+        window.scrollTo({{top:y,behavior:'instant'}});
+      }}
+    }}catch(_){{}}
+    syncing=false;
+  }}
+  check();
+  setInterval(check,700);
+}})();</script></body></html>'''
 
 
 # ---------------------------------------------------------------------------
@@ -8530,6 +8636,19 @@ ADMIN_PROBLEMS_CSS = """
 </style>
 
 """
+@app.route("/student/content-version")
+@student_required
+def student_content_version():
+    """Return the latest admin content version without rendering a page."""
+    con = db()
+    try:
+        row = con.execute("SELECT value FROM settings WHERE key=?", ("student_content_version",)).fetchone()
+        version = row["value"] if row else "0"
+    finally:
+        con.close()
+    return jsonify({"version": str(version)})
+
+
 @app.route("/admin/problem-alerts")
 @admin_required
 def admin_problem_alerts():
@@ -9287,3 +9406,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
