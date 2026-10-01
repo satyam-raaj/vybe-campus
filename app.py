@@ -2891,7 +2891,7 @@ def _admin_update_feed(con, student_id, limit=18):
     except Exception:
         pass
     items=[]
-    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
+    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates WHERE kind IN ('Result','Date Sheet','Exam Notice','Admit Card') ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
     for typ,sql,base,label in sources:
         try:
             rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
@@ -5751,56 +5751,50 @@ ACADEMIC_DIRECT_CARD_CSS = """
 @app.route("/updates")
 @student_required
 def academic_updates():
-    kind=request.args.get("kind","").strip()[:80]; category=request.args.get("category","").strip()[:80]; q=request.args.get("q","").strip()[:120]
-    con=db(); sql="SELECT * FROM academic_updates WHERE 1=1"; params=[]
-    if kind: sql+=" AND kind=?"; params.append(kind)
-    if category: sql+=" AND category=?"; params.append(category)
-    if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ? OR course LIKE ?)"; params += [f"%{q}%"]*4
-    sql += " ORDER BY id DESC"; rows=con.execute(sql,params).fetchall(); categories=[r["category"] for r in con.execute("SELECT DISTINCT category FROM academic_updates ORDER BY category").fetchall()]; kinds=[r["kind"] for r in con.execute("SELECT DISTINCT kind FROM academic_updates ORDER BY kind").fetchall()]; _mark_all_page_items_seen(con,session["student_db_id"],"academic","academic_updates"); con.commit(); con.close()
+    allowed_kinds=("Result","Date Sheet","Exam Notice","Admit Card")
+    kind=request.args.get("kind","").strip()[:80]; q=request.args.get("q","").strip()[:120]
+    con=db(); sql="SELECT * FROM academic_updates WHERE kind IN (?,?,?,?)"; params=list(allowed_kinds)
+    if kind in allowed_kinds: sql+=" AND kind=?"; params.append(kind)
+    if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ?)"; params += [f"%{q}%"]*3
+    sql+=" ORDER BY id DESC"; rows=con.execute(sql,params).fetchall()
+    _mark_all_page_items_seen(con,session["student_db_id"],"academic","academic_updates"); con.commit(); con.close()
     selected=lambda value,current:"selected" if value==current else ""
     cards_list=[]
     for r in rows:
-        file_available = bool(r["file_name"] or r["file_data"] is not None)
-        external_target = ""
+        external_target=""
         if r["external_url"]:
-            parsed = urlparse(r["external_url"])
-            if parsed.scheme in ("http", "https") and parsed.netloc:
-                external_target = r["external_url"]
-        if file_available:
-            card_href = f"/academic-update-file/{r['id']}"
-            card_target = ' target="_blank" rel="noopener"'
-            action_text = "Open file"
-        elif external_target:
-            card_href = esc(external_target)
-            card_target = ' target="_blank" rel="noopener noreferrer"'
-            action_text = "Open link"
+            parsed=urlparse(r["external_url"])
+            if parsed.scheme in ("http","https") and parsed.netloc: external_target=r["external_url"]
+        file_available=bool(r["file_name"] or r["file_data"] is not None)
+        if external_target:
+            card_href=esc(external_target); card_target=' target="_blank" rel="noopener noreferrer"'; action_text="Open official link"
+        elif file_available:
+            card_href=f"/academic-update-file/{r['id']}"; card_target=' target="_blank" rel="noopener"'; action_text="Open document"
         else:
-            card_href = f"/academic-update/{r['id']}"
-            card_target = ""
-            action_text = "View update"
-        cards_list.append(f'''<a class="academic-update-card academic-update-large academic-update-clickable" href="{card_href}"{card_target} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["category"])}</span><span class="academic-update-kind">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
+            card_href=f"/academic-update/{r['id']}"; card_target=""; action_text="View notice"
+        cards_list.append(f'''<a class="academic-update-card academic-update-large academic-update-clickable" href="{card_href}"{card_target} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
     cards="".join(cards_list)
-    body=f'''{ACADEMIC_UPDATES_PAGE_CSS}{ACADEMIC_DIRECT_CARD_CSS}<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Stay current.</h1><p class="academic-lead">Results, examination schedules, admit cards, forms, online classes and important campus notices.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search updates"><select name="category"><option value="">All categories</option>{''.join(f'<option value="{esc(x)}" {selected(x,category)}>{esc(x)}</option>' for x in categories)}</select><select name="kind"><option value="">All update types</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in kinds)}</select><button type="submit">Search updates</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No updates match these filters.</div>'}</div></section>'''
+    body=f'''{ACADEMIC_UPDATES_PAGE_CSS}{ACADEMIC_DIRECT_CARD_CSS}<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Important academic updates.</h1><p class="academic-lead">Results, date sheets, exam notices and admit cards — all in one place.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search academic updates"><select name="kind"><option value="">All four updates</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in allowed_kinds)}</select><button type="submit">Search</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>'''
     return layout("Academic Updates",body)
 
 @app.route("/academic-update/<int:uid>")
 @student_required
 def academic_update(uid):
     con=db(); row=con.execute("SELECT * FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
-    if not row: abort(404)
+    if not row or row["kind"] not in ("Result","Date Sheet","Exam Notice","Admit Card"): abort(404)
     file_button=f'<a class="btn academic-btn" href="/academic-update-file/{uid}" target="_blank" rel="noopener">Open document</a>' if row["file_name"] or row["file_data"] is not None else ""
     external=""
     if row["external_url"]:
         parsed=urlparse(row["external_url"])
-        if parsed.scheme in ("http","https") and parsed.netloc: external=f'<a class="btn academic-outline" href="{esc(row["external_url"])}" target="_blank" rel="noopener noreferrer">Open external portal</a>'
-    body=f'''<section class="section"><div class="academic-detail"><div class="academic-kicker">{esc(row["category"])} · {esc(row["kind"])}</div><h1>{esc(row["title"])}</h1><p class="academic-lead">{esc(row["description"])}</p><div class="academic-detail-grid"><div><span>Course</span><strong>{esc(row["course"] or "All")}</strong></div><div><span>Semester</span><strong>{esc(row["semester"] or "All")}</strong></div><div><span>Subject</span><strong>{esc(row["subject"] or "All")}</strong></div><div><span>Date</span><strong>{esc(row["event_date"] or row["created_at"])}</strong></div></div><div class="actions academic-detail-actions">{file_button}{external}<a class="btn dark" href="/updates">Back to updates</a></div></div></section>'''
+        if parsed.scheme in ("http","https") and parsed.netloc: external=f'<a class="btn academic-outline" href="{esc(row["external_url"])}" target="_blank" rel="noopener noreferrer">Open official website ↗</a>'
+    body=f'''<section class="section"><div class="academic-detail"><div class="academic-kicker">{esc(row["kind"])}</div><h1>{esc(row["title"])}</h1><p class="academic-lead">{esc(row["description"])}</p><div class="academic-detail-grid"><div><span>Type</span><strong>{esc(row["kind"])}</strong></div><div><span>Date</span><strong>{esc(row["event_date"] or row["created_at"])}</strong></div></div><div class="actions academic-detail-actions">{external}{file_button}<a class="btn dark" href="/updates">Back to updates</a></div></div></section>'''
     return layout("Academic Update",body)
 
 @app.route("/academic-update-file/<int:uid>")
 @student_required
 def academic_update_file(uid):
-    con=db(); row=con.execute("SELECT file_name,original_name,mime_type,file_data FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
-    if not row or (not row["file_name"] and row["file_data"] is None): abort(404)
+    con=db(); row=con.execute("SELECT kind,file_name,original_name,mime_type,file_data FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
+    if not row or row["kind"] not in ("Result","Date Sheet","Exam Notice","Admit Card") or (not row["file_name"] and row["file_data"] is None): abort(404)
     if row["file_data"] is not None:
         name=row["original_name"] or row["file_name"] or "academic-document"
         return send_file(io.BytesIO(bytes(row["file_data"])),mimetype=row["mime_type"] or mimetypes.guess_type(name)[0] or "application/octet-stream",as_attachment=False,download_name=name)
@@ -7747,69 +7741,33 @@ def delete_timetable(tid):
 @app.route("/admin/academic-updates", methods=["GET", "POST"])
 @admin_required
 def admin_academic_updates():
-    con = db()
-    if request.method == "POST":
-        kind = request.form.get("kind", "General Update").strip()[:80]
-        category = request.form.get("category", "General").strip()[:80]
-        title = request.form.get("title", "").strip()[:180]
-        description = request.form.get("description", "").strip()[:4000]
-        course = request.form.get("course", "").strip()[:100]
-        semester = request.form.get("semester", "").strip()[:100]
-        subject = request.form.get("subject", "").strip()[:120]
-        event_date = request.form.get("event_date", "").strip()[:80]
-        external_url = request.form.get("external_url", "").strip()[:500]
-        f = request.files.get("file")
-        if not title or not description:
-            con.close(); flash("Title and description are required."); return redirect(url_for("admin_academic_updates"))
+    con=db(); allowed_kinds=("Result","Date Sheet","Exam Notice","Admit Card")
+    if request.method=="POST":
+        kind=request.form.get("kind","").strip()[:80]; title=request.form.get("title","").strip()[:180]; description=request.form.get("description","").strip()[:4000]; event_date=request.form.get("event_date","").strip()[:80]; external_url=request.form.get("external_url","").strip()[:500]; f=request.files.get("file")
+        if kind not in allowed_kinds: con.close(); flash("Choose Result, Date Sheet, Exam Notice or Admit Card."); return redirect(url_for("admin_academic_updates"))
+        if not title or not description: con.close(); flash("Title and description are required."); return redirect(url_for("admin_academic_updates"))
         if external_url:
-            parsed = urlparse(external_url)
-            if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                con.close(); flash("Use a valid http or https external URL."); return redirect(url_for("admin_academic_updates"))
-        filename = original_name = mime_type = None; file_data = None
+            parsed=urlparse(external_url)
+            if parsed.scheme not in ("http","https") or not parsed.netloc: con.close(); flash("Use a valid http or https direct website URL."); return redirect(url_for("admin_academic_updates"))
+        if kind in ("Result","Admit Card") and not external_url: con.close(); flash(f"A direct website link is required for {kind}."); return redirect(url_for("admin_academic_updates"))
+        filename=original_name=mime_type=None; file_data=None
         if f and f.filename:
-            suffix = Path(f.filename).suffix.lower()
-            if suffix not in ALLOWED_EXT:
-                con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_updates"))
-            original_name = Path(f.filename).name[:240]; filename = secrets.token_hex(16) + suffix
-            mime_type = f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data = f.read()
-            if len(file_data) > 20 * 1024 * 1024:
-                con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_updates"))
-            f.stream.seek(0); f.save(UPLOAD_DIR / filename)
-        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
-        con.commit(); con.close(); flash("Academic update published."); return redirect(url_for("admin_academic_updates"))
-    rows = con.execute("SELECT * FROM academic_updates ORDER BY id DESC").fetchall(); con.close()
-    table = "".join(f"<div class='admin-list-row'><div><span class='pill'>{esc(r['kind'])}</span><strong>{esc(r['title'])}</strong><small>{esc(r['category'])} · {esc(r['event_date'] or r['created_at'])}</small></div><a class='btn danger' href='/admin/academic-update/{r['id']}/delete'>Delete</a></div>" for r in rows)
-    body = f"""<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMICS</span><h1>Academic Updates.</h1><p>Publish the notices students need to see. Every published update can be deleted from this page.</p></div><a href="/admin/academic-hub" class="admin-secondary-btn">Academic Hub →</a></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option><option>Helpdesk</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="What should students know?" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon">↗</span><h2>Student visibility</h2><p>New academic updates become available to students through Updates, notifications and Ask VYBE context.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published updates</h2></div><small>Delete anything that is outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>"""
-    return layout("Academic Updates", body, admin=True)
-
+            suffix=Path(f.filename).suffix.lower()
+            if suffix not in ALLOWED_EXT: con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_updates"))
+            original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+            if len(file_data)>20*1024*1024: con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_updates"))
+            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,description,"","","",event_date,external_url,filename,original_name,mime_type,file_data,now()))
+        con.commit(); con.close(); flash(f"{kind} published successfully."); return redirect(url_for("admin_academic_updates"))
+    rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
+    table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><a class="btn danger" href="/admin/academic-update/{r["id"]}/delete" onclick="return confirm('Delete this academic update?')">Delete</a></div>''' for r in rows)
+    body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="Direct official website link (required for Result and Admit Card)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon">U</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
+    return layout("Academic Updates",body,admin=True)
 
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
-    con=db()
-    if request.method=="POST":
-        kind=request.form.get("kind","General Update").strip()[:80]; category=request.form.get("category","General").strip()[:80]; title=request.form.get("title","").strip()[:180]; description=request.form.get("description","").strip()[:4000]; course=request.form.get("course","").strip()[:100]; semester=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:120]; event_date=request.form.get("event_date","").strip()[:80]; external_url=request.form.get("external_url","").strip()[:500]
-        f=request.files.get("file")
-        if not title or not description:
-            con.close(); flash("Title and description are required."); return redirect(url_for("admin_academic_hub"))
-        if external_url:
-            parsed=urlparse(external_url)
-            if parsed.scheme not in ("http","https") or not parsed.netloc:
-                con.close(); flash("Use a valid http or https external URL."); return redirect(url_for("admin_academic_hub"))
-        filename=original_name=mime_type=None; file_data=None
-        if f and f.filename:
-            suffix=Path(f.filename).suffix.lower()
-            if suffix not in ALLOWED_EXT:
-                con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_hub"))
-            original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
-            if len(file_data)>20*1024*1024:
-                con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_hub"))
-            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now())); con.commit(); con.close(); flash("Academic update published."); return redirect(url_for("admin_academic_hub"))
-    rows=con.execute("SELECT * FROM academic_updates ORDER BY id DESC").fetchall(); con.close()
-    table="".join(f'''<tr><td><span class="academic-tag">{esc(r["kind"])}</span></td><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["category"])} · {esc(r["event_date"] or r["created_at"])}</span></td><td>{esc(r["course"] or "All")}</td><td>{esc(r["semester"] or "All")}</td><td><a class="btn danger" href="/admin/academic-update/{r["id"]}/delete" onclick="return confirm('Delete this academic update?')">Delete</a></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="academic-kicker">ACADEMIC HUB ADMIN</div><h1>Academic updates.</h1><p class="muted">Publish results, datesheets, admit-card notices, exam forms, online classes, e-books, support information and other academic updates without changing the existing VYBE resource system.</p><div class="grid2"><div class="card"><h2>Publish update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option><option>Helpdesk</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="Describe the update" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish academic update</button></form></div><div class="card"><h2>Resource library</h2><p class="muted">Notes, study material and previous-year papers continue to use the existing VYBE resource uploader, so the existing data and routes remain compatible.</p><a class="btn dark" href="/admin/resources">Manage study resources</a></div></div><section class="section card tablewrap"><table><tr><th>Type</th><th>Update</th><th>Course</th><th>Semester</th><th>Action</th></tr>{table or '<tr><td colspan="5">No academic updates yet.</td></tr>'}</table></section></section>'''
-    return layout("Academic Hub Admin",body,admin=True)
+    return admin_academic_updates()
 
 @app.route("/admin/academic-update/<int:uid>/delete")
 @admin_required
