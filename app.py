@@ -5325,8 +5325,8 @@ def academics():
     for u in updates:
         update_cards += f'''<article class="academic-update-card"><div class="academic-update-line"><span class="academic-update-category">{esc(u["category"])}</span><span class="academic-update-kind">{esc(u["kind"])}</span></div><h3>{esc(u["title"])}</h3><p>{esc(u["description"])}</p><div class="academic-update-foot"><span>{esc(u["event_date"] or u["created_at"])}</span><a class="academic-link" href="/academic-update/{u["id"]}">View details</a></div></article>'''
     selected = lambda value, current: "selected" if value == current else ""
-    body=f'''<section class="academic-hub-page"><section class="academic-hero section"><div class="academic-kicker">ACADEMIC HUB</div><h1>Everything you need for campus study.</h1><p class="academic-lead">Notes, study material, previous-year papers and academic updates, organized in one place.</p><form class="academic-search" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search notes, papers, subjects, results..." aria-label="Search academic resources"><button type="submit">Search</button></form><div class="academic-quick-grid"><a href="/academics?resource_type=Notes" class="academic-quick"><span class="academic-icon">N</span><strong>Study Notes</strong><small>Revision notes</small></a><a href="/papers" class="academic-quick"><span class="academic-icon">P</span><strong>PYQ Papers</strong><small>Previous-year papers</small></a><a href="/updates?kind=Result" class="academic-quick academic-quick-green"><span class="academic-icon">R</span><strong>Results</strong><small>Result updates</small></a><a href="/updates?kind=Date%20Sheet" class="academic-quick"><span class="academic-icon">D</span><strong>Date Sheet</strong><small>Exam schedules</small></a><a href="/updates?kind=Admit%20Card" class="academic-quick"><span class="academic-icon">A</span><strong>Admit Card</strong><small>Exam documents</small></a><a href="/updates?kind=Exam%20Form" class="academic-quick"><span class="academic-icon">F</span><strong>Exam Forms</strong><small>Forms and notices</small></a></div></section>
-<section class="section academic-tools-section"><div class="academic-section-heading"><div><div class="academic-kicker">STUDY TOOLS</div><h2>Academic resources.</h2></div></div><div class="academic-tool-grid"><a class="academic-tool" href="/academics?resource_type=Study%20material"><span class="academic-tool-mark">SM</span><div><strong>Study Material</strong><p>Semester-wise files and reference material.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academics?resource_type=Notes"><span class="academic-tool-mark">N</span><div><strong>Notes</strong><p>Quick revision notes organized by subject.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/papers"><span class="academic-tool-mark">PY</span><div><strong>Previous Papers</strong><p>Practice with previous-year question papers.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/updates"><span class="academic-tool-mark">U</span><div><strong>Academic Updates</strong><p>Results, datesheets, forms and important notices.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/apps"><span class="academic-tool-mark">SG</span><div><strong>Study Applications</strong><p>Useful student calculators and academic utilities.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/issues"><span class="academic-tool-mark">HD</span><div><strong>Student Helpdesk</strong><p>Get help with campus, exams and technical issues.</p></div><span class="academic-arrow">→</span></a></div></section>
+    body=f'''<section class="academic-hub-page"><section class="academic-hero section"><div class="academic-kicker">ACADEMIC HUB</div><h1>Everything you need for campus study.</h1><p class="academic-lead">Notes, study material, previous-year papers and academic updates, organized in one place.</p><form class="academic-search" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search notes, papers, subjects, results..." aria-label="Search academic resources"><button type="submit">Search</button></form><div class="academic-quick-grid"><a href="/academic-hub/notes" class="academic-quick"><span class="academic-icon">N</span><strong>Study Notes</strong><small>Revision notes</small></a><a href="/academic-hub/pyq" class="academic-quick"><span class="academic-icon">P</span><strong>PYQ Papers</strong><small>Previous-year papers</small></a><a href="/academic-hub/results" class="academic-quick academic-quick-green"><span class="academic-icon">R</span><strong>Results</strong><small>Result updates</small></a><a href="/academic-hub/date-sheet" class="academic-quick"><span class="academic-icon">D</span><strong>Date Sheet</strong><small>Exam schedules</small></a><a href="/academic-hub/admit-card" class="academic-quick"><span class="academic-icon">A</span><strong>Admit Card</strong><small>Exam documents</small></a><a href="/academic-hub/exam-forms" class="academic-quick"><span class="academic-icon">F</span><strong>Exam Forms</strong><small>Forms and notices</small></a></div></section>
+<section class="section academic-tools-section"><div class="academic-section-heading"><div><div class="academic-kicker">STUDY TOOLS</div><h2>Academic resources.</h2></div></div><div class="academic-tool-grid"><a class="academic-tool" href="/academic-hub/study-material"><span class="academic-tool-mark">SM</span><div><strong>Study Material</strong><p>Semester-wise files and reference material.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/notes"><span class="academic-tool-mark">N</span><div><strong>Notes</strong><p>Quick revision notes organized by subject.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/pyq"><span class="academic-tool-mark">PY</span><div><strong>Previous Papers</strong><p>Practice with previous-year question papers.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/updates"><span class="academic-tool-mark">U</span><div><strong>Academic Updates</strong><p>Results, datesheets, forms and important notices.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/apps"><span class="academic-tool-mark">SG</span><div><strong>Study Applications</strong><p>Useful student calculators and academic utilities.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/issues"><span class="academic-tool-mark">HD</span><div><strong>Student Helpdesk</strong><p>Get help with campus, exams and technical issues.</p></div><span class="academic-arrow">→</span></a></div></section>
 <section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">LATEST</div><h2>Academic updates.</h2></div><a class="academic-outline" href="/updates">View all</a></div><div class="academic-update-list">{update_cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>
 <section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">RESOURCE LIBRARY</div><h2>Find your material.</h2></div></div><div class="academic-filter-panel"><form class="academic-filter-form" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search by subject or PDF title"><select name="resource_type"><option value="">All resource types</option>{''.join(f'<option value="{esc(x)}" {selected(x,resource_type)}>{esc(x)}</option>' for x in types)}</select><select name="course"><option value="">All courses</option>{''.join(f'<option value="{esc(x)}" {selected(x,course)}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option value="{esc(x)}" {selected(x,semester)}>{esc(x)}</option>' for x in semesters)}</select><select name="subject"><option value="">All subjects</option>{''.join(f'<option value="{esc(x)}" {selected(x,subject)}>{esc(x)}</option>' for x in subjects)}</select><button type="submit">Apply filters</button><a class="academic-reset" href="/academics">Reset</a></form></div><div class="academic-resource-grid">{resource_cards or '<div class="academic-empty">No matching academic resources.</div>'}</div></section></section>'''
     body = ACADEMIC_HUB_CSS + r"""<style>
@@ -5727,6 +5727,91 @@ def academics():
 </style>""" + body
     body = body + '<style>\n/* ===== ACADEMIC HUB — HOMEPAGE LIGHT GLASS MOBILE SHELL ===== */\n@media (max-width:850px){\n  .academic-hub-page{\n    padding:18px 12px 118px!important;\n    width:100%!important;\n    max-width:100%!important;\n    overflow:visible!important;\n  }\n\n  /* Actual global mobile navigation used by VYBE. Keep the page visible through it. */\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav{\n    position:fixed!important;\n    left:12px!important;\n    right:12px!important;\n    bottom:10px!important;\n    width:auto!important;\n    height:64px!important;\n    min-height:64px!important;\n    padding:6px!important;\n    margin:0!important;\n    display:grid!important;\n    grid-template-columns:repeat(3,minmax(0,1fr))!important;\n    gap:5px!important;\n    box-sizing:border-box!important;\n    background:rgba(255,255,255,.58)!important;\n    background-image:linear-gradient(115deg,rgba(255,255,255,.78),rgba(247,251,255,.58) 52%,rgba(247,252,241,.68))!important;\n    border:1px solid rgba(255,255,255,.92)!important;\n    border-radius:21px!important;\n    box-shadow:0 14px 38px rgba(33,55,76,.14),0 3px 10px rgba(33,55,76,.06),inset 0 1px rgba(255,255,255,.96)!important;\n    backdrop-filter:blur(22px) saturate(150%)!important;\n    -webkit-backdrop-filter:blur(22px) saturate(150%)!important;\n    z-index:2147483000!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-menu-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-profile-nav{\n    width:100%!important;\n    height:50px!important;\n    min-height:50px!important;\n    max-width:none!important;\n    min-width:0!important;\n    margin:0!important;\n    padding:4px 5px!important;\n    box-sizing:border-box!important;\n    display:flex!important;\n    flex-direction:column!important;\n    align-items:center!important;\n    justify-content:center!important;\n    gap:3px!important;\n    border:1px solid rgba(211,222,231,.68)!important;\n    border-radius:15px!important;\n    background:rgba(255,255,255,.38)!important;\n    color:#687583!important;\n    box-shadow:inset 0 1px rgba(255,255,255,.9)!important;\n    backdrop-filter:blur(10px)!important;\n    -webkit-backdrop-filter:blur(10px)!important;\n    text-decoration:none!important;\n    font-size:10px!important;\n    font-weight:800!important;\n    line-height:1!important;\n    transition:transform .16s ease,background .16s ease,border-color .16s ease,color .16s ease!important;\n    -webkit-tap-highlight-color:transparent!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav .vybe-nav-icon{\n    width:19px!important;\n    height:19px!important;\n    display:grid!important;\n    place-items:center!important;\n    flex:0 0 19px!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav .vybe-nav-icon svg{\n    width:19px!important;\n    height:19px!important;\n    fill:none!important;\n    stroke:currentColor!important;\n    stroke-width:1.8!important;\n    stroke-linecap:round!important;\n    stroke-linejoin:round!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav .mobile-menu-label{\n    display:block!important;\n    color:inherit!important;\n    font-size:10px!important;\n    font-weight:800!important;\n    line-height:1!important;\n  }\n\n  /* Neutral Menu */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > #vybeBottomMenuButton{\n    background:rgba(255,255,255,.46)!important;\n    color:#697786!important;\n    border-color:rgba(211,222,231,.70)!important;\n  }\n  /* Soft homepage blue */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-home-nav.active{\n    background:linear-gradient(145deg,rgba(238,247,255,.88),rgba(225,240,255,.66))!important;\n    color:#2f6fca!important;\n    border-color:rgba(164,199,232,.68)!important;\n    box-shadow:0 4px 13px rgba(47,111,202,.09),inset 0 1px rgba(255,255,255,.96)!important;\n  }\n  /* Soft homepage green */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-profile-nav{\n    background:linear-gradient(145deg,rgba(248,252,244,.82),rgba(235,247,226,.58))!important;\n    color:#60913d!important;\n    border-color:rgba(185,211,161,.66)!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav > a:active,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > button:active{\n    transform:scale(.96)!important;\n  }\n\n  /* Ask VYBE should float in the same light glass language. */\n  body:has(.academic-hub-page) .vybe-assistant-fab{\n    right:13px!important;\n    bottom:82px!important;\n    min-height:40px!important;\n    padding:7px 11px!important;\n    border-radius:15px!important;\n    background:rgba(255,255,255,.68)!important;\n    color:#263646!important;\n    border:1px solid rgba(255,255,255,.94)!important;\n    box-shadow:0 10px 26px rgba(34,58,78,.14),inset 0 1px rgba(255,255,255,.95)!important;\n    backdrop-filter:blur(18px) saturate(145%)!important;\n    -webkit-backdrop-filter:blur(18px) saturate(145%)!important;\n  }\n  body:has(.academic-hub-page) .vybe-assistant-fab .fab-mark{\n    background:linear-gradient(145deg,#edf6ff,#e3f0ff)!important;\n    color:#2f6fca!important;\n    border:1px solid #d2e3f4!important;\n  }\n}\n\n@media (max-width:380px){\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav{\n    left:10px!important;\n    right:10px!important;\n    bottom:8px!important;\n    height:62px!important;\n    min-height:62px!important;\n    border-radius:19px!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-menu-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-home-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-profile-nav{\n    height:48px!important;\n    min-height:48px!important;\n    border-radius:14px!important;\n  }\n}\n</style>'
     return layout("Academic Hub", body)
+
+ACADEMIC_COLLECTION_CSS = """
+<style>
+.ah-collection{max-width:1180px;margin:0 auto;padding:42px 0 90px}.ah-hero{padding:34px;border:1px solid #dfe5ea;border-radius:26px;background:linear-gradient(135deg,#fff,#f5f9ff 65%,#f4faed);box-shadow:0 14px 38px rgba(31,48,66,.06)}.ah-hero h1{margin:12px 0 8px;font-size:clamp(38px,5vw,60px);letter-spacing:-.055em;color:#17202b}.ah-hero p{max-width:720px;margin:0;color:#687482;line-height:1.65}.ah-filter{margin-top:20px;padding:13px;border:1px solid #e1e6eb;border-radius:17px;background:#fff;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px}.ah-filter input,.ah-filter select{min-height:43px;box-sizing:border-box}.ah-filter button{border:0;border-radius:11px;background:#2f6fca;color:#fff;font-weight:800;padding:0 17px;cursor:pointer}.ah-section{margin-top:28px}.ah-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;margin-bottom:11px}.ah-section-head h2{margin:0;color:#17202b;font-size:23px}.ah-section-head span{font-size:11px;color:#7c8893}.ah-subject{margin-top:14px}.ah-subject h3{margin:0 0 9px;font-size:14px;color:#52616e}.ah-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}.ah-card{display:flex;flex-direction:column;min-height:150px;padding:17px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 8px 22px rgba(31,48,66,.045);transition:.2s}.ah-card:hover{transform:translateY(-3px);border-color:#bfd5ec;box-shadow:0 15px 30px rgba(31,48,66,.09)}.ah-card .tag{display:inline-flex;width:max-content;padding:5px 8px;border-radius:999px;background:#edf4ff;color:#2f6fca;font-size:9px;font-weight:900}.ah-card h4{margin:12px 0 6px;font-size:15px}.ah-card p{margin:0;color:#778490;font-size:12px;line-height:1.45}.ah-card-foot{margin-top:auto;padding-top:14px;display:flex;justify-content:space-between;gap:8px;color:#8a96a0;font-size:10px}.ah-empty{padding:28px;border:1px dashed #cfd9e1;border-radius:18px;background:#fbfcfd;color:#71808c;text-align:center}.ah-update-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.ah-update{display:block;padding:19px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;text-decoration:none;color:#17202b;box-shadow:0 8px 24px rgba(31,48,66,.045)}.ah-update:hover{border-color:#bfd5ec;transform:translateY(-2px)}.ah-update .tag{color:#579c24;background:#edf8e6;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900}.ah-update h3{margin:12px 0 7px}.ah-update p{margin:0;color:#697783;line-height:1.5;font-size:12px}.ah-update-foot{margin-top:14px;color:#2f6fca;font-size:11px;font-weight:800}
+@media(max-width:850px){.ah-collection{padding:30px 14px 82px}.ah-hero{padding:23px 18px;border-radius:21px}.ah-filter{grid-template-columns:1fr}.ah-grid,.ah-update-grid{grid-template-columns:1fr}.ah-section-head{align-items:flex-start;flex-direction:column}.ah-card{min-height:130px}}
+</style>
+"""
+
+def _academic_resource_collection(resource_type, title, subtitle, kicker):
+    con=db()
+    semester=request.args.get("semester","").strip()[:100]
+    subject=request.args.get("subject","").strip()[:120]
+    course=request.args.get("course","").strip()[:100]
+    params=[resource_type]
+    where=["resource_type=?"]
+    if semester: where.append("semester=?"); params.append(semester)
+    if subject: where.append("subject=?"); params.append(subject)
+    if course: where.append("course=?"); params.append(course)
+    rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
+    semesters=[r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester<>'' ORDER BY semester",(resource_type,)).fetchall()]
+    subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND subject<>'' ORDER BY subject",(resource_type,)).fetchall()]
+    courses=[r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE resource_type=? AND course<>'' ORDER BY course",(resource_type,)).fetchall()]
+    con.close()
+    groups={}
+    for r in rows:
+        groups.setdefault(r["semester"] or "All semesters",{}).setdefault(r["subject"] or "General",[]).append(r)
+    sections=[]
+    for sem, subs in groups.items():
+        subject_blocks=[]
+        for sub, items in subs.items():
+            cards=[]
+            for r in items:
+                has_file=bool(r["file_name"] or r["file_data"] is not None)
+                href=f'/resource/{r["id"]}' if has_file else '#'
+                cards.append(f'''<a class="ah-card" href="{href}"{(' target="_blank" rel="noopener"' if has_file else '')}><span class="tag">{esc(resource_type)}</span><h4>{esc(r["title"])}</h4><p>{esc(r["description"] or "Open the uploaded academic resource.")}</p><div class="ah-card-foot"><span>{esc(r["course"] or "All courses")}</span><span>{"Open ↗" if has_file else "No file"}</span></div></a>''')
+            subject_blocks.append(f'<div class="ah-subject"><h3>{esc(sub)}</h3><div class="ah-grid">{"".join(cards)}</div></div>')
+        sections.append(f'<section class="ah-section"><div class="ah-section-head"><h2>{esc(sem)}</h2><span>{sum(len(x) for x in subs.values())} item(s)</span></div>{"".join(subject_blocks)}</section>')
+    opts=lambda values,current: ''.join(f'<option value="{esc(x)}" {"selected" if x==current else ""}>{esc(x)}</option>' for x in values)
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-filter" method="get"><select name="semester"><option value="">All semesters</option>{opts(semesters,semester)}</select><select name="subject"><option value="">All subjects</option>{opts(subjects,subject)}</select><select name="course"><option value="">All courses</option>{opts(courses,course)}</select><button type="submit">Apply filters</button></form></section>{''.join(sections) if sections else '<div class="ah-empty" style="margin-top:22px">No resources have been uploaded for this collection yet.</div>'}</section>'''
+    return layout(title,body)
+
+@app.route("/academic-hub/notes")
+@student_required
+def academic_hub_notes():
+    return _academic_resource_collection("Notes","Study Notes","Revision notes organized by semester and subject.","STUDY NOTES")
+
+@app.route("/academic-hub/study-material")
+@student_required
+def academic_hub_study_material():
+    return _academic_resource_collection("Study material","Study Material","Semester-wise reference files, readings and study material.","STUDY MATERIAL")
+
+@app.route("/academic-hub/pyq")
+@student_required
+def academic_hub_pyq():
+    return _academic_resource_collection("Previous Year Questions","PYQ Papers","Previous-year question papers grouped by semester and subject.","PYQ PAPERS")
+
+def _academic_update_collection(kind, title, subtitle, kicker):
+    con=db(); rows=con.execute("SELECT * FROM academic_updates WHERE kind=? ORDER BY id DESC",(kind,)).fetchall(); con.close()
+    cards=[]
+    for r in rows:
+        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["file_data"] is not None else "View update ↗")
+        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["file_data"] is not None else f'/academic-update/{r["id"]}')
+        cards.append(f'''<a class="ah-update" href="{esc(href)}" target="_blank" rel="noopener noreferrer"><span class="tag">{esc(kind)}</span><h3>{esc(r["title"])}</h3><p>{esc(r["description"])}</p><div class="ah-update-foot">{esc(r["event_date"] or r["created_at"])} · {action}</div></a>''')
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></section><section class="ah-section"><div class="ah-update-grid">{"".join(cards) or '<div class="ah-empty">Nothing has been published here yet.</div>'}</div></section></section>'''
+    return layout(title,body)
+
+@app.route("/academic-hub/results")
+@student_required
+def academic_hub_results():
+    return _academic_update_collection("Result","Results","Official result links published by the admin, kept separate from other academic updates.","RESULTS")
+
+@app.route("/academic-hub/date-sheet")
+@student_required
+def academic_hub_date_sheet():
+    return _academic_update_collection("Date Sheet","Date Sheets","Exam schedules and date-sheet documents published by the admin.","DATE SHEET")
+
+@app.route("/academic-hub/admit-card")
+@student_required
+def academic_hub_admit_card():
+    return _academic_update_collection("Admit Card","Admit Cards","Official admit-card links and documents published by the admin.","ADMIT CARD")
+
+@app.route("/academic-hub/exam-forms")
+@student_required
+def academic_hub_exam_forms():
+    return _academic_update_collection("Exam Notice","Exam Forms & Notices","Exam-form instructions are shown here through the published exam notices.","EXAM FORMS")
 
 @app.route("/papers")
 @student_required
@@ -7770,10 +7855,70 @@ def admin_academic_updates():
     body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="Direct official website link (required for Result and Admit Card)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon">U</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
     return layout("Academic Updates",body,admin=True)
 
+ACADEMIC_HUB_ADMIN_CSS = """
+<style>
+.admin-ah-page{max-width:1180px!important;margin:0 auto!important;padding:50px 0 90px!important}.admin-ah-hero{margin-bottom:24px}.admin-ah-hero h1{margin:10px 0 8px;font-size:clamp(36px,5vw,56px);letter-spacing:-.05em;color:#17202b}.admin-ah-hero p{margin:0;max-width:720px;color:#687482;line-height:1.6}.admin-ah-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}.admin-ah-tab{display:block;padding:18px 19px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;text-decoration:none;color:#17202b;box-shadow:0 9px 24px rgba(31,48,66,.05)}.admin-ah-tab b{display:block;font-size:15px}.admin-ah-tab span{display:block;margin-top:4px;color:#7b8792;font-size:11px;line-height:1.4}.admin-ah-tab.active{border-color:#a9c8e8;background:linear-gradient(145deg,#f5f9ff,#fff)}.admin-ah-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.admin-ah-card{border:1px solid #dfe5ea;border-radius:22px;background:#fff;padding:22px;box-shadow:0 12px 30px rgba(31,48,66,.055)}.admin-ah-card h2{margin:5px 0 8px;color:#17202b}.admin-ah-card p{color:#6b7884;line-height:1.55}.admin-ah-label{font-size:10px;font-weight:900;letter-spacing:.12em;color:#2f6fca}.admin-ah-form{display:grid;gap:11px}.admin-ah-form input,.admin-ah-form select,.admin-ah-form textarea{box-sizing:border-box;width:100%;min-height:44px}.admin-ah-form textarea{min-height:80px;resize:vertical}.admin-ah-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.admin-ah-files{padding:14px;border:1px dashed #cbd8e4;border-radius:15px;background:#f8fbfe}.admin-ah-help{font-size:11px;color:#7a8793}.admin-ah-list{margin-top:18px;border:1px solid #e1e6eb;border-radius:18px;overflow:hidden;background:#fff}.admin-ah-list-head{padding:16px 18px;border-bottom:1px solid #e7ebee;display:flex;justify-content:space-between;gap:12px;align-items:center}.admin-ah-list-head strong{font-size:14px}.admin-ah-list-head span{font-size:11px;color:#7d8994}.admin-ah-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:15px;padding:15px 18px;border-bottom:1px solid #eef1f3;align-items:center}.admin-ah-row:last-child{border-bottom:0}.admin-ah-row-main strong{display:block;color:#17202b;font-size:14px}.admin-ah-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.admin-ah-meta span{font-size:10px;font-weight:800;padding:5px 8px;border-radius:999px;background:#f2f5f7;color:#66737e}.admin-ah-row-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.admin-ah-note{padding:13px 14px;border-radius:14px;background:#edf8e6;color:#547d37;border:1px solid #d8ebc9;font-size:11px;line-height:1.5}
+@media(max-width:850px){.admin-ah-page{padding:35px 16px 78px!important}.admin-ah-tabs,.admin-ah-grid{grid-template-columns:1fr}.admin-ah-two{grid-template-columns:1fr}.admin-ah-row{grid-template-columns:1fr}.admin-ah-row-actions{justify-content:flex-start}.admin-ah-row-actions .btn{flex:1;min-width:120px;text-align:center}}
+</style>
+"""
+
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
-    return admin_academic_updates()
+    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions"}
+    section=request.args.get("section","notes").strip()
+    if section not in allowed: section="notes"
+    con=db()
+    if request.method=="POST":
+        mode=request.form.get("mode","single").strip()
+        section=request.form.get("section","notes").strip()
+        if section not in allowed: section="notes"
+        typ=allowed[section]
+        course=request.form.get("course","All").strip()[:100]
+        semester=request.form.get("semester","").strip()[:100]
+        subject=request.form.get("subject","").strip()[:120]
+        description=request.form.get("description","").strip()[:1000]
+        files=request.files.getlist("files") if mode=="bulk" else [request.files.get("file")]
+        files=[f for f in files if f and f.filename]
+        title=request.form.get("title","").strip()[:150]
+        if not semester or not subject:
+            con.close(); flash("Semester and subject are required."); return redirect(url_for("admin_academic_hub",section=section))
+        if not files:
+            con.close(); flash("Choose at least one file to upload."); return redirect(url_for("admin_academic_hub",section=section))
+        if mode!="bulk" and not title:
+            con.close(); flash("Resource title is required for a single upload."); return redirect(url_for("admin_academic_hub",section=section))
+        added=0
+        try:
+            for f in files:
+                suffix=Path(f.filename).suffix.lower()
+                if suffix not in ALLOWED_EXT: raise ValueError(f"Unsupported file type: {Path(f.filename).name}")
+                data=f.read()
+                if len(data)>20*1024*1024: raise ValueError(f"File is larger than 20 MB: {Path(f.filename).name}")
+                original=Path(f.filename).name[:240]
+                filename=secrets.token_hex(16)+suffix
+                mime=f.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
+                assistant_text=_extract_doc_text(data,suffix,50000)
+                f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+                item_title=title if mode!="bulk" else Path(original).stem[:150]
+                con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(item_title,typ,course,semester,subject,description,filename,original,mime,data,assistant_text,now()))
+                added+=1
+            con.commit(); con.close(); flash(f"{added} {typ} resource{'s' if added!=1 else ''} uploaded successfully.")
+        except ValueError as e:
+            con.rollback(); con.close(); flash(str(e))
+        except Exception:
+            con.rollback(); con.close(); app.logger.exception("Academic Hub upload failed"); flash("Could not upload the academic resources. Please try again.")
+        return redirect(url_for("admin_academic_hub",section=section))
+    rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,created_at FROM resources WHERE resource_type=? ORDER BY id DESC",(allowed[section],)).fetchall()
+    con.close()
+    descriptions={"notes":"Revision notes by subject and semester.","study_material":"Semester-wise reference and study files.","pyq":"Previous-year question papers by subject and semester."}
+    tabs=[]
+    for k,v in allowed.items():
+        active=" active" if k==section else ""
+        tabs.append(f'<a class="admin-ah-tab{active}" href="/admin/academic-hub?section={k}"><b>{v}</b><span>{descriptions[k]}</span></a>')
+    rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><a class="btn danger" href="/admin/academic-hub/resource/{r["id"]}/delete" onclick="return confirm('Delete this resource?')">Delete</a></div></div>''' for r in rows)
+    body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Manage Study Notes, Study Material and PYQ Papers separately. Every upload is organized by semester and subject. Upload one file with a custom title or upload multiple files together.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="single"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Supported document/image files are indexed for Ask VYBE when readable.</div></div><button class="btn accent" type="submit">Upload single file →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Choose multiple files at once. Each file becomes its own resource; the filename becomes its title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="bulk"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Select multiple files from the same subject and semester.</div></div><button class="btn dark" type="submit">Upload all selected files →</button></form><div class="admin-ah-note" style="margin-top:12px">For different subjects or semesters, upload another batch with the correct subject and semester.</div></div></div><div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
+    return layout("Academic Hub",body,admin=True)
+
 
 @app.route("/admin/academic-update/<int:uid>/delete")
 @admin_required
@@ -7783,6 +7928,22 @@ def admin_delete_academic_update(uid):
         try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
         except Exception: pass
     con.execute("DELETE FROM academic_updates WHERE id=?",(uid,)); con.commit(); con.close(); flash("Academic update deleted."); return redirect(url_for("admin_academic_hub"))
+
+
+@app.route("/admin/academic-hub/resource/<int:rid>/delete")
+@admin_required
+def admin_academic_hub_delete_resource(rid):
+    con=db(); row=con.execute("SELECT file_name,resource_type FROM resources WHERE id=?",(rid,)).fetchone()
+    if not row:
+        con.close(); flash("Resource not found."); return redirect(url_for("admin_academic_hub"))
+    typ=row["resource_type"] or "Notes"
+    section={"Notes":"notes","Study material":"study_material","Previous Year Questions":"pyq"}.get(typ,"notes")
+    con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
+    if row["file_name"]:
+        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
+        except OSError: pass
+    flash("Academic resource deleted.")
+    return redirect(url_for("admin_academic_hub",section=section))
 
 
 @app.route("/admin/resources")
