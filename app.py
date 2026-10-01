@@ -134,6 +134,37 @@ def db():
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+def _ensure_password_reset_schema(con):
+    if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS password_reset_requests (
+            id BIGSERIAL PRIMARY KEY,
+            student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_at TEXT NOT NULL,
+            approved_at TEXT,
+            approval_code_hash TEXT,
+            approval_code_token TEXT,
+            expires_at TEXT,
+            used_at TEXT
+        )""")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS password_reset_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_at TEXT NOT NULL,
+            approved_at TEXT,
+            approval_code_hash TEXT,
+            approval_code_token TEXT,
+            expires_at TEXT,
+            used_at TEXT,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+        )""")
+        cols={r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
+        if "approval_code_token" not in cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN approval_code_token TEXT")
+
 
 def now_ist():
     """Current Indian Standard Time for admin audit records."""
@@ -2154,7 +2185,7 @@ main,.main,.wrap{position:relative}
   box-shadow:0 5px 20px rgba(30,45,55,.045)!important;
 }
 .student-brand-compact{display:flex!important;align-items:center!important;gap:11px!important;min-width:150px!important;text-decoration:none!important}
-.student-brand-compact .brandmark{width:46px!important;height:46px!important;border-radius:15px!important;background:#9bea2b!important;color:#101827!important;box-shadow:0 8px 20px rgba(115,178,30,.16)!important;display:grid!important;place-items:center!important;font-weight:900!important;font-size:22px!important}
+.student-brand-compact .brandmark{width:46px!important;height:46px!important;border-radius:15px!important;background:linear-gradient(145deg,#163b69,#07111f)!important;color:#fff!important;box-shadow:0 10px 24px rgba(7,17,31,.16)!important;display:grid!important;place-items:center!important;font-weight:900!important;font-size:22px!important}
 .student-brand-compact .brandtext{background:none!important;color:#172033!important;-webkit-text-fill-color:#172033!important;font-size:22px!important;font-weight:900!important;letter-spacing:-.04em!important}
 .student-desktop-links{flex:1!important;justify-content:center!important;gap:4px!important}
 .student-desktop-links a{padding:11px 15px!important;border-radius:9px!important;color:#172033!important;font-size:14px!important;font-weight:700!important}
@@ -2180,7 +2211,7 @@ main,.main,.wrap{position:relative}
 @media(max-width:850px){
   .student-nav-compact{min-height:58px!important;padding:7px 12px!important;gap:8px!important}
   .student-brand-compact{min-width:auto!important;gap:8px!important}
-  .student-brand-compact .brandmark{width:38px!important;height:38px!important;border-radius:12px!important;font-size:19px!important}
+  .student-brand-compact .brandmark{width:38px!important;height:38px!important;border-radius:12px!important;background:linear-gradient(145deg,#163b69,#07111f)!important;color:#fff!important;box-shadow:0 8px 20px rgba(7,17,31,.15)!important;font-size:19px!important}
   .student-brand-compact .brandtext{font-size:19px!important}
   .student-header-tools{gap:6px!important}
   .student-header-updates{display:none!important}
@@ -3085,6 +3116,8 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         try:
             _admin_alert_con = db()
+            _ensure_password_reset_schema(_admin_alert_con)
+            _admin_alert_con.commit()
             _admin_pending_password = int(_admin_alert_con.execute("SELECT COUNT(*) AS c FROM password_reset_requests WHERE status='pending'").fetchone()["c"])
             _admin_alert_con.close()
         except Exception:
@@ -4114,6 +4147,8 @@ def forgot_password():
             return redirect(url_for("forgot_password"))
         con = db()
         try:
+            _ensure_password_reset_schema(con)
+            con.commit()
             student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
             if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
                 flash("If the account is eligible, the password-change request has been sent to the admin.")
@@ -4129,6 +4164,34 @@ def forgot_password():
                 if not request_row:
                     raise RuntimeError("Password reset request could not be created")
                 request_id = request_row["id"]
+                # Durable admin notification: this is what the admin dashboard can always see.
+                try:
+                    con.execute(
+                        "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
+                        (
+                            "password_reset",
+                            "Password change request",
+                            f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
+                            student["id"],
+                            now(),
+                            False,
+                        ),
+                    )
+                except Exception:
+                    # Notification is supplementary; the password request itself remains valid.
+                    try:
+                        con.rollback()
+                        con.execute(
+                            "INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)",
+                            (student["id"], "pending", now()),
+                        )
+                        request_row = con.execute(
+                            "SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
+                            (student["id"],),
+                        ).fetchone()
+                        request_id = request_row["id"]
+                    except Exception:
+                        raise
                 con.commit()
             except Exception:
                 con.rollback()
@@ -8713,6 +8776,8 @@ def admin_community_chat():
 @admin_required
 def admin_password_requests():
     con = db()
+    _ensure_password_reset_schema(con)
+    con.commit()
     rows = con.execute("SELECT r.*, s.name AS student_name, s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id ORDER BY r.id DESC").fetchall()
     con.close()
     html_rows=[]
