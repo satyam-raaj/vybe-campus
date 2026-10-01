@@ -186,6 +186,10 @@ class DB:
         else:
             self.conn.close()
 
+def db():
+    """Return a database handle using the configured SQLite/PostgreSQL backend."""
+    return DB()
+
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
