@@ -5047,6 +5047,14 @@ def assistant():
 def dashboard():
     con = db()
     s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    publisher_setting = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{session["student_db_id"]}",)).fetchone()
+    publisher_permission_setting = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{session["student_db_id"]}",)).fetchone()
+    publisher_enabled = bool(publisher_setting and publisher_setting["value"] == "1")
+    if publisher_enabled:
+        try:
+            publisher_enabled = bool(json.loads(publisher_permission_setting["value"]) if publisher_permission_setting and publisher_permission_setting["value"] else [])
+        except Exception:
+            publisher_enabled = False
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
@@ -5072,6 +5080,7 @@ def dashboard():
 <a class="home-action" href="/issues"><span class="home-action-icon">HD</span><span><strong>Help Desk</strong><small>Report campus problems and follow their status.</small></span><b>Open</b></a>
 <a class="home-action" href="/announcements"><span class="home-action-icon">N</span><span><strong>Announcements</strong><small>Important notices and campus updates.</small></span><b>View</b></a>
 <a class="home-action" href="/events"><span class="home-action-icon">E</span><span><strong>Events</strong><small>Upcoming campus activities and schedules.</small></span><b>View</b></a>
+{f'<a class="home-action home-action-publisher" href="/publisher"><span class="home-action-icon">✦</span><span><strong>Publisher</strong><small>Upload and publish the content your admin has allowed.</small></span><b>Publish</b></a>' if publisher_enabled else ''}
 </div>
 <div class="home-updates-head"><div><div class="home-section-label">WHAT'S HAPPENING</div><p>Live campus information from VYBE.</p></div><div class="home-live-status"><span></span> VYBE LIVE</div></div>
 <div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all</a></div>{event_html}</div></div>
@@ -5080,6 +5089,10 @@ def dashboard():
 
 
 ACADEMIC_HUB_CSS = """<style>
+/* ===== Publisher dashboard access ===== */
+.home-action-publisher{border-color:#cfe5bc!important;background:linear-gradient(135deg,#ffffff 0%,#f4faee 100%)!important}
+.home-action-publisher .home-action-icon{background:#edf8e6!important;color:#57952a!important;border-color:#d5e9c4!important}
+.home-action-publisher:hover{border-color:#9fcd7f!important;box-shadow:0 14px 30px rgba(92,145,48,.12)!important}
 /* ===== VYBE Academic Hub redesign ===== */
 .academic-hub-page{display:block}
 .academic-hub-page .academic-hero{max-width:1180px;margin:0 auto;padding:46px 34px 30px;border-radius:28px;background:linear-gradient(135deg,#ffffff 0%,#f5f9ff 62%,#f4faed 100%);border:1px solid #e1e6df;box-shadow:0 16px 42px rgba(31,48,66,.07);text-align:left;position:relative;overflow:hidden}
