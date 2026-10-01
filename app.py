@@ -3319,6 +3319,27 @@ body:has(.vybe-auth-page) .flash{display:none!important}
 @media(max-width:380px){.vybe-auth-page{padding:10px 8px 16px!important}.vybe-auth-page .authbox{padding:22px 14px 17px!important;border-radius:20px!important}.vybe-auth-logo{width:42px;height:42px;right:14px;top:14px}.vybe-auth-page .authbox h1{font-size:28px!important;margin-top:8px!important}}
 """
 
+ADMIN_PROBLEM_ALERT_CSS = r"""
+.admin-problem-alert-wrap{position:relative;display:inline-flex;align-items:center}
+.admin-problem-alert{position:relative;width:40px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;text-decoration:none;box-shadow:0 8px 20px rgba(23,32,51,.14);transition:.18s ease;cursor:pointer}
+.admin-problem-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 12px 26px rgba(23,32,51,.20)}
+.admin-problem-alert svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.admin-problem-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}
+.admin-problem-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(420px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}
+.admin-problem-alert-panel[hidden]{display:none}
+.admin-problem-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px;border-bottom:1px solid #edf0f3}
+.admin-problem-alert-head strong{display:block;color:#17202b;font-size:14px}.admin-problem-alert-head small{display:block;margin-top:4px;color:#7b8793;font-size:10px}
+.admin-problem-alert-head>span{padding:6px 9px;border-radius:999px;background:#fff1f1;color:#c44d55;font-size:10px;font-weight:900}
+.admin-problem-alert-list{max-height:390px;overflow:auto;padding:8px}
+.admin-problem-alert-item{display:flex;gap:10px;align-items:flex-start;padding:12px 10px;border-radius:13px;color:#17202b;text-decoration:none;transition:.15s ease}
+.admin-problem-alert-item:hover{background:#f4f8fc;transform:translateX(2px)}
+.admin-problem-alert-dot{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#fff1f1;color:#c44d55;font-size:13px;font-weight:950}
+.admin-problem-alert-copy{min-width:0;flex:1}.admin-problem-alert-copy strong{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.admin-problem-alert-copy small{display:block;margin-top:3px;color:#7b8793;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.admin-problem-alert-copy p{margin:5px 0 0;color:#687482;font-size:10px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.admin-problem-alert-arrow{font-size:19px;line-height:1;color:#a2adb8;margin-top:5px}.admin-problem-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}
+.admin-problem-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}
+@media(max-width:800px){.admin-problem-alert{width:38px;height:38px}.admin-problem-alert-panel{position:fixed;top:61px;right:10px;width:min(420px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.admin-problem-alert-list{max-height:calc(100vh - 180px)}}
+"""
+
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
     if admin:
@@ -3329,13 +3350,26 @@ def layout(title, body, admin=False):
             _ensure_password_reset_schema(_admin_alert_con)
             _admin_alert_con.commit()
             _admin_pending_password = int(_admin_alert_con.execute("SELECT COUNT(*) AS c FROM password_reset_requests WHERE status='pending'").fetchone()["c"])
+            _admin_problem_rows = _admin_alert_con.execute(
+                "SELECT i.id,i.title,i.description,i.category,i.status,i.created_at,s.name,s.student_id "
+                "FROM issues i JOIN students s ON s.id=i.student_id "
+                "WHERE i.status NOT IN ('Resolved','Closed') ORDER BY i.id DESC LIMIT 8"
+            ).fetchall()
             _admin_alert_con.close()
         except Exception:
             _admin_pending_password = 0
+            _admin_problem_rows = []
         _admin_alert_count = f'<span class="admin-password-alert-count">{_admin_pending_password}</span>' if _admin_pending_password else ''
         _admin_alert_class = '' if _admin_pending_password else ' is-clear'
         admin_alert = f"""<div class="admin-password-alert-wrap"><a class="admin-password-alert{_admin_alert_class}" href="/admin/password-requests" title="Password access requests"><span class="admin-password-alert-icon" aria-hidden="true">🔐</span><span class="admin-password-alert-label">Password Access</span>{_admin_alert_count}</a></div>"""
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
+        _problem_count = len(_admin_problem_rows)
+        _problem_badge = f'<span class="admin-problem-alert-count">{_problem_count if _problem_count < 100 else "99+"}</span>' if _problem_count else ''
+        _problem_items = ''.join(
+            f'<a class="admin-problem-alert-item" href="/admin/problems#problem-{int(x["id"])}"><span class="admin-problem-alert-dot">!</span><span class="admin-problem-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["name"])} · {esc(x["category"])} · {esc(x["created_at"])}</small><p>{esc(x["description"])}</p></span><span class="admin-problem-alert-arrow">›</span></a>'
+            for x in _admin_problem_rows
+        ) or '<div class="admin-problem-alert-empty">No active student problems.</div>'
+        admin_problem_alert = f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminProblemBell" type="button" aria-label="Reported student problems" aria-expanded="false" aria-controls="vybeAdminProblemPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>{_problem_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminProblemPanel" hidden><div class="admin-problem-alert-head"><div><strong>Reported Problems</strong><small>Student reports needing admin attention</small></div><span id="vybeAdminProblemCount">{_problem_count} open</span></div><div class="admin-problem-alert-list" id="vybeAdminProblemList">{_problem_items}</div><a class="admin-problem-alert-all" href="/admin/problems">Open Problems &amp; Solutions →</a></div></div>"""
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -3405,6 +3439,36 @@ def layout(title, body, admin=False):
             if not _ai_links:
                 _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
             assistant_widget = f"""<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus shortcuts</small></div></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions">{_ai_links}</div></div></section>"""
+    admin_problem_alert_runtime = r"""
+<script>
+(function(){
+  const bell=document.getElementById('vybeAdminProblemBell');
+  const panel=document.getElementById('vybeAdminProblemPanel');
+  const list=document.getElementById('vybeAdminProblemList');
+  const countEl=document.getElementById('vybeAdminProblemCount');
+  if(!bell||!panel||!list)return;
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]})}
+  function render(data){
+    const items=data.items||[];
+    const n=Number(data.count||0);
+    const badge=bell.querySelector('.admin-problem-alert-count');
+    if(n>0){
+      if(badge){badge.textContent=n>99?'99+':String(n);}
+      else{const b=document.createElement('span');b.className='admin-problem-alert-count';b.textContent=n>99?'99+':String(n);bell.appendChild(b);}
+    }else if(badge){badge.remove();}
+    if(countEl)countEl.textContent=n+' open';
+    list.innerHTML=items.length?items.map(function(x){
+      return '<a class="admin-problem-alert-item" href="/admin/problems#problem-'+encodeURIComponent(x.id)+'"><span class="admin-problem-alert-dot">!</span><span class="admin-problem-alert-copy"><strong>'+esc(x.title)+'</strong><small>'+esc(x.name)+' · '+esc(x.category)+' · '+esc(x.created_at)+'</small><p>'+esc(x.description)+'</p></span><span class="admin-problem-alert-arrow">›</span></a>';
+    }).join(''):'<div class="admin-problem-alert-empty">No active student problems.</div>';
+  }
+  function refresh(){fetch('/admin/problem-alerts',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(function(d){if(d)render(d)}).catch(function(){});}
+  bell.addEventListener('click',function(e){e.stopPropagation();const open=!panel.hidden;panel.hidden=open;bell.setAttribute('aria-expanded',open?'false':'true');if(!open)refresh();});
+  document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap')){panel.hidden=true;bell.setAttribute('aria-expanded','false')}});
+  refresh();
+  setInterval(refresh,2500);
+})();
+</script>
+"""
     mobile_runtime_css = r'''
 /* ===== VYBE AI SETTINGS ===== */
 .ai-settings-page{max-width:1120px!important;margin:0 auto!important;padding-bottom:80px}.ai-settings-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:24px}.ai-settings-head h1{margin:8px 0 8px;font-size:clamp(34px,5vw,56px);letter-spacing:-.045em}.ai-settings-head p{max-width:700px;color:#687482;font-size:15px;line-height:1.65;margin:0}.ai-live-status{min-width:130px;padding:15px 17px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;box-shadow:0 12px 30px rgba(31,48,66,.07);display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center}.ai-live-status small{grid-column:2;color:#7b8792;font-size:11px;margin-top:2px}.ai-status-dot{width:10px;height:10px;border-radius:50%;grid-row:1 / span 2;background:#9aa4ad;box-shadow:0 0 0 5px #f0f2f4}.ai-live-status.is-on .ai-status-dot{background:#68b82e;box-shadow:0 0 0 5px #edf8e6}.ai-live-status.is-off .ai-status-dot{background:#d65a5a;box-shadow:0 0 0 5px #faecec}.ai-control-card{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 14px 36px rgba(31,48,66,.07);margin-bottom:18px}.ai-control-label{display:block;font-size:10px;font-weight:900;letter-spacing:.14em;color:#2f6fca;margin-bottom:7px}.ai-control-card h2,.ai-shortcuts-head h2{margin:0 0 6px;font-size:22px;letter-spacing:-.025em}.ai-control-card p,.ai-shortcuts-head p{margin:0;color:#687482;line-height:1.55;font-size:13px}.ai-toggle-button{display:inline-flex;align-items:center;gap:10px;border-radius:14px;padding:11px 14px;font:inherit;font-size:12px;font-weight:850;cursor:pointer;white-space:nowrap}.ai-toggle-button.on{background:#fff0f0;color:#a83232;border:1px solid #f1d1d1}.ai-toggle-button.off{background:#edf8e6;color:#3c7f1a;border:1px solid #d6edc8}.ai-toggle-track{width:39px;height:22px;border-radius:99px;background:#a9b1b9;padding:3px;display:flex;align-items:center}.ai-toggle-track span{width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .18s ease}.ai-toggle-button.on .ai-toggle-track{background:#d85d5d}.ai-toggle-button.on .ai-toggle-track span{transform:translateX(17px)}.ai-toggle-button.off .ai-toggle-track{background:#68b82e}.ai-shortcuts-section{padding:24px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 14px 36px rgba(31,48,66,.07)}.ai-shortcuts-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-end;margin-bottom:18px}.ai-selected-count{background:#f4f7fa;border:1px solid #e1e7ec;border-radius:999px;padding:7px 11px;font-size:11px;color:#687482;white-space:nowrap}.ai-selected-count b{color:#17202b}.ai-shortcut-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ai-shortcut-card{position:relative;display:flex;align-items:center;gap:11px;padding:14px 15px;border:1px solid #e0e6eb;border-radius:15px;background:#fbfcfd;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.ai-shortcut-card:hover{transform:translateY(-2px);border-color:#b9d2ec;background:#fff;box-shadow:0 8px 22px rgba(47,111,202,.08)}.ai-shortcut-card input{position:absolute;opacity:0;pointer-events:none}.ai-shortcut-check{width:22px;height:22px;flex:0 0 22px;border-radius:7px;border:1.5px solid #cbd5de;background:#fff;color:transparent;display:grid;place-items:center;font-size:13px;font-weight:900}.ai-shortcut-card:has(input:checked){border-color:#9fc3e8;background:#f3f8ff;box-shadow:0 7px 20px rgba(47,111,202,.08)}.ai-shortcut-card:has(input:checked) .ai-shortcut-check{background:#2f6fca;border-color:#2f6fca;color:#fff}.ai-shortcut-copy{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}.ai-shortcut-copy strong{font-size:13px;color:#17202b}.ai-shortcut-copy small{font-size:11px;color:#75818c;line-height:1.35}.ai-shortcut-arrow{font-size:20px;color:#a2adb7}.ai-save-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding-top:17px;border-top:1px solid #e7ebef}.ai-save-row span{font-size:11px;color:#7b8792}.vybe-assistant-empty{grid-column:1/-1;padding:18px;border:1px dashed rgba(159,182,205,.35);border-radius:13px;color:#a9bbcc;text-align:center;font-size:12px}
@@ -3515,7 +3579,7 @@ def layout(title, body, admin=False):
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{mobile_runtime_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -4018,7 +4082,7 @@ def layout(title, body, admin=False):
 
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
-<main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
+<main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
@@ -7305,22 +7369,35 @@ def community_chat():
 .community-chat-page-section .empty{margin:auto!important;padding:18px!important;color:#8995a0!important;text-align:center!important}
 .community-chat-page-section .community-chat-keyboard-hint{display:none!important}
 @media(max-width:850px){
-  .community-chat-page-section{max-width:none!important;padding:10px 10px 96px!important}
-  .community-chat-page-section .community-page-top{margin-bottom:10px!important;padding:0 2px!important}
-  .community-chat-page-section .community-page-top h1{font-size:30px!important;margin:5px 0!important}
-  .community-chat-page-section .community-page-top p{font-size:11px!important}
-  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 226px)!important;min-height:420px!important;max-height:none!important;border-radius:20px!important}
-  .community-chat-page-section .community-chat-tools{height:52px!important;min-height:52px!important;padding:0 13px!important}
+  .community-chat-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important;padding:8px 7px calc(84px + env(safe-area-inset-bottom))!important}
+  .community-chat-page-section .community-page-top{width:100%!important;box-sizing:border-box!important;margin-bottom:8px!important;padding:0 2px!important}
+  .community-chat-page-section .community-page-top h1{font-size:28px!important;margin:4px 0!important;line-height:1.02!important}
+  .community-chat-page-section .community-page-top p{font-size:10.5px!important;line-height:1.35!important}
+  .community-chat-page-section .community-chat-page-card{width:100%!important;max-width:100%!important;height:calc(100dvh - 205px)!important;min-height:360px!important;max-height:760px!important;border-radius:18px!important;box-sizing:border-box!important}
+  .community-chat-page-section .community-chat-tools{height:46px!important;min-height:46px!important;padding:0 11px!important}
   .community-chat-tools-sub{display:none!important}
-  .community-chat-page-section .community-chat-window{padding:14px 9px 14px!important;gap:8px!important}
-  .community-chat-page-section .community-message{max-width:88%!important;padding:10px 11px!important;border-radius:15px!important}
-  .community-chat-page-section .community-message-text{font-size:13px!important}
-  .community-chat-page-section .community-message-actions{opacity:1!important;max-height:34px!important;margin-top:6px!important}
-  .community-chat-page-section .community-message-action{padding:6px 9px!important;font-size:10px!important}
-  .community-chat-page-section .community-reply-bar{padding:8px 11px!important}
-  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:8px 8px calc(8px + env(safe-area-inset-bottom))!important;gap:7px!important}
-  .community-chat-page-section .community-chat-form textarea{height:44px!important;min-height:44px!important;border-radius:15px!important;padding:11px 13px!important}
-  .community-chat-page-section .community-send-button{width:44px!important;height:44px!important;border-radius:14px!important}
+  .community-chat-tools-left strong{font-size:12px!important}
+  .community-chat-live-dot{width:7px!important;height:7px!important;flex-basis:7px!important}
+  .community-chat-page-section .community-chat-window{width:100%!important;box-sizing:border-box!important;padding:11px 8px 12px!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior-y:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
+  .community-chat-page-section .community-message{max-width:88%!important;min-width:0!important;box-sizing:border-box!important;padding:9px 10px!important;border-radius:14px!important}
+  .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.45!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+  .community-chat-page-section .community-message-actions{opacity:1!important;max-height:34px!important;margin-top:5px!important}
+  .community-chat-page-section .community-message-action{padding:6px 8px!important;font-size:10px!important;min-height:28px!important}
+  .community-chat-page-section .community-reply-bar{padding:7px 10px!important;min-width:0!important}
+  .community-chat-page-section .community-reply-bar span{font-size:10px!important}
+  .community-chat-page-section .community-chat-form{width:100%!important;box-sizing:border-box!important;grid-template-columns:minmax(0,1fr) 42px!important;padding:7px 7px calc(7px + env(safe-area-inset-bottom))!important;gap:6px!important}
+  .community-chat-page-section .community-chat-form textarea{width:100%!important;height:42px!important;min-height:42px!important;max-height:96px!important;box-sizing:border-box!important;border-radius:14px!important;padding:10px 12px!important;font-size:13px!important}
+  .community-chat-page-section .community-send-button{width:42px!important;height:42px!important;border-radius:13px!important;font-size:17px!important}
+}
+@media(max-width:390px){
+  .community-chat-page-section{padding-left:5px!important;padding-right:5px!important}
+  .community-chat-page-section .community-page-top h1{font-size:25px!important}
+  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 192px)!important;min-height:340px!important;border-radius:16px!important}
+  .community-chat-page-section .community-chat-window{padding-left:6px!important;padding-right:6px!important}
+  .community-chat-page-section .community-message{max-width:91%!important}
+  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 40px!important}
+  .community-chat-page-section .community-send-button{width:40px!important;height:40px!important}
+  .community-chat-page-section .community-chat-form textarea{height:40px!important;min-height:40px!important}
 }
 @media(max-width:390px){
   .community-chat-page-section{padding-left:8px!important;padding-right:8px!important}
@@ -7344,7 +7421,7 @@ def community_chat():
       let busy=false;
       function clearReply() {{ if(replyTo)replyTo.value=''; if(replyBar)replyBar.hidden=true; }}
       function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
-      function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
+      function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const id=String(b.dataset.messageId),node=document.getElementById('community-msg-'+id);if(node){{node.style.transition='opacity .12s ease,transform .12s ease';node.style.opacity='0';node.style.transform='translateX(10px)';setTimeout(function(){{if(node&&node.parentNode)node.remove();}},120);}}const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('delete failed');return r.json();}}).then(function(){{}}).catch(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
       async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;chatWindow.querySelectorAll('.community-message').forEach(function(e){{last=Math.max(last,Number(e.dataset.messageId)||0);}});const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{chatWindow.appendChild(build(m));}}const temp=[...chatWindow.querySelectorAll('[data-message-id^="temp-"]')].find(function(x){{return x.dataset.tempMessage===String(m.message);}});if(temp)temp.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
       wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},700);}} if(replyCancel)replyCancel.onclick=clearReply;
@@ -7442,7 +7519,21 @@ def community_problems():
                 "INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)",
                 (session["student_db_id"], category, title, description, "Open", now())
             )
-            con.commit(); con.close(); flash("Problem reported successfully. Students and VYBE admin can now help."); return redirect(url_for("community_problems"))
+            con.commit()
+            # Keep an admin-side audit notification as a secondary signal.
+            # The bell itself reads live open issues, so this can never block the report.
+            try:
+                reporter=con.execute("SELECT name,student_id FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+                if reporter:
+                    create_admin_notification(
+                        "student_problem",
+                        f"New student problem: {title}",
+                        f"{reporter['name']} ({reporter['student_id']}) reported {category}: {description}",
+                        student_id=session["student_db_id"],
+                    )
+            except Exception as exc:
+                app.logger.warning("Student problem admin notification failed: %s", exc)
+            con.close(); flash("Problem reported successfully. Students and VYBE admin can now help."); return redirect(url_for("community_problems"))
         except Exception:
             con.rollback(); con.close(); app.logger.exception("Community problem report failed")
             flash("We couldn't submit your problem right now. Please try again."); return redirect(url_for("community_problems"))
@@ -8439,6 +8530,25 @@ ADMIN_PROBLEMS_CSS = """
 </style>
 
 """
+@app.route("/admin/problem-alerts")
+@admin_required
+def admin_problem_alerts():
+    con=db()
+    try:
+        rows=con.execute(
+            "SELECT i.id,i.title,i.description,i.category,i.status,i.created_at,s.name,s.student_id "
+            "FROM issues i JOIN students s ON s.id=i.student_id "
+            "WHERE i.status NOT IN ('Resolved','Closed') ORDER BY i.id DESC LIMIT 8"
+        ).fetchall()
+    finally:
+        con.close()
+    return jsonify({"count": len(rows), "items": [{
+        "id": int(r["id"]), "title": r["title"], "description": r["description"],
+        "category": r["category"], "status": r["status"], "created_at": r["created_at"],
+        "name": r["name"], "student_id": r["student_id"]
+    } for r in rows]})
+
+
 @app.route("/admin/problems")
 @app.route("/admin/problems-solutions")
 @admin_required
@@ -8621,6 +8731,36 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
 .admin-contact-page .admin-consent-row>div{min-width:0}.admin-contact-page .admin-consent-row strong{display:block;color:#25313e;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.admin-contact-page .admin-consent-row small{display:block;color:#7a8794;font-size:9px;margin-bottom:4px}.admin-contact-page .admin-consent-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px;border-radius:999px;background:#edf8e6;color:#4f9424;font-size:8px;font-weight:950;letter-spacing:.08em}.admin-contact-page .admin-consent-delete{border:1px solid #f0caca;border-radius:10px;background:#fff5f5;color:#b52d2d;padding:8px 10px;font-size:9px;font-weight:900;cursor:pointer}.admin-contact-page .admin-consent-delete:hover{background:#ffe9e9}
 @media(max-width:900px){.admin-contact-page .admin-contact-grid{grid-template-columns:1fr}.admin-contact-page .admin-consent-row{grid-template-columns:1fr 1fr}.admin-contact-page .admin-consent-pill{justify-self:start}.admin-contact-page .admin-consent-row form{justify-self:end}}
 @media(max-width:600px){.admin-contact-page{padding:18px 12px 40px}.admin-contact-page .admin-contact-card{padding:18px;border-radius:19px}.admin-contact-page .admin-contact-photo-box{align-items:flex-start;flex-direction:column}.admin-contact-page .admin-photo-preview,.admin-contact-page .admin-photo-fallback{width:84px;height:84px;flex-basis:84px}.admin-contact-page .admin-contact-photo-box input[type=file]{max-width:none}.admin-contact-page .admin-consent-row{grid-template-columns:1fr}.admin-contact-page .admin-consent-row form,.admin-contact-page .admin-consent-pill{justify-self:stretch}.admin-contact-page .admin-consent-delete{width:100%;min-height:40px}.admin-contact-page .admin-preview-visual{min-height:180px}}
+
+/* ===== VYBE MOBILE SCROLL PERFORMANCE ===== */
+@media (max-width:850px){
+  html{
+    scroll-behavior:auto!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior-y:auto!important;
+  }
+  body{
+    touch-action:pan-y!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior-y:auto!important;
+  }
+  .page-shell,.wrap,.section,.student-page,.content,.main-content{
+    -webkit-overflow-scrolling:touch!important;
+  }
+  /* Native momentum scrolling for internal phone panels. */
+  .community-chat-window,
+  .vybe-assistant-body,
+  #vybeMobileNav.student-mobile-menu,
+  .mobile-only-menu-links{
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+    touch-action:pan-y!important;
+  }
+  /* Avoid expensive visual effects while the finger is moving. */
+  .student-bottom-nav,.nav,.vybe-assistant-panel{
+    will-change:transform;
+  }
+}
 </style>"""
 @app.route("/contact-terms", methods=["GET","POST"])
 def contact_terms():
