@@ -2772,6 +2772,18 @@ a.card textarea{
 }
 
 
+
+/* ===== ADMIN CONTROL CENTER REDESIGN ===== */
+.admin-dashboard-page,.admin-manage-page{max-width:1180px!important;margin:0 auto!important;padding:56px 0 90px!important}
+.admin-dashboard-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:28px}.admin-eyebrow{border:1px solid #d7e4f4!important;background:rgba(255,255,255,.74)!important;color:#2f6fca!important}.admin-dashboard-hero h1,.admin-manage-title h1{margin:14px 0 8px!important;font-size:clamp(38px,5vw,58px)!important;line-height:1.03!important;letter-spacing:-.045em!important;color:#17202b!important}.admin-dashboard-subtitle,.admin-manage-title p{margin:0!important;color:#687482!important;font-size:16px!important;max-width:650px!important;line-height:1.6!important}
+.admin-status-pill{display:flex;align-items:center;gap:9px;padding:11px 15px;border:1px solid #dfe5ea;border-radius:999px;background:rgba(255,255,255,.88);font-size:13px;font-weight:800;white-space:nowrap;box-shadow:0 8px 22px rgba(31,48,66,.06)}.admin-status-pill span{width:8px;height:8px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 4px #edf8e6}.admin-status-pill.is-offline span{background:#df5c5c;box-shadow:0 0 0 4px #fff0f0}
+.admin-stat-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 42px;padding:7px;border:1px solid #e1e7eb;border-radius:18px;background:rgba(255,255,255,.78);box-shadow:0 10px 28px rgba(31,48,66,.05)}.admin-stat-strip div{padding:14px 16px;border-radius:13px;background:#fff}.admin-stat-strip strong{display:block;font-size:24px;line-height:1.05;color:#17202b}.admin-stat-strip span{display:block;margin-top:5px;color:#7a8794;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.admin-section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:15px}.admin-section-heading span,.admin-tool-section-head span{font-size:11px;font-weight:900;letter-spacing:.12em;color:#8a97a4}.admin-section-heading h2{margin:4px 0 0;font-size:25px;color:#17202b}.admin-open-all{font-size:13px;font-weight:800;color:#2f6fca;text-decoration:none;padding:10px 13px;border-radius:11px;background:#edf4ff;border:1px solid #d8e6fa}
+.admin-main-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:34px}.admin-control-card{position:relative;display:flex;align-items:center;gap:17px;min-height:132px;padding:21px 22px;border:1px solid #dfe5ea;border-radius:22px;background:rgba(255,255,255,.94);text-decoration:none;color:#17202b;box-shadow:0 12px 30px rgba(31,48,66,.055);overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.admin-control-card:after{content:"";position:absolute;right:-35px;top:-45px;width:125px;height:125px;border-radius:50%;background:rgba(47,111,202,.06)}.admin-control-card:hover{transform:translateY(-3px);box-shadow:0 18px 38px rgba(31,48,66,.10);border-color:#cdd8e2}.admin-card-icon{position:relative;z-index:1;flex:0 0 52px;width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-size:12px;font-weight:900;background:#edf4ff;color:#2f6fca}.admin-card-green .admin-card-icon{background:#edf8e6;color:#579c24}.admin-card-orange .admin-card-icon{background:#fff3e5;color:#c8751b}.admin-card-purple .admin-card-icon{background:#f1edff;color:#7056bf}.admin-card-dark .admin-card-icon{background:#e9eef4;color:#334250}.admin-card-slate .admin-card-icon{background:#eef1f4;color:#5c6875}.admin-card-copy{position:relative;z-index:1;min-width:0;flex:1}.admin-card-label{display:block;font-size:10px;font-weight:900;letter-spacing:.12em;color:#84919d}.admin-card-copy h3{margin:4px 0 5px;font-size:20px}.admin-card-copy p{margin:0;color:#6d7b88;font-size:13px;line-height:1.45}.admin-card-arrow{position:relative;z-index:1;font-size:20px;color:#8794a0}.admin-control-card:hover .admin-card-arrow{transform:translateX(4px);color:#2f6fca}
+.admin-quick-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.admin-quick-card{display:flex;align-items:center;gap:13px;padding:15px 17px;border:1px solid #dfe5ea;border-radius:16px;background:#fff;text-decoration:none;color:#17202b;box-shadow:0 8px 22px rgba(31,48,66,.045)}.admin-quick-card>div{min-width:0;flex:1}.admin-quick-card b{display:block;font-size:14px}.admin-quick-card small{display:block;color:#778592;margin-top:3px;line-height:1.35}.admin-quick-card>span:last-child{font-size:18px;color:#8b98a4}.admin-quick-dot{width:10px;height:10px;border-radius:50%;background:#68b82e;box-shadow:0 0 0 5px #edf8e6;flex:0 0 auto}.admin-quick-dot.red{background:#df5c5c;box-shadow:0 0 0 5px #fff0f0}.admin-quick-icon{width:32px;height:32px;border-radius:10px;background:#edf4ff;color:#2f6fca;display:grid;place-items:center;font-weight:900;flex:0 0 auto}
+.admin-inner-top{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:16px}.admin-back{font-size:13px;font-weight:800;color:#2f6fca;text-decoration:none}.admin-manage-title{margin-bottom:35px}.admin-tool-section{scroll-margin-top:90px;margin-top:30px;padding-top:28px;border-top:1px solid #e1e7eb}.admin-tool-section:first-of-type{border-top:0;padding-top:0}.admin-tool-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:13px}.admin-tool-section-head h2{margin:4px 0 0;font-size:24px;color:#17202b}.admin-tool-section-head>b{font-size:12px;color:#7b8894;background:#fff;border:1px solid #dfe5ea;border-radius:999px;padding:7px 10px;white-space:nowrap}.admin-tool-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.admin-tool{position:relative;display:flex;flex-direction:column;gap:4px;min-height:94px;padding:16px 42px 15px 16px;border:1px solid #dfe5ea;border-radius:15px;background:#fff;text-decoration:none;box-shadow:0 6px 18px rgba(31,48,66,.035);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.admin-tool:hover{transform:translateY(-2px);border-color:#cbd7e1;box-shadow:0 12px 24px rgba(31,48,66,.07)}.admin-tool-name{font-size:14px;font-weight:850;color:#17202b}.admin-tool-desc{font-size:12px;line-height:1.4;color:#7a8793}.admin-tool-arrow{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:18px;color:#9aa5ae}.admin-tool:hover .admin-tool-arrow{color:#2f6fca}
+@media(max-width:850px){.admin-dashboard-page,.admin-manage-page{padding:38px 16px 80px!important}.admin-dashboard-hero{align-items:flex-start;flex-direction:column}.admin-status-pill{margin-top:2px}.admin-stat-strip{grid-template-columns:repeat(3,1fr)}.admin-main-grid{grid-template-columns:1fr}.admin-tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.admin-dashboard-hero h1,.admin-manage-title h1{font-size:38px!important}.admin-dashboard-subtitle,.admin-manage-title p{font-size:14px!important}.admin-stat-strip{grid-template-columns:repeat(2,1fr);gap:6px;padding:6px;margin-bottom:30px}.admin-stat-strip div{padding:12px}.admin-stat-strip strong{font-size:21px}.admin-stat-strip span{font-size:9px}.admin-section-heading{align-items:flex-start;flex-direction:column;gap:10px}.admin-open-all{width:100%;text-align:center}.admin-control-card{min-height:118px;padding:17px;border-radius:18px;gap:13px}.admin-card-icon{flex-basis:45px;width:45px;height:45px;border-radius:13px}.admin-card-copy h3{font-size:18px}.admin-card-copy p{font-size:12px}.admin-quick-row{grid-template-columns:1fr}.admin-tool-section-head{align-items:flex-start;flex-direction:column;gap:8px}.admin-tool-grid{grid-template-columns:1fr}.admin-tool{min-height:82px}.admin-inner-top{align-items:flex-start;flex-direction:column-reverse}.admin-eyebrow{font-size:11px}}
+
 """
 
 
@@ -6505,8 +6517,7 @@ def community_chat():
     else:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div><form class="community-chat-form" method="post" action="/community/chat" id="community-send-form"><input type="hidden" name="reply_to_id" id="community-reply-to" value=""><textarea name="message" maxlength="1500" rows="1" placeholder="Write a message..." required autocomplete="off" aria-label="Message"></textarea><button class="community-send-button" type="submit" aria-label="Send message" title="Send">➤</button></form>'''
 
-    chat_page_style = r'''
-<style>
+    chat_style = '''<style>
 /* ===== VYBE COMMUNITY CHAT — FINAL DESKTOP + PHONE UI ===== */
 .community-chat-page-section{width:100%!important;max-width:1120px!important;margin:0 auto!important;padding:20px 22px 34px!important;box-sizing:border-box!important}
 .community-chat-page-section .community-page-top{max-width:100%!important;margin:0 0 14px!important;padding:0!important}
@@ -6574,10 +6585,8 @@ def community_chat():
   .community-chat-page-section .community-chat-window{padding-left:7px!important;padding-right:7px!important}
   .community-chat-page-section .community-message{max-width:92%!important}
 }
-</style>
-    '''
-
-    body = chat_page_style + f'''<section class="section community-page-section community-chat-page-section">
+</style>'''
+    body = chat_style + f'''<section class="section community-page-section community-chat-page-section">
       <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
       <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
     </section>
@@ -6879,43 +6888,68 @@ def admin_panel():
         "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
         "issues": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
         "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
-        "solutions": con.execute("SELECT COUNT(*) AS c FROM solutions").fetchone()["c"],
-        "chats": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
         "community_messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+    }
+    online = setting(con, "vybe_online", "1") == "1"
+    con.close()
+    body = f"""<section class="section admin-dashboard-page">
+      <div class="admin-dashboard-hero">
+        <div>
+          <div class="badge admin-eyebrow">PRIVATE VYBE CONTROL CENTER</div>
+          <h1>Admin dashboard.</h1>
+          <p class="admin-dashboard-subtitle">A simple control center for running VYBE. Choose an area below instead of searching through dozens of buttons.</p>
+        </div>
+        <div class="admin-status-pill {{"is-online" if online else "is-offline"}}"><span></span>{{"VYBE is online" if online else "VYBE is offline"}}</div>
+      </div>
+      <div class="admin-stat-strip">
+        <div><strong>{{stats["students"]}}</strong><span>Students</span></div><div><strong>{{stats["pending"]}}</strong><span>Pending</span></div><div><strong>{{stats["issues"]}}</strong><span>Problems</span></div><div><strong>{{stats["resources"]}}</strong><span>Resources</span></div><div><strong>{{stats["community_messages"]}}</strong><span>Chat messages</span></div>
+      </div>
+      <div class="admin-section-heading"><div><span>CONTROL CENTER</span><h2>Manage VYBE</h2></div><a href="/admin/manage" class="admin-open-all">Open all controls <b>→</b></a></div>
+      <div class="admin-main-grid">
+        <a class="admin-control-card admin-card-blue" href="/admin/manage#people"><div class="admin-card-icon">01</div><div class="admin-card-copy"><span class="admin-card-label">PEOPLE</span><h3>Students & access</h3><p>Approve students, manage accounts and review problem history.</p></div><div class="admin-card-arrow">→</div></a>
+        <a class="admin-control-card admin-card-green" href="/admin/manage#academics"><div class="admin-card-icon">02</div><div class="admin-card-copy"><span class="admin-card-label">ACADEMICS</span><h3>Academic content</h3><p>Resources, Academic Hub, timetables and academic updates.</p></div><div class="admin-card-arrow">→</div></a>
+        <a class="admin-control-card admin-card-orange" href="/admin/manage#campus"><div class="admin-card-icon">03</div><div class="admin-card-copy"><span class="admin-card-label">CAMPUS</span><h3>Campus updates</h3><p>Announcements, events and faculty/contact information.</p></div><div class="admin-card-arrow">→</div></a>
+        <a class="admin-control-card admin-card-purple" href="/admin/manage#community"><div class="admin-card-icon">04</div><div class="admin-card-copy"><span class="admin-card-label">COMMUNITY</span><h3>Student community</h3><p>Moderate Community Chat and saved student problem chats.</p></div><div class="admin-card-arrow">→</div></a>
+        <a class="admin-control-card admin-card-dark" href="/admin/manage#assistant"><div class="admin-card-icon">05</div><div class="admin-card-copy"><span class="admin-card-label">VYBE AI</span><h3>Assistant control</h3><p>Manage knowledge, memories and the Assistant ON/OFF state.</p></div><div class="admin-card-arrow">→</div></a>
+        <a class="admin-control-card admin-card-slate" href="/admin/manage#system"><div class="admin-card-icon">06</div><div class="admin-card-copy"><span class="admin-card-label">SYSTEM</span><h3>Security & settings</h3><p>Public status, security, login history, password requests and analytics.</p></div><div class="admin-card-arrow">→</div></a>
+      </div>
+      <div class="admin-quick-row">
+        <a href="/admin/status" class="admin-quick-card"><span class="admin-quick-dot {{"green" if online else "red"}}"></span><div><b>VYBE public status</b><small>{{"Currently online — students can use VYBE." if online else "Currently offline — public/student access is blocked."}}</small></div><span>→</span></a>
+        <a href="/admin/analytics" class="admin-quick-card"><span class="admin-quick-icon">↗</span><div><b>Analytics</b><small>View usage and community activity.</small></div><span>→</span></a>
+      </div>
+    </section>"""
+    return layout("Admin", body, admin=True)
+
+
+@app.route("/admin/manage")
+@admin_required
+def admin_manage():
+    con = db()
+    counts = {
+        "students": con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],
+        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "updates": con.execute("SELECT COUNT(*) AS c FROM academic_updates").fetchone()["c"],
         "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
         "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
         "faculty": con.execute("SELECT COUNT(*) AS c FROM faculty").fetchone()["c"],
+        "problems": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "community": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
     }
-    assistant_enabled = setting(con, "vybe_assistant_enabled", "1") == "1"
-    online = setting(con, "vybe_online", "1") == "1"
     con.close()
-    body = f'''<section class="section"><div class="badge">PRIVATE VYBE CONTROL CENTER</div><h1>Admin dashboard.</h1>
-    <div class="grid">
-      <a class="card" href="/admin/students"><div class="kpi">{stats["students"]}</div><h3>Students</h3><p class="muted">Manage all student accounts.</p></a>
-      <a class="card" href="/admin/students#pending"><div class="kpi">{stats["pending"]}</div><h3>Pending</h3><p class="muted">Entry requests waiting for approval.</p></a>
-      <a class="card" href="/admin/problems"><div class="kpi">{stats["issues"]}</div><h3>Problems</h3><p class="muted">View reports and update status.</p></a>
-      <a class="card" href="/admin/resources"><div class="kpi">{stats["resources"]}</div><h3>Resources</h3><p class="muted">Add and remove academic material.</p></a>
-      <a class="card" href="/admin/academic-hub"><div class="kpi">AH</div><h3>Academic Hub</h3><p class="muted">Manage results, datesheets, forms, portals and academic updates.</p></a>
-      <a class="card" href="/admin/announcements"><div class="kpi">{stats["announcements"]}</div><h3>Announcements</h3><p class="muted">Publish campus-wide updates.</p></a>
-      <a class="card" href="/admin/events"><div class="kpi">{stats["events"]}</div><h3>Events</h3><p class="muted">Create and manage campus events.</p></a>
-      <a class="card" href="/admin/campus"><div class="kpi">{stats["faculty"]}</div><h3>Campus</h3><p class="muted">Manage faculty names, designations and email contacts.</p></a>
-      <a class="card" href="/admin/chats"><div class="kpi">{stats["chats"]}</div><h3>Problem chats</h3><p class="muted">Saved problem and solution history.</p></a>
-      <a class="card" href="/admin/community-chat"><div class="kpi">{stats["community_messages"]}</div><h3>Community Chat</h3><p class="muted">Moderate the live student community chat.</p></a>
-      <a class="card" href="/admin/assistant"><div class="kpi"></div><h3>VYBE Assistant</h3><p class="muted">Upload knowledge, save permanent memories, manage Assistant data and turn the Assistant ON/OFF.</p></a>
-      <a class="card" href="/admin/timetable"><div class="kpi"></div><h3>Timetable</h3><p class="muted">Post and manage student timetables separately.</p></a>
-      <a class="card" href="/admin/analytics"><div class="kpi">↗</div><h3>Analytics</h3><p class="muted">See campus usage and community activity.</p></a>
-    </div>
-    <section class="section grid2">
-      <div class="card"><h2> VYBE Assistant</h2><p class="small">Status: <strong>{" ON" if assistant_enabled else " OFF"}</strong></p><p class="muted">Free built-in assistant. No OpenAI API key or paid AI service is required. It answers from VYBE's live campus data, uploaded timetable text and the current IST date/time.</p><form method="post" action="/admin/assistant"><button class="btn {"danger" if assistant_enabled else "good"}">{" Turn Assistant OFF" if assistant_enabled else " Turn Assistant ON"}</button></form></div>
-      <div class="card"><h2> What it can answer</h2><p class="muted">Announcements, updates, events, notes/files, resources, uploaded timetable data, community questions and solutions, plus current date and time.</p><span class="pill">No API key needed</span></div>
-    </section>
-    <section class="section grid2">
-      <div class="card"><h2> VYBE Public Status</h2><p class="{"online" if online else "offline"}"><strong>{" ONLINE" if online else " OFFLINE"}</strong></p>
-      <p class="muted">When offline, student/public routes are blocked while admin routes remain accessible.</p>
-      <form method="post" action="/admin/status">{('<button class="btn danger"> Take VYBE Offline</button>' if online else '<button class="btn good"> Bring VYBE Online</button>')}</form></div>
-      <div class="card"><h2> Security</h2><p class="muted">Admin login requires password + passkey. Manage credentials and password-change approvals here.</p><div class="actions"><a class="btn dark" href="/admin/password">Security center →</a><a class="btn dark" href="/admin/password-requests">Password requests →</a></div></div>
-    </section></section>'''
-    return layout("Admin", body, admin=True)
+    def action(label, href, desc):
+        return f'<a class="admin-tool" href="{href}"><span class="admin-tool-name">{label}</span><span class="admin-tool-desc">{desc}</span><span class="admin-tool-arrow">→</span></a>'
+    body = f"""<section class="section admin-manage-page">
+      <div class="admin-inner-top"><a href="/admin/panel" class="admin-back">← Dashboard</a><div class="badge admin-eyebrow">VYBE ADMIN</div></div>
+      <div class="admin-manage-title"><h1>Manage VYBE.</h1><p>Every control is grouped by purpose, so you can operate the admin side without hunting through a long dashboard.</p></div>
+      <section id="people" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>01 · PEOPLE</span><h2>Students & access</h2></div><b>{counts["students"]} students</b></div><div class="admin-tool-grid">{action("Students", "/admin/students", str(counts["students"]) + " student accounts")}{action("Pending requests", "/admin/students#pending", str(counts["pending"]) + " waiting for approval")}{action("Problem reports", "/admin/problems", str(counts["problems"]) + " reports")}{action("Problem chats", "/admin/chats", "Saved problem and solution history")}</div></section>
+      <section id="academics" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>02 · ACADEMICS</span><h2>Academic content</h2></div><b>{counts["resources"] + counts["updates"]} items</b></div><div class="admin-tool-grid">{action("Academic Hub", "/admin/academic-hub", "Results, datesheets, forms and updates")}{action("Resources", "/admin/resources", str(counts["resources"]) + " resources")}{action("Timetable", "/admin/timetable", "Post or replace student timetables")}{action("Academic updates", "/admin/academic-hub", str(counts["updates"]) + " published updates")}</div></section>
+      <section id="campus" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>03 · CAMPUS</span><h2>Campus updates</h2></div><b>{counts["announcements"] + counts["events"]} live items</b></div><div class="admin-tool-grid">{action("Announcements", "/admin/announcements", str(counts["announcements"]) + " published")}{action("Events", "/admin/events", str(counts["events"]) + " campus events")}{action("Faculty & contacts", "/admin/campus", str(counts["faculty"]) + " faculty records")}</div></section>
+      <section id="community" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>04 · COMMUNITY</span><h2>Student community</h2></div><b>{counts["community"]} messages</b></div><div class="admin-tool-grid">{action("Community Chat", "/admin/community-chat", str(counts["community"]) + " live messages")}{action("Problem chats", "/admin/chats", "Saved student problem conversations")}</div></section>
+      <section id="assistant" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>05 · VYBE AI</span><h2>Assistant control</h2></div><b>Knowledge & memory</b></div><div class="admin-tool-grid">{action("VYBE Assistant", "/admin/assistant", "Knowledge, memory and ON/OFF control")}</div></section>
+      <section id="system" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>06 · SYSTEM</span><h2>Security & settings</h2></div><b>Admin only</b></div><div class="admin-tool-grid">{action("Settings", "/admin/settings", "General VYBE configuration")}{action("Security center", "/admin/password", "Admin password and passkey")}{action("Password requests", "/admin/password-requests", "Review student password requests")}{action("Login history", "/admin/login-history", "Review admin authentication activity")}{action("Analytics", "/admin/analytics", "Usage and community activity")}{action("Public status", "/admin/status", "Take VYBE online or offline")}</div></section>
+    </section>"""
+    return layout("Manage VYBE", body, admin=True)
 
 
 @app.route("/admin/analytics")
