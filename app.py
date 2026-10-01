@@ -1316,6 +1316,14 @@ CSS = r"""
   .community-message-select{flex-basis:20px}
 }
 
+/* ===== FRIENDLY CHAT UI — familiar messaging layout ===== */
+.community-chat-page-section{padding-top:18px!important}.community-chat-page-section .community-page-top{max-width:1040px!important;margin-bottom:14px!important}.community-chat-page-section .community-page-top h1{font-size:clamp(34px,5vw,56px)!important;margin:7px 0 5px!important}.community-chat-page-section .community-page-top p{font-size:13px!important}
+.community-chat-page-card{max-width:1040px!important;padding:0!important;overflow:hidden!important;border-radius:24px!important;background:#f6f8fb!important;border:1px solid #dfe5ea!important;box-shadow:0 24px 70px rgba(20,35,50,.13)!important}
+.community-chat-page-card .community-chat-tools{height:58px;margin:0!important;padding:0 18px!important;background:#fff!important;border-bottom:1px solid #e5e9ed!important}.community-chat-page-card .community-select-help{margin:0!important;color:#7a8793!important;font-size:12px!important}.community-chat-page-card .community-selection-actions{display:none!important}.community-chat-window{height:clamp(430px,62vh,680px)!important;max-height:none!important;min-height:430px!important;padding:24px 24px 30px!important;gap:12px!important;background:linear-gradient(180deg,#f7f9fb,#eef2f5)!important}
+.community-message{position:relative!important;max-width:min(72%,680px)!important;padding:10px 13px!important;border-radius:17px!important;background:#fff!important;border:1px solid #e0e6eb!important;box-shadow:0 3px 10px rgba(31,45,58,.055)!important;user-select:text!important;cursor:default!important}.community-message.mine{background:#eaf3ff!important;border-color:#d2e3f6!important;border-bottom-right-radius:6px!important}.community-message:not(.mine){border-bottom-left-radius:6px!important}.community-message-content{min-width:0!important}.community-message-head{margin-bottom:3px!important}.community-message-head strong{font-size:12px!important;font-weight:750!important;color:#31506b!important}.community-message.mine .community-message-head strong{color:#285f9e!important}.community-message-text{font-size:14px!important;line-height:1.48!important;color:#1d2a35!important;white-space:pre-wrap!important}.community-message-meta{display:flex;justify-content:flex-end;margin-top:5px;font-size:10px;color:#83909b}.community-message-actions{display:flex;gap:5px;margin-top:7px;opacity:.72}.community-message-action{border:1px solid #dce4ea!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:5px 8px!important;font:inherit!important;font-size:10px!important;font-weight:700!important;cursor:pointer!important;box-shadow:none!important}.community-message-action:hover{background:#f1f6fa!important;color:#245f92!important}.community-message-action.delete{color:#c33c49!important;border-color:#f0d5d8!important}.community-reply-reference{margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important}.community-reply-reference strong{color:#326b99!important;font-size:10px!important}.community-reply-reference span{color:#788995!important}.community-reply-bar{margin:0!important;border:0!important;border-top:1px solid #e3e8ed!important;border-left:3px solid #4e8fc2!important;border-radius:0!important;padding:9px 18px!important;background:#fff!important}.community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 48px!important;gap:9px!important;margin:0!important;padding:12px 14px!important;background:#fff!important;border-top:1px solid #e3e8ed!important}.community-chat-form textarea{height:46px!important;min-height:46px!important;padding:12px 15px!important;border-radius:16px!important;background:#f5f7f9!important;color:#1e2a34!important;border:1px solid #dce3e8!important;box-shadow:none!important}.community-chat-form textarea::placeholder{color:#8a97a1!important}.community-send-button{width:46px;height:46px;border:0;border-radius:15px;background:#2f6fca;color:#fff;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 8px 18px rgba(47,111,202,.22);display:grid;place-items:center}.community-chat-keyboard-hint{display:none!important}
+@media (hover:hover){.community-message-actions{opacity:0}.community-message:hover .community-message-actions{opacity:1}}
+@media(max-width:850px){.community-chat-page-section{padding:8px 8px 18px!important}.community-chat-page-section .community-page-top{padding:0 3px!important;margin-bottom:9px!important}.community-chat-page-section .community-page-top h1{font-size:29px!important}.community-chat-page-section .community-page-top p{font-size:11px!important}.community-chat-page-card{border-radius:20px!important;height:calc(100dvh - 230px)!important;max-height:700px!important;display:flex!important;flex-direction:column!important}.community-chat-page-card .community-chat-tools{height:48px;padding:0 11px!important}.community-chat-page-card .community-select-help{font-size:10px!important}.community-chat-window{height:auto!important;min-height:0!important;flex:1!important;padding:16px 10px 18px!important;gap:9px!important}.community-message{max-width:88%!important;padding:9px 11px!important;border-radius:15px!important}.community-message-text{font-size:13px!important}.community-message-actions{opacity:1!important;margin-top:6px!important}.community-message-action{padding:5px 8px!important;font-size:10px!important}.community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:9px 9px calc(9px + env(safe-area-inset-bottom))!important;gap:7px!important}.community-chat-form textarea{height:44px!important;min-height:44px!important;border-radius:15px!important}.community-send-button{width:44px;height:44px;border-radius:14px!important}.community-reply-bar{padding:8px 11px!important}}
+
 :root{--bg:#01040a;--bg2:#020914;--panel:rgba(3,14,27,.86);--line:rgba(28,91,145,.24);--line2:rgba(37,116,181,.48);--text:#eef6ff;--muted:#8fa6bd;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#268fd0;--accent2:#073f6b;--shadow:0 28px 90px rgba(0,0,0,.68)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
@@ -6332,6 +6340,17 @@ def community_chat():
     if request.method == "POST":
         action = (request.form.get("action") or "send").strip().lower()
 
+        if action == "delete_one":
+            try: mid = int(request.form.get("message_id", "0"))
+            except (TypeError, ValueError): mid = 0
+            if mid > 0:
+                try:
+                    con.execute("DELETE FROM community_messages WHERE id=? AND student_id=?", (mid, my_id))
+                    con.commit(); flash("Message deleted.")
+                except Exception:
+                    con.rollback(); app.logger.exception("Single community message delete failed"); flash("We couldn't delete that message right now. Please try again.")
+            con.close(); return redirect(url_for("community_chat"))
+
         # A student can delete only their own messages. Deleting remains
         # available even when the admin temporarily turns chat sending off.
         if action == "delete_selected":
@@ -6468,37 +6487,21 @@ def community_chat():
             f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
             f'{reply_html}'
             f'<div class="community-message-text">{esc(r["message"])}</div>'
-            f'</div></div>'
+            f'<div class="community-message-meta"><span>{esc(str(r["created_at"])[-5:])}</span></div>'
+            f'<div class="community-message-actions"><button type="button" class="community-message-action community-reply-action" data-message-id="{r["id"]}">Reply</button>'
+            + (f'<button type="button" class="community-message-action delete community-delete-one-action" data-message-id="{r["id"]}">Delete</button>' if mine else '') +
+            f'</div></div></div>'
         )
     chat_bubbles = "".join(bubbles)
 
     status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
-    select_controls = f'''<div class="community-chat-tools">
-      <div class="community-selection-actions" id="community-selection-actions">
-        <span class="community-selection-count" id="community-selection-count">0 selected</span>
-        <form id="community-delete-form" class="community-delete-toolbar" method="post" action="/community/chat">
-          <input type="hidden" name="action" value="delete_selected" id="community-delete-action">
-          <button class="community-delete-selected" type="submit" id="community-delete-selected">Delete selected</button>
-          <button class="community-delete-all" type="button" id="community-delete-all">Delete all</button>
-          <button class="community-selection-done" type="button" id="community-selection-done">Done</button>
-        </form>
-      </div>
-      <div class="community-select-help" id="community-select-help">Tap your message to select it</div>
-    </div>'''
-
+    select_controls = f'''<div class="community-chat-tools"><div class="community-select-help">Tap Reply on any message to respond</div></div>'''
     if not chat_enabled:
-        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
-        <div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still select and delete your own messages.</div>'''
+        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
     else:
-        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div>
-        <div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div>
-        <form class="community-chat-form" method="post" action="/community/chat" id="community-send-form">
-            <input type="hidden" name="reply_to_id" id="community-reply-to" value="">
-            <textarea name="message" maxlength="1500" rows="1" placeholder="Message..." required autocomplete="off" aria-label="Message"></textarea>
-        </form>
-        <div class="community-chat-keyboard-hint">Enter sends · Shift + Enter makes a new line</div>'''
+        chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div><form class="community-chat-form" method="post" action="/community/chat" id="community-send-form"><input type="hidden" name="reply_to_id" id="community-reply-to" value=""><textarea name="message" maxlength="1500" rows="1" placeholder="Write a message..." required autocomplete="off" aria-label="Message"></textarea><button class="community-send-button" type="submit" aria-label="Send message" title="Send">➤</button></form>'''
 
     body = f'''<section class="section community-page-section community-chat-page-section">
       <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
@@ -6506,265 +6509,18 @@ def community_chat():
     </section>
     <script>
     (function() {{
-      const selected = new Set();
-      const actionBar = document.getElementById('community-selection-actions');
-      const countEl = document.getElementById('community-selection-count');
-      const helpEl = document.getElementById('community-select-help');
-      const deleteForm = document.getElementById('community-delete-form');
-      const deleteAction = document.getElementById('community-delete-action');
-      const doneBtn = document.getElementById('community-selection-done');
-      const deleteSelectedBtn = document.getElementById('community-delete-selected');
-      const deleteAllBtn = document.getElementById('community-delete-all');
-
-      const chatWindow = document.querySelector('.community-chat-window');
-      const liveMessagesUrl = '/community/chat/messages';
-      let liveTimer = null;
-      let liveBusy = false;
-      let liveStarted = false;
-
-      function escClient(value) {{
-        const div = document.createElement('div');
-        div.textContent = value == null ? '' : String(value);
-        return div.innerHTML;
-      }}
-
-      function buildLiveMessage(m) {{
-        const mine = String(m.student_id) === String({my_id});
-        const wrap = document.createElement('div');
-        wrap.className = 'community-message' + (mine ? ' mine' : '');
-        wrap.id = 'community-msg-' + m.id;
-        wrap.dataset.messageId = m.id;
-        wrap.dataset.mine = mine ? '1' : '0';
-        wrap.setAttribute('role', 'button');
-        wrap.tabIndex = 0;
-        wrap.setAttribute('aria-pressed', selected.has(String(m.id)) ? 'true' : 'false');
-
-        const content = document.createElement('div');
-        content.className = 'community-message-content';
-        const head = document.createElement('div');
-        head.className = 'community-message-head';
-        const strong = document.createElement('strong');
-        strong.textContent = m.name || 'Student';
-        head.appendChild(strong);
-        content.appendChild(head);
-
-        if (m.reply_to_id && m.reply_message) {{
-          const ref = document.createElement('button');
-          ref.type = 'button';
-          ref.className = 'community-reply-reference';
-          ref.dataset.replyTarget = m.reply_to_id;
-          const rt = document.createElement('strong');
-          rt.textContent = 'Replying to ' + (m.reply_name || 'Student');
-          const rp = document.createElement('span');
-          rp.textContent = String(m.reply_message).slice(0, 120);
-          ref.appendChild(rt); ref.appendChild(rp);
-          content.appendChild(ref);
-        }}
-        const text = document.createElement('div');
-        text.className = 'community-message-text';
-        text.textContent = m.message || '';
-        content.appendChild(text);
-        wrap.appendChild(content);
-        return wrap;
-      }}
-
-      function bindLiveMessage(msg) {{
-        if (!msg || msg.dataset.liveBound === '1') return;
-        msg.dataset.liveBound = '1';
-        if (msg.dataset.mine === '1') {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('a,button,textarea,input,form')) return;
-            toggleMessage(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
-          }});
-        }} else {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('.community-reply-reference')) return;
-            startReply(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
-          }});
-        }}
-        const ref = msg.querySelector('.community-reply-reference');
-        if (ref) ref.addEventListener('click', function(e) {{
-          e.preventDefault(); e.stopPropagation();
-          const target = document.getElementById('community-msg-' + ref.dataset.replyTarget);
-          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
-        }});
-      }}
-
-      async function refreshLiveChat(forceBottom) {{
-        if (!chatWindow || liveBusy) return;
-        liveBusy = true;
-        try {{
-          const wasNearBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 90;
-          const response = await fetch(liveMessagesUrl + '?t=' + Date.now(), {{credentials:'same-origin', cache:'no-store', headers:{{'Accept':'application/json'}}}});
-          if (!response.ok) return;
-          const data = await response.json();
-          const messages = Array.isArray(data.messages) ? data.messages : [];
-          const currentIds = new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x => x.dataset.messageId));
-          const incomingIds = new Set(messages.map(m => String(m.id)));
-          messages.forEach(function(m) {{
-            const id = String(m.id);
-            if (!currentIds.has(id)) chatWindow.appendChild(buildLiveMessage(m));
-          }});
-          Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(el) {{
-            if (!incomingIds.has(el.dataset.messageId)) {{
-              selected.delete(el.dataset.messageId);
-              el.remove();
-            }}
-          }});
-          chatWindow.querySelectorAll('.community-message').forEach(bindLiveMessage);
-          updateSelectionUI();
-          if (messages.length && (forceBottom || wasNearBottom)) chatWindow.scrollTo({{top:chatWindow.scrollHeight, behavior: forceBottom ? 'smooth' : 'auto'}});
-          if (!liveStarted && messages.length) {{ liveStarted = true; chatWindow.scrollTop = chatWindow.scrollHeight; }}
-        }} catch (_) {{
-          // Temporary network errors are ignored; the next poll retries automatically.
-        }} finally {{ liveBusy = false; }}
-      }}
-
-      function startLiveChat() {{
-        if (!chatWindow || liveTimer) return;
-        refreshLiveChat(false);
-        liveTimer = setInterval(function() {{ refreshLiveChat(false); }}, 500);
-      }}
-
-      function updateSelectionUI() {{
-        document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
-          const id = msg.getAttribute('data-message-id');
-          const on = selected.has(id);
-          msg.classList.toggle('is-selected', on);
-          msg.setAttribute('aria-pressed', on ? 'true' : 'false');
-        }});
-        const has = selected.size > 0;
-        if (actionBar) actionBar.classList.toggle('is-visible', has);
-        if (helpEl) helpEl.classList.toggle('is-hidden', has);
-        if (countEl) countEl.textContent = selected.size + ' selected';
-        if (deleteSelectedBtn) deleteSelectedBtn.disabled = !has;
-      }}
-
-      function toggleMessage(msg) {{
-        if (msg.getAttribute('data-mine') !== '1') return;
-        const id = msg.getAttribute('data-message-id');
-        if (!id) return;
-        if (selected.has(id)) selected.delete(id); else selected.add(id);
-        updateSelectionUI();
-      }}
-
-      document.querySelectorAll('.community-message[data-mine="1"]').forEach(function(msg) {{
-        msg.addEventListener('click', function(e) {{
-          if (e.target.closest('a,button,textarea,input,form')) return;
-          toggleMessage(msg);
-        }});
-        msg.addEventListener('keydown', function(e) {{
-          if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); toggleMessage(msg); }}
-        }});
-      }});
-
-      const replyBar = document.getElementById('community-reply-bar');
-      const replyTo = document.getElementById('community-reply-to');
-      const replyTitle = document.getElementById('community-reply-title');
-      const replyPreview = document.getElementById('community-reply-preview');
-      const replyCancel = document.getElementById('community-reply-cancel');
-      function clearReply() {{
-        if (replyTo) replyTo.value = '';
-        if (replyBar) replyBar.hidden = true;
-        if (replyTitle) replyTitle.textContent = 'Replying';
-        if (replyPreview) replyPreview.textContent = '';
-      }}
-      function startReply(msg) {{
-        if (!msg || !replyTo) return;
-        const id = msg.getAttribute('data-message-id');
-        const name = msg.querySelector('.community-message-head strong');
-        const text = msg.querySelector('.community-message-text');
-        if (!id || !text) return;
-        replyTo.value = id;
-        if (replyTitle) replyTitle.textContent = 'Replying to ' + (name ? name.textContent : 'Student');
-        if (replyPreview) replyPreview.textContent = text.textContent.slice(0, 120);
-        if (replyBar) replyBar.hidden = false;
-        if (sendBox) sendBox.focus();
-      }}
-      document.querySelectorAll('.community-message').forEach(function(msg) {{
-        if (msg.getAttribute('data-mine') !== '1') {{
-          msg.addEventListener('click', function(e) {{
-            if (e.target.closest('.community-reply-reference')) return;
-            startReply(msg);
-          }});
-          msg.addEventListener('keydown', function(e) {{
-            if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); startReply(msg); }}
-          }});
-        }}
-      }});
-      document.querySelectorAll('.community-reply-reference').forEach(function(ref) {{
-        ref.addEventListener('click', function(e) {{
-          e.preventDefault(); e.stopPropagation();
-          const target = document.getElementById('community-msg-' + ref.getAttribute('data-reply-target'));
-          if (target) {{ target.scrollIntoView({{behavior:'smooth',block:'center'}}); target.classList.add('reply-target-flash'); setTimeout(function(){{target.classList.remove('reply-target-flash');}},900); }}
-        }});
-      }});
-      if (replyCancel) replyCancel.addEventListener('click', clearReply);
-
-      if (doneBtn) doneBtn.addEventListener('click', function() {{ selected.clear(); updateSelectionUI(); }});
-
-      if (deleteForm) deleteForm.addEventListener('submit', function(e) {{
-        if (!selected.size) {{ e.preventDefault(); alert('Tap one or more of your messages first.'); return; }}
-        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
-        selected.forEach(function(id) {{
-          const input = document.createElement('input');
-          input.type = 'hidden'; input.name = 'message_ids'; input.value = id; input.setAttribute('data-dynamic-message-id','1');
-          deleteForm.appendChild(input);
-        }});
-        if (!confirm('Delete ' + selected.size + ' selected message' + (selected.size > 1 ? 's' : '') + '?')) e.preventDefault();
-      }});
-
-      if (deleteAllBtn) deleteAllBtn.addEventListener('click', function() {{
-        if (!confirm('Delete all of your community messages? This cannot be undone.')) return;
-        if (!deleteForm || !deleteAction) return;
-        deleteAction.value = 'delete_all';
-        deleteForm.querySelectorAll('input[data-dynamic-message-id]').forEach(function(x) {{ x.remove(); }});
-        deleteForm.submit();
-      }});
-
-      const sendBox = document.querySelector('#community-send-form textarea[name="message"]');
-      if (sendBox) {{
-        const resize = function() {{ this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 140) + 'px'; }};
-        sendBox.addEventListener('input', resize);
-        sendBox.addEventListener('focus', function() {{
-          if (window.matchMedia('(max-width: 850px)').matches) document.body.classList.add('vybe-chat-composing');
-        }});
-        sendBox.addEventListener('blur', function() {{
-          setTimeout(function() {{
-            if (document.activeElement !== sendBox) document.body.classList.remove('vybe-chat-composing');
-          }}, 80);
-        }});
-        sendBox.addEventListener('keydown', function(e) {{
-          if (e.key === 'Escape') {{ this.blur(); return; }}
-          if (e.key === 'Enter' && !e.shiftKey) {{
-            e.preventDefault();
-            const form = document.getElementById('community-send-form');
-            if (this.value.trim() && form) {{
-              const messageText = this.value.trim();
-              const formData = new FormData(form);
-              this.value = '';
-              this.style.height = 'auto';
-              clearReply();
-              this.disabled = true;
-              fetch(form.action, {{method:'POST', body:formData, credentials:'same-origin', headers:{{'X-VYBE-Live-Chat':'1'}}}})
-                .then(function() {{ return refreshLiveChat(true); }})
-                .catch(function() {{ sendBox.value = messageText; resize.call(sendBox); }})
-                .finally(function() {{ sendBox.disabled = false; sendBox.focus(); }});
-            }}
-          }}
-        }});
-      }}
-      window.addEventListener('resize', function() {{
-        if (!window.matchMedia('(max-width: 850px)').matches) document.body.classList.remove('vybe-chat-composing');
-      }});
-      updateSelectionUI();
-      startLiveChat();
+      const chatWindow=document.querySelector('.community-chat-window');
+      const form=document.getElementById('community-send-form');
+      const sendBox=form?form.querySelector('textarea[name=\"message\"]'):null;
+      const replyBar=document.getElementById('community-reply-bar'), replyTo=document.getElementById('community-reply-to'), replyTitle=document.getElementById('community-reply-title'), replyPreview=document.getElementById('community-reply-preview'), replyCancel=document.getElementById('community-reply-cancel');
+      let busy=false;
+      function clearReply() {{ if(replyTo)replyTo.value=''; if(replyBar)replyBar.hidden=true; }}
+      function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
+      function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
+      function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
+      if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
     return layout("Chat with Students", body)
