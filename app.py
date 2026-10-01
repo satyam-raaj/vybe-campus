@@ -60,8 +60,12 @@ except ImportError:
     WEBAUTHN_AVAILABLE = False
 
 APP_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = APP_DIR / "vybe_uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = Path(os.environ.get("VYBE_UPLOAD_DIR", "/tmp/vybe_uploads"))
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    UPLOAD_DIR = Path("/tmp/vybe_uploads")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
@@ -71,9 +75,9 @@ if not SECRET_KEY:
         raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
-RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
-PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or RENDER_HOST or "vybe-campus.onrender.com"
-PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID else "https://vybe-campus.onrender.com")
+VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
+PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERCEL_HOST or "localhost"
+PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
 DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
@@ -91,11 +95,11 @@ _COOKIE_SECURE = True if _PRODUCTION else (os.environ.get("VYBE_COOKIE_SECURE", 
 _COOKIE_NAME = "__Host-vybe_session" if _COOKIE_SECURE else "vybe_session"
 _ALLOWED_HOSTS_RAW = os.environ.get("VYBE_ALLOWED_HOSTS", "").strip()
 _ALLOWED_HOSTS = {h.strip().lower().split(":", 1)[0] for h in _ALLOWED_HOSTS_RAW.split(",") if h.strip()}
-if RENDER_HOST:
-    _ALLOWED_HOSTS.add(RENDER_HOST)
+if VERCEL_HOST:
+    _ALLOWED_HOSTS.add(VERCEL_HOST)
 app.config.update(
     SECRET_KEY=SECRET_KEY,
-    MAX_CONTENT_LENGTH=25 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=4 * 1024 * 1024,
     SESSION_COOKIE_NAME=_COOKIE_NAME,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -378,6 +382,10 @@ def setting(con, key, default=""):
     return row["value"] if row else default
 
 
+def invalidate_vybe_online_cache():
+    _VYBE_ONLINE_CACHE["at"] = 0.0
+
+
 def set_setting(con, key, value):
     if con.is_pg:
         con.execute(
@@ -389,6 +397,8 @@ def set_setting(con, key, value):
             "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+    if key == "vybe_online":
+        invalidate_vybe_online_cache()
 
 
 class _CampusPageParser(HTMLParser):
@@ -1189,6 +1199,9 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
+_VYBE_ONLINE_CACHE = {"at": 0.0, "value": True}
+
+
 @app.before_request
 def global_online_gate():
     path = request.path
@@ -1201,45 +1214,36 @@ def global_online_gate():
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         if not _same_origin_unsafe_request():
             abort(403, description="Cross-site requests are not allowed.")
-        # Authentication/bootstrap endpoints may not have a stable CSRF token
-        # yet (for example after a fresh session or a rotated session). Keep
-        # same-origin protection, but do not require the session CSRF header
-        # for these entry points. All other unsafe requests still require CSRF.
         csrf_bootstrap_paths = {
-            "/login",
-            "/register",
-            "/forgot-password",
-            "/admin",
-            "/admin/login-passkey/options",
-            "/admin/login-passkey/verify",
+            "/login", "/register", "/forgot-password", "/admin",
+            "/admin/login-passkey/options", "/admin/login-passkey/verify",
+            "/passkey/register/options", "/passkey/register/verify",
+            "/passkey/auth/options", "/passkey/auth/verify",
         }
         if path not in csrf_bootstrap_paths and not _csrf_token_valid():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
-    try:
-        cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-    except Exception:
-        pass
-    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
+    if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz", "/"):
         return None
-    try:
-        con = db()
-        online = setting(con, "vybe_online", "1") == "1"
-        con.close()
-    except Exception:
-        online = True
-    if not online:
-        return redirect(url_for("offline"))
-    active_student = session.get("student_db_id")
-    if active_student:
+    # Cache the global online flag briefly per warm Vercel instance. This avoids
+    # an extra database round-trip on every page navigation/API call while still
+    # making the admin Online/Offline switch propagate quickly.
+    global _VYBE_ONLINE_CACHE
+    now_m = time.monotonic()
+    if now_m - _VYBE_ONLINE_CACHE["at"] >= 5.0:
         try:
             con = db()
-            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
-            con.commit()
+            _VYBE_ONLINE_CACHE["value"] = setting(con, "vybe_online", "1") == "1"
             con.close()
+            _VYBE_ONLINE_CACHE["at"] = now_m
         except Exception:
-            pass
+            # Fail open rather than turning a transient database connection issue
+            # into a completely unavailable campus site.
+            _VYBE_ONLINE_CACHE["value"] = True
+            _VYBE_ONLINE_CACHE["at"] = now_m
+    if not _VYBE_ONLINE_CACHE["value"]:
+        return redirect(url_for("offline"))
     return None
 
 
@@ -4159,7 +4163,7 @@ if(notificationBell){{
     }}
   }});
   refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,1000);
+  notificationTimer=setInterval(refreshStudentNotifications,5000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -7328,7 +7332,7 @@ def community_chat():
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
       async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},5000);}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
@@ -7954,7 +7958,6 @@ def publisher():
                         filename=secrets.token_hex(16)+suffix
                         file_data=f.read()
                         assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
-                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
                         con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
                         con.commit(); flash("Timetable posted to VYBE.")
             elif kind == "academic_updates":
@@ -7984,8 +7987,7 @@ def publisher():
                         if len(file_data)>20*1024*1024:
                             flash("Academic update files must be 20 MB or smaller.")
                             raise ValueError("academic update file too large")
-                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-                    con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
+                        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
                     con.commit(); flash("Academic update published.")
             elif kind == "academic_resources":
                 title=request.form.get("resource_title","").strip()[:150]
@@ -8007,8 +8009,7 @@ def publisher():
                         original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
                         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
                         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-                        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-                    con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
+                        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
                     con.commit(); flash("Academic resource added and indexed for Ask VYBE.")
         except ValueError:
             try: con.rollback()
@@ -8209,7 +8210,6 @@ def admin_timetable():
         try:
             file_data=f.read()
             assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
-            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
             con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
             con.commit(); flash("Timetable posted to VYBE.")
         except Exception as exc:
@@ -8254,7 +8254,6 @@ def admin_academic_updates():
             if suffix not in ALLOWED_EXT: con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_updates"))
             original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
             if len(file_data)>20*1024*1024: con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_updates"))
-            f.stream.seek(0); f.save(UPLOAD_DIR/filename)
         con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,description,"","","",event_date,external_url,filename,original_name,mime_type,file_data,now()))
         con.commit(); con.close(); flash(f"{kind} published successfully."); return redirect(url_for("admin_academic_updates"))
     rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
@@ -8305,7 +8304,6 @@ def admin_academic_hub():
                 filename=secrets.token_hex(16)+suffix
                 mime=f.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
                 assistant_text=_extract_doc_text(data,suffix,50000)
-                f.stream.seek(0); f.save(UPLOAD_DIR/filename)
                 item_title=title if mode!="bulk" else Path(original).stem[:150]
                 con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(item_title,typ,course,semester,subject,description,filename,original,mime,data,assistant_text,now()))
                 added+=1
@@ -8375,7 +8373,9 @@ def add_resource():
         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         file_data=f.read()
         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
+        # Vercel functions have an ephemeral/read-only deployment filesystem.
+        # The uploaded bytes are already stored in resources.file_data below,
+        # so do not write a second copy to local disk.
     con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now())); con.commit(); con.close(); flash("Resource added and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
 
 @app.route("/admin/resource/<int:rid>/delete", methods=["POST"])

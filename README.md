@@ -1,9 +1,17 @@
-# VYBE — Restored Build
+# VYBE — Vercel + Neon build
 
-This package restores the VYBE V14 application source without the experimental Socket.IO/gevent performance rewrite.
+This build is for Vercel Flask Functions with Neon PostgreSQL.
 
-## Render
-- Build: `pip install -r requirements.txt`
-- Start: `gunicorn --workers 1 --threads 8 --timeout 120 app:app`
-- Required environment variable: `DATABASE_URL` pointing to the Supabase PostgreSQL database.
-- Keep the existing VYBE secret/passkey environment variables from the working deployment.
+## Important
+Replace the existing GitHub `app.py`, `requirements.txt`, and `vercel.json` with the files in this package before redeploying.
+
+The previous deployment failed because the old `app.py` tried to create `vybe_uploads` inside Vercel's read-only `/var/task` directory. This build does not write uploaded resources to the deployment filesystem; uploaded resource bytes are stored in PostgreSQL.
+
+Required Vercel environment variables:
+- `DATABASE_URL` — Neon PostgreSQL connection string
+- `VYBE_SECRET_KEY` — your VYBE session secret
+- `VYBE_ADMIN_INITIAL_PASSWORD` — initial admin password
+
+After Vercel assigns the production domain, set:
+- `VYBE_PASSKEY_RP_ID` — production hostname only, e.g. `vybe-campus.vercel.app`
+- `VYBE_PASSKEY_ORIGIN` — full HTTPS origin, e.g. `https://vybe-campus.vercel.app`
