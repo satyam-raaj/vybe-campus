@@ -3039,6 +3039,15 @@ def admin_problem_solution_get(iid):
 
 
 
+ADMIN_PASSWORD_ALERT_CSS = r"""
+.admin-password-alert-wrap{position:relative;display:inline-flex;align-items:center}
+.admin-password-alert{position:relative;display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:8px 11px;border-radius:12px;background:#172033;color:#fff;border:1px solid rgba(255,255,255,.10);text-decoration:none;font-size:11px;font-weight:850;box-shadow:0 8px 20px rgba(23,32,51,.14);transition:.18s ease}
+.admin-password-alert:hover{transform:translateY(-1px);background:#0f1727;color:#fff;box-shadow:0 12px 26px rgba(23,32,51,.20)}
+.admin-password-alert-icon{width:18px;height:18px;display:grid;place-items:center;font-size:14px}
+.admin-password-alert-count{min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:grid;place-items:center;background:#ef4b5f;color:#fff;font-size:10px;font-weight:950;box-shadow:0 0 0 3px rgba(239,75,95,.13)}
+.admin-password-alert.is-clear .admin-password-alert-count{display:none}
+@media(max-width:800px){.admin-password-alert{min-width:38px;width:38px;height:38px;padding:0;justify-content:center}.admin-password-alert-label{display:none}}
+"""
 AUTH_PAGE_CSS = r"""
 body:has(.vybe-auth-page) .nav{display:none!important}
 body:has(.vybe-auth-page){background:radial-gradient(700px 420px at 12% 12%,rgba(47,111,202,.12),transparent 62%),radial-gradient(650px 430px at 88% 82%,rgba(104,184,46,.10),transparent 62%),linear-gradient(145deg,#f8fbfe,#f3f7fa 52%,#f7faf4)!important;min-height:100vh!important}
@@ -3061,7 +3070,16 @@ def layout(title, body, admin=False):
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/analytics">Analytics</a><a href="/admin/assistant">VYBE AI Settings</a><a class="admin-nav-logout" href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">Menu</button></div>'
+        try:
+            _admin_alert_con = db()
+            _admin_pending_password = int(_admin_alert_con.execute("SELECT COUNT(*) AS c FROM password_reset_requests WHERE status='pending'").fetchone()["c"])
+            _admin_alert_con.close()
+        except Exception:
+            _admin_pending_password = 0
+        _admin_alert_count = f'<span class="admin-password-alert-count">{_admin_pending_password}</span>' if _admin_pending_password else ''
+        _admin_alert_class = '' if _admin_pending_password else ' is-clear'
+        admin_alert = f"""<div class="admin-password-alert-wrap"><a class="admin-password-alert{_admin_alert_class}" href="/admin/password-requests" title="Password access requests"><span class="admin-password-alert-icon" aria-hidden="true">🔐</span><span class="admin-password-alert-label">Password Access</span>{_admin_alert_count}</a></div>"""
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div style="display:flex;align-items:center;gap:8px">{admin_alert}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">Menu</button></div></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -3242,7 +3260,7 @@ def layout(title, body, admin=False):
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{mobile_runtime_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{mobile_runtime_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -4073,6 +4091,10 @@ def forgot_password():
                 flash("We couldn't start the password-change request right now. Please try again in a moment.")
                 return redirect(url_for("forgot_password"))
             session["password_reset_request_id"] = request_id
+            try:
+                create_admin_notification("password_reset", "Password change request", f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.", student_id=student["id"])
+            except Exception:
+                pass
             flash("Request sent successfully. Keep this page open while the admin reviews it.")
             return redirect(url_for("forgot_password"))
         finally:
@@ -4117,7 +4139,7 @@ def forgot_password():
         }})();
         </script>
         """
-    body = """<div class="auth"><div class="card authbox"><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Enter your name and Student ID to request a password change. After admin approval, this page will unlock the new-password form automatically.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval</button></form>""" + waiting_ui + """<div class="actions"><a class="btn dark" href="/login">Back to login</a></div></div></div>"""
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Enter your name and Student ID to request a password change. After admin approval, this page will unlock the new-password form automatically.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval</button></form>""" + waiting_ui + """<div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Back to login</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>"""
     return layout("Forgot Password", body)
 
 
@@ -4173,7 +4195,7 @@ def reset_password():
             return redirect(url_for("login"))
     finally:
         con.close()
-    body = """<div class="auth"><div class="card authbox"><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div class="password-wrap"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="resetPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="resetConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Change password</button></form><p class="small"><a href="/forgot-password" style="text-decoration:underline">Back to password recovery</a></p></div></div>""".format(rid=int(request_id))
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div class="password-wrap"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="resetPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="resetConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Change password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/forgot-password">← Password recovery</a><span class="vybe-auth-hint">Secure password change · admin approved</span></div></div></div>""".format(rid=int(request_id))
     return layout("Reset Password", body)
 
 
