@@ -1,5 +1,7 @@
-Flask==3.0.3
-Flask-SocketIO==5.3.6
-gevent-websocket==0.10.1
-gunicorn==22.0.0
-supabase==2.6.0
+Flask
+Werkzeug
+itsdangerous
+psycopg[binary]
+gunicorn
+flask-socketio
+simple-websocket
