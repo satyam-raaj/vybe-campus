@@ -686,8 +686,10 @@ def init_db():
 
     if con.is_pg:
         con.execute("""CREATE TABLE IF NOT EXISTS student_update_views (id BIGSERIAL PRIMARY KEY, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, item_type TEXT NOT NULL, item_id BIGINT NOT NULL, viewed_at TEXT NOT NULL, UNIQUE(student_id,item_type,item_id))""")
+        con.execute("""CREATE TABLE IF NOT EXISTS admin_problem_solutions (id BIGSERIAL PRIMARY KEY, issue_id BIGINT NOT NULL REFERENCES issues(id) ON DELETE CASCADE, student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE, solution_text TEXT NOT NULL, admin_label TEXT NOT NULL DEFAULT 'VYBE Admin', created_at TEXT NOT NULL)""")
     else:
         con.execute("""CREATE TABLE IF NOT EXISTS student_update_views (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, item_type TEXT NOT NULL, item_id INTEGER NOT NULL, viewed_at TEXT NOT NULL, UNIQUE(student_id,item_type,item_id))""")
+        con.execute("""CREATE TABLE IF NOT EXISTS admin_problem_solutions (id INTEGER PRIMARY KEY AUTOINCREMENT, issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, solution_text TEXT NOT NULL, admin_label TEXT NOT NULL DEFAULT 'VYBE Admin', created_at TEXT NOT NULL)""")
 
     if con.is_pg:
         con.executescript([
@@ -2877,7 +2879,7 @@ def _admin_update_feed(con, student_id, limit=18):
     try:
         existing_view = con.execute("SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)).fetchone()
         if not existing_view:
-            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events")):
+            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events"),("admin_solution","admin_problem_solutions")):
                 for r in con.execute(f"SELECT id FROM {table}").fetchall():
                     rid=int(r["id"])
                     if con.is_pg:
@@ -2889,9 +2891,10 @@ def _admin_update_feed(con, student_id, limit=18):
     except Exception:
         pass
     items=[]
-    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event")]
+    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
     for typ,sql,base,label in sources:
-        try: rows=con.execute(sql).fetchall()
+        try:
+            rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
         except Exception: rows=[]
         for r in rows:
             keys=r.keys()
@@ -2904,7 +2907,8 @@ def _admin_update_feed(con, student_id, limit=18):
             elif typ=="resource": target=f"/resource/{rid}"
             elif typ=="timetable": target=f"/timetable-file/{rid}"
             elif typ=="announcement": target="/announcements"
-            else: target="/events"
+            elif typ=="event": target="/events"
+            else: target=f"/student-admin-solution/{rid}"
             items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
     items.sort(key=lambda x:x["created_at"],reverse=True); items=items[:limit]
     for x in items:
@@ -2934,12 +2938,89 @@ def _mark_all_page_items_seen(con,student_id,item_type,table):
 @app.route("/student-update-seen/<item_type>/<int:item_id>")
 @student_required
 def student_update_seen(item_type,item_id):
-    targets={"academic":"/updates","resource":"/academics","timetable":"/timetable","announcement":"/announcements","event":"/events"}
+    targets={"academic":"/updates","resource":"/academics","timetable":"/timetable","announcement":"/announcements","event":"/events","admin_solution":"/issues"}
     if item_type not in targets: abort(404)
     _mark_admin_update_seen(session["student_db_id"],item_type,item_id)
     target=request.args.get("next","").strip()
     if not target.startswith("/") or target.startswith("//"): target=targets[item_type]
     return redirect(target)
+
+
+@app.route("/student-admin-solution/<int:sid>")
+@student_required
+def student_admin_solution(sid):
+    con=db()
+    row=con.execute(
+        "SELECT aps.id,aps.solution_text,aps.admin_label,aps.created_at,i.title AS issue_title,i.category,i.description,i.status "
+        "FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id "
+        "WHERE aps.id=? AND aps.student_id=?",
+        (sid,session["student_db_id"]),
+    ).fetchone()
+    con.close()
+    if not row: abort(404)
+    _mark_admin_update_seen(session["student_db_id"],"admin_solution",sid)
+    body=f"""<section class=\"section admin-solution-student-page\"><div class=\"admin-solution-student-card\"><span class=\"badge\">ADMIN SOLUTION</span><h1>{esc(row["issue_title"])}</h1><p class=\"muted\">Your campus problem · {esc(row["created_at"])}</p><div class=\"admin-solution-problem\"><strong>Your reported problem</strong><p>{esc(row["description"])}</p></div><div class=\"admin-solution-message\"><div class=\"admin-solution-message-head\"><span>{esc(row["admin_label"])}</span><small>{esc(row["created_at"])}</small></div><p>{esc(row["solution_text"])}</p></div><div class=\"actions\"><a class=\"btn dark\" href=\"/issues\">Back to Help Desk</a></div></div></section>"""
+    return layout("Admin Solution",body)
+
+
+@app.route("/admin/problem/<int:iid>/solution", methods=["POST"])
+@admin_required
+def admin_problem_solution(iid):
+    solution_text=request.form.get("solution_text","").strip()[:3000]
+    if not solution_text:
+        flash("Please enter a solution before sending it.")
+        return redirect(url_for("admin_problems")+f"#problem-{iid}")
+    con=db()
+    try:
+        issue=con.execute("SELECT id,student_id,title FROM issues WHERE id=?",(iid,)).fetchone()
+        if not issue:
+            con.close(); flash("That student problem no longer exists.")
+            return redirect(url_for("admin_problems"))
+        con.execute(
+            "INSERT INTO admin_problem_solutions(issue_id,student_id,solution_text,admin_label,created_at) VALUES(?,?,?,?,?)",
+            (iid,issue["student_id"],solution_text,"VYBE Admin",now()),
+        )
+        con.execute("UPDATE issues SET status=? WHERE id=?",("Resolved",iid))
+        con.commit()
+        con.close()
+        flash(f"Admin solution sent to {issue['title']}. The student will see it in the alert button.")
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        con.close()
+        app.logger.exception("Admin solution failed for issue %s",iid)
+        flash("We couldn't send the admin solution right now.")
+    return redirect(url_for("admin_problems")+f"#problem-{iid}")
+
+
+@app.route("/admin/problem/<int:iid>/solution/<int:sid>/delete", methods=["POST"])
+@admin_required
+def delete_admin_problem_solution(iid,sid):
+    con=db()
+    con.execute("DELETE FROM admin_problem_solutions WHERE id=? AND issue_id=?",(sid,iid))
+    con.commit(); con.close()
+    flash("Admin solution deleted.")
+    return redirect(url_for("admin_problems")+f"#problem-{iid}")
+
+
+@app.route("/admin/problem/<int:iid>/solution/<int:sid>/resend", methods=["POST"])
+@admin_required
+def resend_admin_problem_solution(iid,sid):
+    con=db()
+    row=con.execute("SELECT id FROM admin_problem_solutions WHERE id=? AND issue_id=?",(sid,iid)).fetchone()
+    if not row:
+        con.close(); flash("That admin solution no longer exists.")
+        return redirect(url_for("admin_problems")+f"#problem-{iid}")
+    con.execute("DELETE FROM student_update_views WHERE item_type=? AND item_id=?",("admin_solution",sid))
+    con.commit(); con.close()
+    flash("Admin solution marked as new again for the student.")
+    return redirect(url_for("admin_problems")+f"#problem-{iid}")
+
+
+@app.route("/admin/problem/<int:iid>/solution", methods=["GET"])
+@admin_required
+def admin_problem_solution_get(iid):
+    return redirect(url_for("admin_problems")+f"#problem-{iid}")
 
 
 def layout(title, body, admin=False):
@@ -7045,7 +7126,7 @@ def admin_panel():
         ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green"),
         ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue"),
         ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green"),
-        ("06", "Help Desk", "Review student problems, change status and remove old reports.", "/admin/problems", stats["problems"], "REPORTS", "orange"),
+        ("06", "Help Desk", "Review student problems, send official solutions and manage reports.", "/admin/problems", stats["problems"], "REPORTS", "orange"),
         ("07", "Announcements", "Create campus-wide announcements and remove outdated ones.", "/admin/announcements", stats["announcements"], "LIVE", "orange"),
         ("08", "Events", "Create upcoming campus events and delete finished or incorrect ones.", "/admin/events", stats["events"], "EVENTS", "purple"),
     ]
@@ -7084,7 +7165,7 @@ def admin_manage():
     body = f"""<section class="section admin-manage-page">
       <div class="admin-inner-top"><a href="/admin/panel" class="admin-back">← Dashboard</a><div class="badge admin-eyebrow">VYBE ADMIN</div></div>
       <div class="admin-manage-title"><h1>Manage VYBE.</h1><p>Every control is grouped by purpose, so you can operate the admin side without hunting through a long dashboard.</p></div>
-      <section id="people" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>01 · PEOPLE</span><h2>Students & access</h2></div><b>{counts["students"]} students</b></div><div class="admin-tool-grid">{action("Students", "/admin/students", str(counts["students"]) + " student accounts")}{action("Pending requests", "/admin/students#pending", str(counts["pending"]) + " waiting for approval")}{action("Problem reports", "/admin/problems", str(counts["problems"]) + " reports")}{action("Problem chats", "/admin/chats", "Saved problem and solution history")}</div></section>
+      <section id="people" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>01 · PEOPLE</span><h2>Students & access</h2></div><b>{counts["students"]} students</b></div><div class="admin-tool-grid">{action("Students", "/admin/students", str(counts["students"]) + " student accounts")}{action("Pending requests", "/admin/students#pending", str(counts["pending"]) + " waiting for approval")}{action("Problem reports & solutions", "/admin/problems-solutions", str(counts["problems"]) + " reports")}{action("Problem chats", "/admin/chats", "Saved problem and solution history")}</div></section>
       <section id="academics" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>02 · ACADEMICS</span><h2>Academic content</h2></div><b>{counts["resources"] + counts["updates"]} items</b></div><div class="admin-tool-grid">{action("Academic Hub", "/admin/academic-hub", "Results, datesheets, forms and updates")}{action("Resources", "/admin/resources", str(counts["resources"]) + " resources")}{action("Timetable", "/admin/timetable", "Post or replace student timetables")}{action("Academic updates", "/admin/academic-hub", str(counts["updates"]) + " published updates")}</div></section>
       <section id="campus" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>03 · CAMPUS</span><h2>Campus updates</h2></div><b>{counts["announcements"] + counts["events"]} live items</b></div><div class="admin-tool-grid">{action("Announcements", "/admin/announcements", str(counts["announcements"]) + " published")}{action("Events", "/admin/events", str(counts["events"]) + " campus events")}{action("Faculty & contacts", "/admin/campus", str(counts["faculty"]) + " faculty records")}</div></section>
       <section id="community" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>04 · COMMUNITY</span><h2>Student community</h2></div><b>{counts["community"]} messages</b></div><div class="admin-tool-grid">{action("Community Chat", "/admin/community-chat", str(counts["community"]) + " live messages")}{action("Problem chats", "/admin/chats", "Saved student problem conversations")}</div></section>
@@ -7703,13 +7784,39 @@ def delete_resource(rid):
     flash("Resource deleted."); return redirect(url_for("admin_resources"))
 
 
+
+
+ADMIN_PROBLEMS_CSS = """
+<style>
+.admin-problems-page,.admin-campus-page{max-width:1180px!important;margin:0 auto!important;padding:54px 0 90px!important}
+.admin-problems-head,.admin-campus-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:28px}
+.admin-problems-head h1,.admin-campus-head h1{margin:12px 0 8px;font-size:clamp(34px,5vw,54px);letter-spacing:-.045em;color:#17202b}
+.admin-problems-head p,.admin-campus-head p{max-width:720px;margin:0;color:#687482;line-height:1.6}
+.admin-problems-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.admin-problem-count{padding:10px 13px;border:1px solid #dfe5ea;border-radius:999px;background:#fff;color:#5e6b77;font-size:12px;font-weight:850}
+.admin-campus-problems-link{display:flex;flex-direction:column;gap:4px;min-width:255px;padding:16px 18px;border:1px solid #cfe0f4;border-radius:18px;background:linear-gradient(145deg,#f5f9ff,#fff);color:#17202b;text-decoration:none;box-shadow:0 10px 26px rgba(31,48,66,.06)}
+.admin-campus-problems-link span{font-size:10px;font-weight:900;letter-spacing:.1em;color:#2f6fca;text-transform:uppercase}.admin-campus-problems-link strong{font-size:14px}
+.admin-problem-list{display:grid;gap:16px}.admin-problem-card{scroll-margin-top:90px;border:1px solid #dfe5ea;border-radius:22px;background:rgba(255,255,255,.96);padding:22px;box-shadow:0 12px 30px rgba(31,48,66,.055)}
+.admin-problem-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.admin-problem-number{font-size:11px;font-weight:900;color:#2f6fca;margin-right:8px}.admin-problem-card h2{margin:13px 0 9px;font-size:22px;color:#17202b}.admin-problem-reporter{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.admin-problem-reporter span,.admin-problem-reporter strong{padding:6px 9px;border-radius:999px;background:#f3f6f8;color:#64717d;font-size:11px}.admin-problem-reporter strong{background:#edf4ff;color:#2f6fca}.admin-problem-description{margin:15px 0 0;padding:14px 15px;border-radius:15px;background:#f8fafb;color:#52606c;line-height:1.6;white-space:pre-wrap}.admin-problem-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.admin-solution-compose{margin-top:18px;padding:17px;border:1px solid #d8e5f4;border-radius:18px;background:linear-gradient(145deg,#f7fbff,#fff)}.admin-solution-compose-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:11px}.admin-solution-compose-head div{display:flex;flex-direction:column;gap:3px}.admin-solution-compose-head span:first-child{font-size:10px;font-weight:900;letter-spacing:.1em;color:#2f6fca}.admin-solution-compose-head strong{font-size:16px;color:#17202b}.admin-solution-compose-head>span:last-child{font-size:10px;font-weight:800;color:#579c24;background:#edf8e6;padding:7px 9px;border-radius:999px}.admin-solution-compose textarea{width:100%;min-height:105px;resize:vertical;box-sizing:border-box;padding:13px 14px;border:1px solid #d7e0e8;border-radius:14px;background:#fff;color:#17202b;font:inherit;outline:none}.admin-solution-compose textarea:focus{border-color:#8fbce0;box-shadow:0 0 0 4px rgba(47,111,202,.08)}.admin-solution-compose-foot{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:10px}.admin-solution-compose-foot small{color:#778592;line-height:1.4}.admin-solution-history{margin-top:12px;padding:14px;border:1px solid #e5eaee;border-radius:15px;background:#fbfcfd}.admin-solution-history>div:first-child{display:flex;justify-content:space-between;gap:10px}.admin-solution-history strong{font-size:12px;color:#2f6fca}.admin-solution-history small{font-size:10px;color:#8a96a0}.admin-solution-history p{margin:8px 0;color:#56636f;white-space:pre-wrap;line-height:1.5}.admin-solution-student-page{max-width:820px;margin:0 auto;padding:50px 16px 90px}.admin-solution-student-card{padding:26px;border:1px solid #dfe5ea;border-radius:24px;background:rgba(255,255,255,.96);box-shadow:0 18px 42px rgba(31,48,66,.08)}.admin-solution-student-card h1{margin:12px 0 5px;font-size:clamp(30px,5vw,46px);letter-spacing:-.04em;color:#17202b}.admin-solution-problem{margin-top:22px;padding:16px;border-radius:17px;background:#f6f8fa;border:1px solid #e3e8ec}.admin-solution-problem strong{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7a8793}.admin-solution-problem p{margin:8px 0 0;color:#56636f;line-height:1.6;white-space:pre-wrap}.admin-solution-message{margin-top:14px;padding:18px;border-radius:18px;background:linear-gradient(145deg,#edf4ff,#f7fbff);border:1px solid #cfe0f4}.admin-solution-message-head{display:flex;justify-content:space-between;gap:12px}.admin-solution-message-head span{font-weight:900;color:#2f6fca}.admin-solution-message-head small{color:#7a8793}.admin-solution-message p{margin:12px 0 0;color:#26333f;line-height:1.7;white-space:pre-wrap}
+@media(max-width:850px){.admin-problems-page,.admin-campus-page{padding:34px 16px 78px!important}.admin-problems-head,.admin-campus-head{align-items:stretch;flex-direction:column}.admin-problems-head h1,.admin-campus-head h1{font-size:38px}.admin-problems-head-actions{justify-content:flex-start}.admin-campus-problems-link{min-width:0}.admin-problem-card{padding:17px;border-radius:19px}.admin-problem-card h2{font-size:19px}.admin-solution-compose-foot{align-items:stretch;flex-direction:column}.admin-solution-compose-foot .btn{width:100%;text-align:center}.admin-solution-student-page{padding:30px 14px 78px}.admin-solution-student-card{padding:19px;border-radius:19px}}
+</style>
+
+"""
 @app.route("/admin/problems")
+@app.route("/admin/problems-solutions")
 @admin_required
 def admin_problems():
-    con=db(); rows=con.execute("SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC").fetchall(); con.close()
-    html_rows="".join(f"<tr><td>#{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['student_id'])}</td><td><strong>{esc(r['title'])}</strong><br><span class='small'>{esc(r['description'])}</span></td><td><span class='pill'>{esc(r['status'])}</span></td><td><div class='actions'><a class='btn dark' href='/admin/problem/{r['id']}/status'>Next status</a><form method='post' action='/admin/problem/{r['id']}/delete'><button class='btn danger'>Delete</button></form></div></td></tr>" for r in rows)
-    body=f"""<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">CAMPUS SUPPORT</span><h1>Help Desk.</h1><p>Review student problems, move their status forward and remove reports that are no longer needed.</p></div></div><div class="card tablewrap admin-table-card"><table><tr><th>#</th><th>Reporter</th><th>Student ID</th><th>Problem</th><th>Status</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="6">No help desk reports.</td></tr>'}</table></div></section>"""
-    return layout("Help Desk",body,admin=True)
+    con=db()
+    rows=con.execute("SELECT i.*,s.name,s.student_id FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC").fetchall()
+    solution_rows=con.execute("SELECT aps.*,i.title AS issue_title FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id ORDER BY aps.id DESC").fetchall()
+    con.close()
+    cards=[]
+    for r in rows:
+        previous=[x for x in solution_rows if int(x["issue_id"])==int(r["id"])]
+        previous_html=''.join(f"""<div class=\"admin-solution-history\"><div><strong>{esc(x["admin_label"])}</strong><small>{esc(x["created_at"])}</small></div><p>{esc(x["solution_text"])}</p><div class=\"actions\"><form method=\"post\" action=\"/admin/problem/{r["id"]}/solution/{x["id"]}/resend\"><button class=\"btn dark\" type=\"submit\">Show as new</button></form><form method=\"post\" action=\"/admin/problem/{r["id"]}/solution/{x["id"]}/delete\" onsubmit=\"return confirm('Delete this admin solution?')\"><button class=\"btn danger\" type=\"submit\">Delete</button></form></div></div>""" for x in previous)
+        cards.append(f"""<article class=\"admin-problem-card\" id=\"problem-{r["id"]}\"><div class=\"admin-problem-top\"><div><span class=\"admin-problem-number\">#{r["id"]}</span><span class=\"pill\">{esc(r["status"])}</span></div></div><h2>{esc(r["title"])}</h2><div class=\"admin-problem-reporter\"><strong>{esc(r["name"])}</strong><span>Student ID: {esc(r["student_id"])}</span><span>{esc(r["category"])}</span><span>{esc(r["created_at"])}</span></div><p class=\"admin-problem-description\">{esc(r["description"])}</p><div class=\"admin-problem-actions\"><a class=\"btn dark\" href=\"/admin/problem/{r["id"]}/status\">Next status</a><form method=\"post\" action=\"/admin/problem/{r["id"]}/delete\" onsubmit=\"return confirm('Delete this student problem and its solutions?')\"><button class=\"btn danger\" type=\"submit\">Delete problem</button></form></div><div class=\"admin-solution-compose\"><div class=\"admin-solution-compose-head\"><div><span>ADMIN SOLUTION</span><strong>Send directly to this student</strong></div><span>Alert notification</span></div><form method=\"post\" action=\"/admin/problem/{r["id"]}/solution\"><textarea name=\"solution_text\" maxlength=\"3000\" placeholder=\"Write the solution or instructions for this student...\" required></textarea><div class=\"admin-solution-compose-foot\"><small>The student will receive this message in the VYBE alert button.</small><button class=\"btn accent\" type=\"submit\">Send solution →</button></div></form></div>{previous_html}</article>""")
+    body=f"""{ADMIN_PROBLEMS_CSS}<section class=\"section admin-problems-page\"><div class=\"admin-problems-head\"><div><a href=\"/admin/campus\" class=\"admin-back\">← Faculty &amp; Contacts</a><span class=\"admin-page-kicker\">CAMPUS SUPPORT</span><h1>Student problems &amp; solutions.</h1><p>Review every problem reported through Solve Campus Problem, then send an official solution directly to the student.</p></div><div class=\"admin-problems-head-actions\"><a class=\"btn dark\" href=\"/admin/campus\">Faculty contacts</a><span class=\"admin-problem-count\">{len(rows)} reports</span></div></div><div class=\"admin-problem-list\">{''.join(cards) or '<div class=\"empty\">No student problems have been reported yet.</div>'}</div></section>"""
+    return layout("Problems & Solutions",body,admin=True)
 
 
 @app.route("/admin/problem/<int:iid>/delete", methods=["POST"])
@@ -7718,6 +7825,7 @@ def delete_problem(iid):
     con = db()
     con.execute("DELETE FROM helpful_votes WHERE solution_id IN (SELECT id FROM solutions WHERE issue_id=?)", (iid,))
     con.execute("DELETE FROM accepted_solutions WHERE issue_id=?", (iid,))
+    con.execute("DELETE FROM admin_problem_solutions WHERE issue_id=?", (iid,))
     con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
     con.execute("DELETE FROM issues WHERE id=?", (iid,))
     con.commit(); con.close(); flash("Help desk report deleted.")
@@ -7759,7 +7867,7 @@ def admin_campus():
     rows = con.execute("SELECT id,name,designation,email FROM faculty ORDER BY LOWER(name) ASC, id ASC").fetchall()
     con.close()
     cards = "".join(f"""<div class="card"><h2 style="margin:0 0 6px">{esc(x['name'])}</h2><p class="muted">{esc(x['designation'])}</p><p><a href="mailto:{esc(x['email'])}">{esc(x['email'])}</a></p><div class="actions"><details><summary class="btn dark">Edit</summary><form class="form" method="post" style="margin-top:12px"><input type="hidden" name="action" value="edit"><input type="hidden" name="faculty_id" value="{x['id']}"><input name="name" value="{esc(x['name'])}" maxlength="160" required><input name="designation" value="{esc(x['designation'])}" maxlength="160" required><input type="email" name="email" value="{esc(x['email'])}" maxlength="254" required><button class="btn accent">Save changes</button></form></details><form method="post" onsubmit="return confirm('Remove this faculty member?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="faculty_id" value="{x['id']}"><button class="btn danger">Delete</button></form></div></div>""" for x in rows)
-    body = f"""<section class="section"><div class="badge">ADMIN CAMPUS</div><h1>Faculty contacts.</h1><p class="muted">These contacts appear on the student Campus page.</p><div class="card"><h2>Add faculty / teacher</h2><form class="form" method="post"><input type="hidden" name="action" value="add"><input name="name" maxlength="160" placeholder="Full name" required><input name="designation" maxlength="160" placeholder="Designation" required><input type="email" name="email" maxlength="254" placeholder="Email ID" required><button class="btn accent">Add faculty</button></form></div></section><section class="section"><div class="grid">{cards or '<div class="empty">No faculty members added yet.</div>'}</div></section>"""
+    body = f"""<section class="section admin-campus-page"><div class="admin-campus-head"><div><div class="badge">ADMIN CAMPUS</div><h1>Faculty contacts.</h1><p class="muted">These contacts appear on the student Help Desk page. Add, edit or delete them anytime.</p></div><a class="admin-campus-problems-link" href="/admin/problems-solutions"><span>Campus problems</span><strong>View reports &amp; send solutions →</strong></a></div><div class="card"><h2>Add faculty / teacher</h2><form class="form" method="post"><input type="hidden" name="action" value="add"><div class="two"><input name="name" maxlength="160" placeholder="Full name" required><input name="designation" maxlength="160" placeholder="Designation" required></div><input type="email" name="email" maxlength="254" placeholder="Email ID" required><button class="btn accent">Add faculty</button></form></div></section><section class="section"><div class="grid">{cards or '<div class="empty">No faculty members added yet.</div>'}</div></section>"""
     return layout("Campus", body, admin=True)
 
 
