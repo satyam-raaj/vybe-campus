@@ -6870,22 +6870,49 @@ def community_chat_messages():
 def community_problems():
     con = db()
     if request.method == "POST":
-        try: iid = int(request.form.get("issue_id", "0"))
-        except (TypeError, ValueError): iid = 0
-        text = request.form.get("text", "").strip()[:1500]
-        if iid <= 0 or not text:
-            con.close(); flash("Please enter a valid solution."); return redirect(url_for("community_problems"))
+        # This endpoint handles BOTH actions from the page:
+        # 1) the top "Report a problem" form (title + description)
+        # 2) the solution form attached to an existing problem (issue_id + text)
+        # The previous version treated every POST as a solution, so the report
+        # form was incorrectly rejected with "Please enter a valid solution.".
+        raw_issue_id = request.form.get("issue_id", "").strip()
         try:
-            issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
-            if not issue:
-                con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community_problems"))
-            if issue["student_id"] == session["student_db_id"]:
-                con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community_problems"))
-            con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
-            con.commit(); con.close(); flash("Solution posted successfully."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+            iid = int(raw_issue_id) if raw_issue_id else 0
+        except (TypeError, ValueError):
+            iid = 0
+
+        # Existing problem -> post a student solution.
+        if iid > 0:
+            text = request.form.get("text", "").strip()[:1500]
+            if not text:
+                con.close(); flash("Please enter a solution before posting it."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+            try:
+                issue = con.execute("SELECT id, student_id FROM issues WHERE id=?", (iid,)).fetchone()
+                if not issue:
+                    con.rollback(); con.close(); flash("That problem is no longer available."); return redirect(url_for("community_problems"))
+                if issue["student_id"] == session["student_db_id"]:
+                    con.rollback(); con.close(); flash("You cannot post a solution to your own problem."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+                con.execute("INSERT INTO solutions(issue_id,student_id,text,created_at) VALUES(?,?,?,?)", (iid, session["student_db_id"], text, now()))
+                con.commit(); con.close(); flash("Solution posted successfully."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+            except Exception:
+                con.rollback(); con.close(); app.logger.exception("Community solution post failed")
+                flash("We couldn't post that solution right now. Please try again."); return redirect(url_for("community_problems") + f"#problem-{iid}")
+
+        # No issue_id -> this is the student's own problem report.
+        category = request.form.get("category", "General").strip()[:80] or "General"
+        title = request.form.get("title", "").strip()[:120]
+        description = request.form.get("description", "").strip()[:2000]
+        if not title or not description:
+            con.close(); flash("Please enter a problem title and describe what is happening."); return redirect(url_for("community_problems"))
+        try:
+            con.execute(
+                "INSERT INTO issues(student_id,category,title,description,status,created_at) VALUES(?,?,?,?,?,?)",
+                (session["student_db_id"], category, title, description, "Open", now())
+            )
+            con.commit(); con.close(); flash("Problem reported successfully. Students and VYBE admin can now help."); return redirect(url_for("community_problems"))
         except Exception:
-            con.rollback(); con.close(); app.logger.exception("Community solution post failed")
-            flash("We couldn't post that solution right now. Please try again."); return redirect(url_for("community_problems"))
+            con.rollback(); con.close(); app.logger.exception("Community problem report failed")
+            flash("We couldn't submit your problem right now. Please try again."); return redirect(url_for("community_problems"))
     issues_rows = con.execute("SELECT i.*, s.name AS reporter_name FROM issues i JOIN students s ON s.id=i.student_id ORDER BY i.id DESC LIMIT 80").fetchall()
     solutions = con.execute("SELECT so.*, s.name AS author_name FROM solutions so JOIN students s ON s.id=so.student_id ORDER BY so.id ASC").fetchall()
     by_issue = {}
