@@ -1,4 +1,4 @@
-# VYBE V14 — clean page-based password reset + IST admin login audit
+# VYBE V14 — performance-stable production build (Oct 1)
 # Page-based password reset. Reset codes appear only on the student recovery page after admin approval.
 
 import os
@@ -16,6 +16,7 @@ import zipfile
 import threading
 import time
 from queue import LifoQueue, Empty
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import ipaddress
 from collections import defaultdict, deque
@@ -109,47 +110,81 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
-# Small bounded PostgreSQL connection pool. The previous build opened a brand-new
-# Supabase connection for every DB() call, which added avoidable latency to nearly
-# every page. Connections are reused and returned safely after each request.
-_PG_POOL = LifoQueue(maxsize=5)
-_PG_POOL_CREATED = 0
+_PG_POOL = None
 _PG_POOL_LOCK = threading.Lock()
+_PG_POOL_SIZE = max(4, min(12, int(os.environ.get("VYBE_DB_POOL_SIZE", "8"))))
+_BACKGROUND = ThreadPoolExecutor(max_workers=4, thread_name_prefix="vybe-bg")
 
-def _pg_connection():
-    global _PG_POOL_CREATED
-    try:
-        conn = _PG_POOL.get_nowait()
-        if getattr(conn, "closed", False):
-            with _PG_POOL_LOCK:
-                _PG_POOL_CREATED = max(0, _PG_POOL_CREATED - 1)
-            conn = None
-        if conn is not None:
-            return conn
-    except Empty:
-        pass
-    with _PG_POOL_LOCK:
-        if _PG_POOL_CREATED < 5:
-            pg_url = DATABASE_URL
-            if _PRODUCTION and "sslmode=" not in pg_url.lower():
-                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
-            conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
-            _PG_POOL_CREATED += 1
-            return conn
-    conn = _PG_POOL.get(timeout=10)
-    if getattr(conn, "closed", False):
-        return _pg_connection()
-    return conn
+class _PGPool:
+    def __init__(self, size):
+        self.size = size
+        self.q = LifoQueue(maxsize=size)
+        self.created = 0
+        self.lock = threading.Lock()
+
+    def _new(self):
+        pg_url = DATABASE_URL
+        if _PRODUCTION and "sslmode=" not in pg_url.lower():
+            pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+        return psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
+
+    def acquire(self):
+        try:
+            conn = self.q.get_nowait()
+            try:
+                if conn.closed:
+                    raise RuntimeError("closed")
+                conn.rollback()
+                return conn
+            except Exception:
+                try: conn.close()
+                except Exception: pass
+        except Empty:
+            pass
+        with self.lock:
+            if self.created < self.size:
+                conn = self._new()
+                self.created += 1
+                return conn
+        conn = self.q.get(timeout=10)
+        if conn.closed:
+            with self.lock:
+                self.created = max(0, self.created - 1)
+            return self._new()
+        conn.rollback()
+        return conn
+
+    def release(self, conn):
+        try:
+            if conn.closed:
+                raise RuntimeError("closed")
+            conn.rollback()
+            self.q.put_nowait(conn)
+        except Exception:
+            try: conn.close()
+            except Exception: pass
+            with self.lock:
+                self.created = max(0, self.created - 1)
+
+
+def _pg_pool():
+    global _PG_POOL
+    if _PG_POOL is None:
+        with _PG_POOL_LOCK:
+            if _PG_POOL is None:
+                _PG_POOL = _PGPool(_PG_POOL_SIZE)
+    return _PG_POOL
 
 class DB:
-    """Tiny database abstraction for SQLite and PostgreSQL."""
+    """SQLite/PostgreSQL DB wrapper. PostgreSQL connections are reused."""
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
-        self._returned = False
+        self._pooled = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            self.conn = _pg_connection()
+            self.conn = _pg_pool().acquire()
+            self._pooled = True
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -173,29 +208,17 @@ class DB:
         self.conn.rollback()
 
     def close(self):
-        if self._returned:
+        if getattr(self, "conn", None) is None:
             return
-        self._returned = True
-        if self.is_pg:
-            try:
-                self.conn.rollback()
-                if getattr(self.conn, "closed", False):
-                    return
-                _PG_POOL.put_nowait(self.conn)
-            except Exception:
-                try:
-                    self.conn.close()
-                except Exception:
-                    pass
-                with _PG_POOL_LOCK:
-                    global _PG_POOL_CREATED
-                    _PG_POOL_CREATED = max(0, _PG_POOL_CREATED - 1)
+        if self._pooled:
+            _pg_pool().release(self.conn)
         else:
             self.conn.close()
+        self.conn = None
+
 
 def db():
     return DB()
-
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -430,6 +453,8 @@ def set_setting(con, key, value):
             "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+    if key == "vybe_online":
+        invalidate_vybe_online_cache()
 
 
 class _CampusPageParser(HTMLParser):
@@ -975,28 +1000,6 @@ def init_db():
     except Exception:
         pass
 
-    # Lightweight indexes for the high-traffic student/admin queries. These are
-    # additive and never alter or delete existing Supabase data.
-    for _index_sql in (
-        "CREATE INDEX IF NOT EXISTS idx_students_status ON students(status)",
-        "CREATE INDEX IF NOT EXISTS idx_students_last_seen ON students(last_seen)",
-        "CREATE INDEX IF NOT EXISTS idx_resources_created ON resources(created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_academic_updates_kind_id ON academic_updates(kind,id)",
-        "CREATE INDEX IF NOT EXISTS idx_announcements_expires ON announcements(expires_at)",
-        "CREATE INDEX IF NOT EXISTS idx_events_date_id ON events(event_date,id)",
-        "CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)",
-        "CREATE INDEX IF NOT EXISTS idx_community_messages_student ON community_messages(student_id)",
-        "CREATE INDEX IF NOT EXISTS idx_student_notifications_recipient_read ON student_notifications(recipient_student_id,read_at)",
-        "CREATE INDEX IF NOT EXISTS idx_solutions_issue ON solutions(issue_id)",
-        "CREATE INDEX IF NOT EXISTS idx_issues_student_status ON issues(student_id,status)",
-        "CREATE INDEX IF NOT EXISTS idx_admin_solutions_student_id ON admin_problem_solutions(student_id,id)",
-    ):
-        try:
-            con.execute(_index_sql)
-        except Exception:
-            try: con.rollback()
-            except Exception: pass
-
     defaults = {
         "whatsapp_link": "",
         "google_drive_url": DRIVE_URL,
@@ -1014,6 +1017,19 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
+    if con.is_pg:
+        for _idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_students_last_seen ON students(last_seen)",
+            "CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)",
+            "CREATE INDEX IF NOT EXISTS idx_community_messages_student ON community_messages(student_id,id)",
+            "CREATE INDEX IF NOT EXISTS idx_student_notifications_recipient ON student_notifications(recipient_student_id,id)",
+            "CREATE INDEX IF NOT EXISTS idx_announcements_created ON announcements(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)",
+        ):
+            try:
+                con.execute(_idx_sql)
+            except Exception:
+                pass
     con.commit()
     con.close()
 
@@ -1256,24 +1272,74 @@ _ONLINE_CACHE = {"value": True, "expires": 0.0}
 _ONLINE_CACHE_LOCK = threading.Lock()
 _LAST_SEEN = {}
 _LAST_SEEN_LOCK = threading.Lock()
-_CLEANUP_NEXT = 0.0
+_CLEANUP_STATE = {"next": 0.0}
 _CLEANUP_LOCK = threading.Lock()
+
 
 def _cached_vybe_online():
     now_m = time.monotonic()
     with _ONLINE_CACHE_LOCK:
         if now_m < _ONLINE_CACHE["expires"]:
             return _ONLINE_CACHE["value"]
+    con = None
     try:
         con = db()
         value = setting(con, "vybe_online", "1") == "1"
-        con.close()
+        with _ONLINE_CACHE_LOCK:
+            _ONLINE_CACHE["value"] = value
+            _ONLINE_CACHE["expires"] = now_m + 5.0
+        return value
     except Exception:
-        value = True
+        return True
+    finally:
+        if con: con.close()
+
+
+def invalidate_vybe_online_cache():
     with _ONLINE_CACHE_LOCK:
-        _ONLINE_CACHE["value"] = value
-        _ONLINE_CACHE["expires"] = time.monotonic() + 2.0
-    return value
+        _ONLINE_CACHE["expires"] = 0.0
+
+
+def _background_cleanup():
+    con = None
+    try:
+        con = db()
+        _cleanup_expired_campus_content(con)
+        con.commit()
+    except Exception:
+        pass
+    finally:
+        if con: con.close()
+
+
+def _maybe_schedule_cleanup():
+    now_m = time.monotonic()
+    with _CLEANUP_LOCK:
+        if now_m < _CLEANUP_STATE["next"]:
+            return
+        _CLEANUP_STATE["next"] = now_m + 60.0
+    _BACKGROUND.submit(_background_cleanup)
+
+
+def _maybe_schedule_last_seen(student_id):
+    now_m = time.monotonic()
+    with _LAST_SEEN_LOCK:
+        previous = _LAST_SEEN.get(student_id, 0.0)
+        if now_m - previous < 60.0:
+            return
+        _LAST_SEEN[student_id] = now_m
+    def write_seen():
+        con = None
+        try:
+            con = db()
+            con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), student_id))
+            con.commit()
+        except Exception:
+            pass
+        finally:
+            if con: con.close()
+    _BACKGROUND.submit(write_seen)
+
 
 @app.before_request
 def global_online_gate():
@@ -1287,43 +1353,23 @@ def global_online_gate():
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         if not _same_origin_unsafe_request():
             abort(403, description="Cross-site requests are not allowed.")
-        if not _csrf_token_valid():
+        # Authentication bootstrap endpoints have no prior page on which to
+        # obtain a session CSRF token. Same-origin protection remains active.
+        bootstrap = {"/login", "/register", "/forgot-password", "/admin",
+                     "/admin/login-passkey/options", "/admin/login-passkey/verify"}
+        if path not in bootstrap and not _csrf_token_valid():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
+    _maybe_schedule_cleanup()
     if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
-    # Expiry cleanup is maintenance work, not request work. Run it at most once
-    # every five minutes instead of opening/scanning the database on every page.
-    global _CLEANUP_NEXT
-    now_m = time.monotonic()
-    if now_m >= _CLEANUP_NEXT:
-        with _CLEANUP_LOCK:
-            if time.monotonic() >= _CLEANUP_NEXT:
-                _CLEANUP_NEXT = time.monotonic() + 300.0
-                try:
-                    cleanup_con = db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-                except Exception:
-                    pass
     if not _cached_vybe_online():
         return redirect(url_for("offline"))
     active_student = session.get("student_db_id")
     if active_student:
-        # Presence does not need a write on every page. Throttle it to once/minute.
-        with _LAST_SEEN_LOCK:
-            last_write = _LAST_SEEN.get(active_student, 0.0)
-            should_write = (now_m - last_write) >= 60.0
-            if should_write:
-                _LAST_SEEN[active_student] = now_m
-        if should_write:
-            try:
-                con = db()
-                con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
-                con.commit(); con.close()
-            except Exception:
-                pass
+        _maybe_schedule_last_seen(active_student)
     return None
-
 
 def _safe_500_page():
     # Keep the 500 response independent of the database/layout system so the
@@ -3416,7 +3462,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         try:
-            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],18); _header_con.close()
+            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],1000); _header_con.close()
         except Exception: _header_updates=[]
         _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
@@ -4240,8 +4286,7 @@ if(notificationBell){{
       notificationBell.setAttribute('aria-expanded','false');
     }}
   }});
-  // Notifications are fetched when the bell is opened instead of polling every second.
-  // This removes a continuous database request from every student page.
+  /* Notifications are loaded on demand when the bell opens. */
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -7409,8 +7454,8 @@ def community_chat():
       function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
-      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;const last=Array.from(chatWindow.querySelectorAll('.community-message')).reduce(function(max,e){{return Math.max(max,Number(e.dataset.messageId)||0)}},0);const qs=force?'':'?after_id='+encodeURIComponent(last);const res=await fetch('/community/chat/messages'+qs,{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];if(force){{chatWindow.querySelectorAll('.community-message').forEach(function(e){{e.remove();}});}}msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]'))chatWindow.appendChild(build(m));}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},5000);}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
@@ -7421,18 +7466,34 @@ def community_chat():
 @app.route("/community/chat/messages", methods=["GET"])
 @student_required
 def community_chat_messages():
-    """Lightweight live-chat endpoint used by the chat page polling loop."""
+    """Incremental chat feed. Existing messages stay in the browser; polls only fetch newer rows."""
     con = db()
     try:
-        rows = con.execute(
-            "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-            "s.name, r.message AS reply_message, rs.name AS reply_name "
-            "FROM community_messages cm "
-            "JOIN students s ON s.id=cm.student_id "
-            "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-            "LEFT JOIN students rs ON rs.id=r.student_id "
-            "ORDER BY cm.id ASC LIMIT 300"
-        ).fetchall()
+        try:
+            after_id = max(0, int(request.args.get("after_id", "0")))
+        except Exception:
+            after_id = 0
+        if after_id:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 80", (after_id,)
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "ORDER BY cm.id DESC LIMIT 300"
+            ).fetchall()
+            rows = list(reversed(rows))
         return jsonify({"messages": [
             {
                 "id": int(r["id"]),
@@ -7915,9 +7976,6 @@ def admin_status():
     if request.method == "POST":
         set_setting(con, "vybe_online", "0" if current else "1")
         con.commit(); con.close()
-        with _ONLINE_CACHE_LOCK:
-            _ONLINE_CACHE["value"] = not current
-            _ONLINE_CACHE["expires"] = time.monotonic() + 3600.0
         flash("VYBE is now offline." if current else "VYBE is now online.")
         return redirect(url_for("admin_status"))
     con.close()
