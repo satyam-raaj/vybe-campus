@@ -13,6 +13,11 @@ import mimetypes
 import sqlite3
 import zlib
 import zipfile
+import threading
+import time
+import socket
+import ipaddress
+from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from functools import wraps
@@ -60,8 +65,12 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
-SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "change-this-vybe-secret-in-production")
-DEFAULT_ADMIN_PASSWORD = "VYBE@2026Admin!"
+SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if DATABASE_URL:
+        raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
+    SECRET_KEY = secrets.token_hex(32)
+INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
 PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or RENDER_HOST or "vybe-campus.onrender.com"
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID else "https://vybe-campus.onrender.com")
@@ -69,7 +78,7 @@ DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXW
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
 VYBE_AI_ENDPOINT = os.environ.get("VYBE_AI_ENDPOINT", "https://api.openai.com/v1/responses").strip()
-ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xlsx", ".odt", ".odp", ".txt", ".csv", ".md", ".rtf", ".json", ".xml", ".html", ".htm", ".log", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
+ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xlsx", ".odt", ".odp", ".txt", ".csv", ".md", ".rtf", ".json", ".xml", ".log", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".webp", ".zip"}
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
 
@@ -77,12 +86,22 @@ RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 
 app = Flask(__name__)
+_PRODUCTION = bool(DATABASE_URL)
+_COOKIE_SECURE = True if _PRODUCTION else (os.environ.get("VYBE_COOKIE_SECURE", "1") == "1")
+_COOKIE_NAME = "__Host-vybe_session" if _COOKIE_SECURE else "vybe_session"
+_ALLOWED_HOSTS_RAW = os.environ.get("VYBE_ALLOWED_HOSTS", "").strip()
+_ALLOWED_HOSTS = {h.strip().lower().split(":", 1)[0] for h in _ALLOWED_HOSTS_RAW.split(",") if h.strip()}
+if RENDER_HOST:
+    _ALLOWED_HOSTS.add(RENDER_HOST)
 app.config.update(
     SECRET_KEY=SECRET_KEY,
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
+    SESSION_COOKIE_NAME=_COOKIE_NAME,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("VYBE_COOKIE_SECURE", "1") == "1",
+    SESSION_COOKIE_SECURE=_COOKIE_SECURE,
+    SESSION_USE_SIGNER=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
 )
 # Render sits behind a reverse proxy. Trust the forwarded scheme/host so
 # HTTPS cookies, redirects and WebAuthn origin checks behave consistently.
@@ -100,7 +119,13 @@ class DB:
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            self.conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+            # psycopg uses the DATABASE_URL supplied by the managed database.
+            # Enforce TLS unless the URL explicitly requests a local/insecure
+            # connection (useful only for local development).
+            pg_url = DATABASE_URL
+            if _PRODUCTION and "sslmode=" not in pg_url.lower():
+                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+            self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -166,6 +191,23 @@ def _ensure_password_reset_schema(con):
             con.execute("ALTER TABLE password_reset_requests ADD COLUMN approval_code_token TEXT")
 
 
+def _ensure_password_reset_active_index(con):
+    """Prevent concurrent requests from creating multiple active reset tickets."""
+    try:
+        dupes = con.execute(
+            "SELECT student_id, MAX(id) AS keep_id FROM password_reset_requests WHERE status IN ('pending','approved') GROUP BY student_id HAVING COUNT(*) > 1"
+        ).fetchall()
+        for d in dupes:
+            con.execute(
+                "UPDATE password_reset_requests SET status='superseded' WHERE student_id=? AND status IN ('pending','approved') AND id<>?",
+                (int(d["student_id"]), int(d["keep_id"])),
+            )
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_password_reset_active ON password_reset_requests(student_id) WHERE status IN ('pending','approved')")
+        con.commit()
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+
 def now_ist():
     """Current Indian Standard Time for admin audit records."""
     from zoneinfo import ZoneInfo
@@ -207,7 +249,7 @@ def _cleanup_expired_campus_content(con):
 
 def record_admin_login(con, success, event="login"):
     """Record admin authentication activity without storing passwords."""
-    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:100]
+    ip = (request.remote_addr or "unknown")[:100]
     user_agent = request.headers.get("User-Agent", "")[:500]
     try:
         con.execute(
@@ -230,6 +272,19 @@ def record_admin_login(con, success, event="login"):
 
 def esc(value):
     return html.escape(str(value or ""), quote=True)
+
+
+def _send_uploaded_content(data, name, mime=None):
+    """Serve stored uploads without turning user/admin files into active HTML."""
+    safe_name = Path(name or "uploaded-file").name
+    guessed = mime or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    inline = guessed == "application/pdf" or guessed.startswith("image/")
+    return send_file(
+        io.BytesIO(bytes(data)),
+        mimetype=guessed,
+        as_attachment=not inline,
+        download_name=safe_name,
+    )
 
 
 def hash_password(password):
@@ -364,14 +419,35 @@ def _normalize_public_url(value):
     parsed=urlparse(value)
     return value.rstrip('/') if parsed.scheme in ('http','https') and parsed.netloc else ''
 
+def _public_http_host(host):
+    """Reject loopback/private/reserved destinations for server-side crawling."""
+    host=(host or "").strip().lower().rstrip(".")
+    if not host or host in {"localhost", "localhost.localdomain"}:
+        return False
+    try:
+        addresses={info[4][0] for info in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)}
+        if not addresses:
+            return False
+        for addr in addresses:
+            ip=ipaddress.ip_address(addr)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _crawl_college_website(start_url,max_pages=25):
     start=_normalize_public_url(start_url)
     if not start: raise ValueError('Enter a valid http(s) college website URL.')
-    host=urlparse(start).netloc.lower(); queue=[start]; seen=set(); pages=[]
+    host=urlparse(start).hostname or ""
+    if not _public_http_host(host): raise ValueError("The college website must resolve to a public internet address.")
+    queue=[start]; seen=set(); pages=[]
     blocked={'.jpg','.jpeg','.png','.gif','.webp','.svg','.zip','.mp4','.mp3','.doc','.docx','.xls','.xlsx','.ppt','.pptx'}
     while queue and len(pages)<max_pages:
         url=queue.pop(0).split('#',1)[0]; parsed=urlparse(url)
-        if url in seen or parsed.netloc.lower()!=host or Path(parsed.path.lower()).suffix in blocked: continue
+        if url in seen or (parsed.hostname or "").lower()!=host.lower() or Path(parsed.path.lower()).suffix in blocked: continue
+        if parsed.scheme not in ("http","https") or not _public_http_host(parsed.hostname or ""): continue
         seen.add(url)
         try:
             req=URLRequest(url,headers={'User-Agent':'VYBE-Campus-Assistant/1.0'})
@@ -853,11 +929,16 @@ def init_db():
     else:
         con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
 
+    try:
+        _ensure_password_reset_active_index(con)
+    except Exception:
+        pass
+
     defaults = {
         "whatsapp_link": "",
         "google_drive_url": DRIVE_URL,
         "vybe_online": "1",
-        "admin_password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+        **({"admin_password_hash": hash_password(INITIAL_ADMIN_PASSWORD)} if INITIAL_ADMIN_PASSWORD else {}),
         "whatsapp_notifications_enabled": "0",
         "whatsapp_api_version": "v23.0",
         "whatsapp_phone_number_id": "",
@@ -992,7 +1073,9 @@ def passkey_required(fn):
 def admin_password_hash(con):
     stored = setting(con, "admin_password_hash", "")
     if not stored:
-        stored = hash_password(DEFAULT_ADMIN_PASSWORD)
+        if not INITIAL_ADMIN_PASSWORD:
+            raise RuntimeError("Admin password is not configured. Set VYBE_ADMIN_INITIAL_PASSWORD for a fresh installation.")
+        stored = hash_password(INITIAL_ADMIN_PASSWORD)
         set_setting(con, "admin_password_hash", stored)
         con.commit()
     return stored
@@ -1019,9 +1102,109 @@ def healthz():
         return jsonify(ok=False, service="VYBE", error="database unavailable"), 503
 
 
+# ---------------------------------------------------------------------------
+# Production request protections
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_BUCKETS = defaultdict(deque)
+_RATE_LIMIT_RULES = {
+    ("POST", "/login"): (10, 300),
+    ("POST", "/register"): (8, 900),
+    ("POST", "/forgot-password"): (5, 900),
+    ("GET", "/forgot-password/status"): (30, 300),
+    ("POST", "/reset-password"): (8, 900),
+    ("POST", "/account/password"): (8, 900),
+    ("POST", "/admin"): (6, 300),
+    ("POST", "/admin/login-passkey/options"): (12, 300),
+    ("POST", "/admin/login-passkey/verify"): (12, 300),
+    ("POST", "/passkey/auth/options"): (12, 300),
+    ("POST", "/passkey/auth/verify"): (12, 300),
+    ("POST", "/passkey/register/options"): (8, 600),
+    ("POST", "/passkey/register/verify"): (8, 600),
+    ("POST", "/community/chat"): (40, 60),
+    ("POST", "/community/problems"): (20, 300),
+}
+
+def _client_ip():
+    return (request.remote_addr or "unknown")[:64]
+
+def _rate_limited(method, path):
+    rule = _RATE_LIMIT_RULES.get((method, path))
+    if not rule:
+        # A conservative fallback protects every admin state-changing endpoint
+        # even if a new route is added later without an explicit rule.
+        if method in {"POST", "PUT", "PATCH", "DELETE"} and path.startswith("/admin/"):
+            rule = (80, 60)
+        else:
+            return False
+    limit, window = rule
+    identity = ""
+    if path in {"/login", "/register", "/forgot-password"} and method == "POST":
+        identity = request.form.get("student_id", "").strip().lower()[:80]
+    key = f"{method}:{path}:{_client_ip()}:{identity}"
+    cutoff = time.monotonic() - window
+    now_m = time.monotonic()
+    with _RATE_LIMIT_LOCK:
+        # Bound the in-process limiter so a rotating-IP attack cannot grow the
+        # dictionary without limit. Expired buckets are cheap to discard.
+        if len(_RATE_LIMIT_BUCKETS) > 10000:
+            stale = [k for k, q in _RATE_LIMIT_BUCKETS.items() if not q or q[-1] <= cutoff]
+            for k in stale[:5000]:
+                _RATE_LIMIT_BUCKETS.pop(k, None)
+        q = _RATE_LIMIT_BUCKETS[key]
+        while q and q[0] <= cutoff:
+            q.popleft()
+        if len(q) >= limit:
+            return True
+        q.append(now_m)
+    return False
+
+def _same_origin_unsafe_request():
+    """Layered CSRF protection: same-origin plus a per-session token."""
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return True
+    origin = request.headers.get("Origin", "").strip()
+    if origin:
+        try:
+            expected = f"{request.scheme}://{request.host}"
+            return origin.rstrip("/").lower() == expected.rstrip("/").lower()
+        except Exception:
+            return False
+    referer = request.headers.get("Referer", "").strip()
+    if referer:
+        try:
+            rp = urlparse(referer)
+            return rp.scheme == request.scheme and rp.netloc == request.host
+        except Exception:
+            return False
+    # Browser POSTs normally include Origin or Referer. Refuse ambiguous
+    # requests rather than silently weakening CSRF protection.
+    return False
+
+def _csrf_token_valid():
+    expected = session.get("_csrf_token")
+    if not expected:
+        return False
+    supplied = request.headers.get("X-VYBE-CSRF", "").strip() or request.form.get("csrf_token", "").strip()
+    return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
+
+
 @app.before_request
 def global_online_gate():
     path = request.path
+    if _PRODUCTION and _ALLOWED_HOSTS_RAW:
+        host = (request.host or "").split(":", 1)[0].lower().strip(".")
+        if host not in _ALLOWED_HOSTS:
+            abort(400, description="Unrecognized VYBE host.")
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_urlsafe(32)
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if not _same_origin_unsafe_request():
+            abort(403, description="Cross-site requests are not allowed.")
+        if not _csrf_token_valid():
+            abort(403, description="Security verification failed. Refresh the page and try again.")
+    if _rate_limited(request.method, path):
+        abort(429, description="Too many requests. Please try again shortly.")
     try:
         cleanup_con=db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
     except Exception:
@@ -1409,6 +1592,8 @@ def security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://api.openai.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-src 'self' https://drive.google.com https://docs.google.com"
     if session.get("student_db_id"):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
     if request.is_secure:
@@ -2994,14 +3179,14 @@ def _mark_all_page_items_seen(con,student_id,item_type,table):
     except Exception: pass
 
 
-@app.route("/student-update-seen/<item_type>/<int:item_id>")
+@app.route("/student-update-seen/<item_type>/<int:item_id>", methods=["POST"])
 @student_required
 def student_update_seen(item_type,item_id):
     targets={"academic":"/updates","resource":"/academics","timetable":"/timetable","announcement":"/announcements","event":"/events","admin_solution":"/issues"}
     if item_type not in targets: abort(404)
     _mark_admin_update_seen(session["student_db_id"],item_type,item_id)
-    target=request.args.get("next","").strip()
-    if not target.startswith("/") or target.startswith("//"): target=targets[item_type]
+    target=request.form.get("next","").strip()
+    if not target.startswith("/") or target.startswith("//") or "\n" in target or "\r" in target: target=targets[item_type]
     return redirect(target)
 
 
@@ -3142,11 +3327,10 @@ def layout(title, body, admin=False):
         _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
         for x in _header_updates:
-            href=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}?next={quote(x["url"], safe="/")}'
-            # Every item returned by _admin_update_feed is unread.  There is
-            # deliberately no VIEWED state in the bell: opening an item marks
-            # it seen and it disappears from the next bell render.
-            _alert_items.append(f'<a class="vybe-header-alert-item is-new" href="{esc(href)}" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></a>')
+            seen_action=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}'
+            # Opening an unread item is a POST state change, preventing a third-party
+            # page from marking notifications as read with a normal link request.
+            _alert_items.append(f'<form class="vybe-header-alert-item-form" method="post" action="{esc(seen_action)}"><input type="hidden" name="next" value="{esc(x["url"])}"><button class="vybe-header-alert-item is-new" type="submit" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></button></form>')
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">You are all caught up.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
         header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Only items you have not opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
@@ -3202,7 +3386,7 @@ def layout(title, body, admin=False):
 @media(max-width:760px){.ai-settings-head{display:block}.ai-live-status{margin-top:16px;width:max-content}.ai-control-card{display:block}.ai-toggle-button{margin-top:18px;width:100%;justify-content:center}.ai-shortcuts-head{display:block}.ai-selected-count{display:inline-block;margin-top:10px}.ai-shortcut-grid{grid-template-columns:1fr}.ai-save-row{display:block}.ai-save-row .btn{width:100%;margin-top:12px}}
 
 /* ===== HEADER ADMIN ALERTS ===== */
-.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.vybe-header-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 11px 26px rgba(23,32,51,.20)}.vybe-header-alert:active{transform:translateY(0) scale(.98)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 17px 14px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:4px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:6px 9px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:390px;overflow:auto;padding:8px}.vybe-header-alert-item{display:flex;align-items:center;gap:10px;padding:11px 10px;border-radius:13px;color:#17202b;text-decoration:none;transition:background .15s ease,transform .15s ease}.vybe-header-alert-item:hover{background:#f4f8fc;transform:translateX(2px)}.vybe-header-alert-item.is-new{background:#f7fbff}.vybe-alert-type{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eef5ff;color:#2f6fca;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-header-alert-item.is-new .vybe-alert-type{background:#eaf7df;color:#4d8f21}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vybe-alert-open{flex:0 0 auto;padding:5px 7px;border-radius:7px;background:#f0f2f5;color:#7b8793;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-item.is-new .vybe-alert-open{background:#eaf7df;color:#4d8f21}.vybe-alert-arrow{flex:0 0 auto;font-size:19px;line-height:1;color:#a2adb8}.vybe-header-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}.vybe-header-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}.vybe-header-alert-all:hover{background:#f5f9fd}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.vybe-header-alert-list{max-height:calc(100vh - 180px)}}
+.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.vybe-header-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 11px 26px rgba(23,32,51,.20)}.vybe-header-alert:active{transform:translateY(0) scale(.98)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 17px 14px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:4px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:6px 9px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:390px;overflow:auto;padding:8px}.vybe-header-alert-item-form{margin:0;padding:0}.vybe-header-alert-item{width:100%;display:flex;align-items:center;gap:10px;padding:11px 10px;border-radius:13px;color:#17202b;text-decoration:none;background:transparent;border:0;text-align:left;cursor:pointer;font:inherit;transition:background .15s ease,transform .15s ease}.vybe-header-alert-item:hover{background:#f4f8fc;transform:translateX(2px)}.vybe-header-alert-item.is-new{background:#f7fbff}.vybe-alert-type{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eef5ff;color:#2f6fca;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-header-alert-item.is-new .vybe-alert-type{background:#eaf7df;color:#4d8f21}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vybe-alert-open{flex:0 0 auto;padding:5px 7px;border-radius:7px;background:#f0f2f5;color:#7b8793;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-item.is-new .vybe-alert-open{background:#eaf7df;color:#4d8f21}.vybe-alert-arrow{flex:0 0 auto;font-size:19px;line-height:1;color:#a2adb8}.vybe-header-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}.vybe-header-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}.vybe-header-alert-all:hover{background:#f5f9fd}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.vybe-header-alert-list{max-height:calc(100vh - 180px)}}
 
 /* ===== SINGLE MOBILE STUDENT SHELL ===== */
 @media (max-width:850px){
@@ -3306,7 +3490,7 @@ def layout(title, body, admin=False):
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{mobile_runtime_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{mobile_runtime_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -4047,7 +4231,7 @@ if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPro
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
-</script></body></html>'''
+<script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
 
 
 # ---------------------------------------------------------------------------
@@ -4090,8 +4274,8 @@ def register():
         name = request.form.get("name", "").strip()[:80]
         sid = request.form.get("student_id", "").strip()[:80]
         password = request.form.get("password", "")
-        if len(name) < 2 or len(sid) < 2 or len(password) < 6:
-            flash("Enter a valid name, unique Student ID and a password of at least 6 characters.")
+        if len(name) < 2 or len(sid) < 2 or len(password) < 10:
+            flash("Enter a valid name, unique Student ID and a password of at least 10 characters.")
             return redirect(url_for("register"))
         con = db()
         try:
@@ -4108,7 +4292,7 @@ def register():
         finally:
             con.close()
         return redirect(url_for("login"))
-    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
+    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -4131,7 +4315,7 @@ def login():
             con.close(); session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
-        session.clear(); session["student_db_id"] = row["id"]
+        session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
         return redirect(url_for("dashboard"))
     password_error = bool(session.pop("student_login_password_error", False))
     body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div class="password-wrap{" password-error" if password_error else ""}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>'''
@@ -4167,7 +4351,10 @@ def forgot_password():
                 (sid,),
             ).fetchone()
 
-            if not student or student["name"].strip().lower() != name.lower() or str(student["status"]).lower() == "blocked":
+            if not student or student["name"].strip().lower() != name.lower() or str(student["status"]).lower() != "approved":
+                # Keep the response generic so account status/existence is not
+                # disclosed to an unauthenticated requester. Password recovery
+                # is available only to approved student accounts.
                 flash("If the account is eligible, the password-change request has been sent to the admin.")
                 return redirect(url_for("forgot_password"))
 
@@ -4254,6 +4441,15 @@ def forgot_password_status():
         row = con.execute("SELECT id,status,expires_at FROM password_reset_requests WHERE id=?", (int(request_id),)).fetchone()
         if not row:
             return jsonify({"status": "invalid"}), 404
+        if row["status"] == "approved" and row["expires_at"]:
+            try:
+                exp = datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) >= exp:
+                    con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=? AND status='approved'", (int(request_id),))
+                    con.commit()
+                    return jsonify({"status": "expired"})
+            except Exception:
+                pass
         if row["status"] == "approved":
             return jsonify({"status": "approved"})
         if row["status"] in ("rejected", "used", "expired"):
@@ -4272,9 +4468,19 @@ def reset_password():
     con = db()
     try:
         row = con.execute("SELECT r.id,r.student_id,r.status,r.expires_at,s.status AS student_status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
-        if not row or row["status"] != "approved" or row["student_status"] == "blocked":
+        if not row or row["status"] != "approved" or row["student_status"] != "approved":
             flash("Your password-change request has not been approved yet or is no longer active.")
             return redirect(url_for("forgot_password"))
+        if row["expires_at"]:
+            try:
+                exp = datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) >= exp:
+                    con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=? AND status='approved'", (row["id"],))
+                    con.commit()
+                    flash("The password-change approval has expired. Please request access again.")
+                    return redirect(url_for("forgot_password"))
+            except Exception:
+                pass
         if request.method == "POST":
             posted_request_id = request.form.get("request_id", "").strip()
             new_password = request.form.get("password", "")
@@ -4282,8 +4488,8 @@ def reset_password():
             if posted_request_id != str(request_id):
                 flash("This password-change session is invalid. Please start again.")
                 return redirect(url_for("forgot_password"))
-            if len(new_password) < 6 or new_password != confirm:
-                flash("New passwords must match and be at least 6 characters.")
+            if len(new_password) < 10 or new_password != confirm:
+                flash("New passwords must match and be at least 10 characters.")
                 return redirect(url_for("forgot_password"))
             con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
             con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
@@ -4293,7 +4499,7 @@ def reset_password():
             return redirect(url_for("login"))
     finally:
         con.close()
-    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div class="password-wrap"><input id="resetPassword" type="password" name="password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="resetPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="resetConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Change password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/forgot-password">← Password recovery</a><span class="vybe-auth-hint">Secure password change · admin approved</span></div></div></div>""".format(rid=int(request_id))
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div class="password-wrap"><input id="resetPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="resetPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="resetConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Change password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/forgot-password">← Password recovery</a><span class="vybe-auth-hint">Secure password change · admin approved</span></div></div></div>""".format(rid=int(request_id))
     return layout("Reset Password", body)
 
 
@@ -4308,12 +4514,12 @@ def account_password():
         row = con.execute("SELECT password_hash FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
         if not check_password(current, row["password_hash"]):
             con.close(); flash("Current password is incorrect."); return redirect(url_for("account_password"))
-        if len(new_password) < 6 or new_password != confirm:
-            con.close(); flash("New passwords must match and be at least 6 characters."); return redirect(url_for("account_password"))
+        if len(new_password) < 10 or new_password != confirm:
+            con.close(); flash("New passwords must match and be at least 10 characters."); return redirect(url_for("account_password"))
         con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), session["student_db_id"]))
         con.commit(); con.close(); flash("Password changed successfully."); return redirect(url_for("dashboard"))
     con.close()
-    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div class="password-wrap"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="password-toggle toggle-password" data-target="currentPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">New password</div><div class="password-wrap"><input id="changePassword" type="password" name="new_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="changePassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="6" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="changeConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
+    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div class="password-wrap"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="password-toggle toggle-password" data-target="currentPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">New password</div><div class="password-wrap"><input id="changePassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="changePassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="changeConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
     return layout("Change Password", body)
 
 
@@ -4399,7 +4605,10 @@ def _extract_zip_xml_text(file_data,suffix,max_chars=50000):
         return ""
     try:
         with zipfile.ZipFile(io.BytesIO(file_data)) as z:
-            names=z.namelist()
+            infos=z.infolist()
+            if len(infos) > 500:
+                return ""
+            names=[i.filename for i in infos]
             if suffix==".docx":
                 targets=[n for n in names if n.startswith("word/") and n.endswith(".xml")]
             elif suffix==".pptx":
@@ -4411,9 +4620,14 @@ def _extract_zip_xml_text(file_data,suffix,max_chars=50000):
             else:
                 targets=[n for n in names if not n.endswith("/") and n.lower().endswith((".txt",".csv",".md",".html",".htm",".xml",".json"))]
             parts=[]
-            for name in targets:
+            total_uncompressed=0
+            for name in targets[:500]:
                 try:
+                    info=z.getinfo(name)
+                    if info.file_size > 2 * 1024 * 1024 or total_uncompressed + info.file_size > 8 * 1024 * 1024:
+                        continue
                     raw=z.read(name)
+                    total_uncompressed += len(raw)
                     if name.lower().endswith((".txt",".csv",".md",".html",".htm",".json")):
                         parts.append(raw.decode("utf-8","ignore"))
                     else:
@@ -5189,10 +5403,10 @@ def timetable_file(tid):
     con=db(); row=con.execute("SELECT file_name,original_name,file_data FROM timetables WHERE id=?",(tid,)).fetchone(); con.close()
     if not row: abort(404)
     if row["file_data"] is not None:
-        return send_file(io.BytesIO(bytes(row["file_data"])), mimetype=mimetypes.guess_type(row["original_name"] or row["file_name"])[0] or "application/octet-stream", as_attachment=False, download_name=row["original_name"] or row["file_name"])
+        return _send_uploaded_content(row["file_data"], row["original_name"] or row["file_name"])
     path=UPLOAD_DIR/row["file_name"]
     if not path.is_file(): abort(404)
-    return send_file(path, mimetype=mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=row["original_name"])
+    return _send_uploaded_content(path.read_bytes(), row["original_name"] or path.name)
 
 
 @app.route("/search")
@@ -6001,7 +6215,7 @@ ACADEMIC_UPDATES_PAGE_CSS = """<style>
 # Direct-open academic update cards: clicking the card opens the uploaded file itself.
 ACADEMIC_DIRECT_CARD_CSS = """
 <style>
-.academic-update-clickable{cursor:pointer;text-decoration:none!important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
+.academic-update-open-form{margin:0}.academic-update-open-button{width:100%;display:block;text-align:left;font:inherit;color:inherit}.academic-update-clickable{cursor:pointer;text-decoration:none!important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
 .academic-update-clickable:hover{transform:translateY(-4px);box-shadow:0 18px 45px rgba(31,72,120,.13);border-color:#c7dcf6}
 .academic-update-clickable:active{transform:translateY(-1px) scale(.995)}
 .academic-update-clickable .academic-link{font-weight:800;color:#2f6fca}
@@ -6038,8 +6252,9 @@ def academic_updates():
             final_target=f"/academic-update/{r['id']}"; card_target=""; action_text="View notice"
         # Opening an update from the Academic Updates page also counts as
         # viewing that specific notification, not every notification.
-        card_href=f"/student-update-seen/academic/{r['id']}?next={quote(final_target, safe=':/?=&%')}"
-        cards_list.append(f'''<a id="academic-update-{r['id']}" class="academic-update-card academic-update-large academic-update-clickable" href="{card_href}"{card_target} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
+        card_action=f"/student-update-seen/academic/{r['id']}"
+        card_target_attr = ' target="_blank"' if card_target else ''
+        cards_list.append(f'''<form id="academic-update-{r['id']}" class="academic-update-open-form" method="post" action="{card_action}"{card_target_attr}><input type="hidden" name="next" value="{esc(final_target)}"><button class="academic-update-card academic-update-large academic-update-clickable academic-update-open-button" type="submit" aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></button></form>''')
     cards="".join(cards_list)
     body=f'''{ACADEMIC_UPDATES_PAGE_CSS}{ACADEMIC_DIRECT_CARD_CSS}<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Important academic updates.</h1><p class="academic-lead">Results, date sheets, exam notices and admit cards — all in one place.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search academic updates"><select name="kind"><option value="">All four updates</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in allowed_kinds)}</select><button type="submit">Search</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>'''
     return layout("Academic Updates",body)
@@ -6064,10 +6279,10 @@ def academic_update_file(uid):
     if not row or row["kind"] not in ("Result","Date Sheet","Exam Notice","Admit Card") or (not row["file_name"] and row["file_data"] is None): abort(404)
     if row["file_data"] is not None:
         name=row["original_name"] or row["file_name"] or "academic-document"
-        return send_file(io.BytesIO(bytes(row["file_data"])),mimetype=row["mime_type"] or mimetypes.guess_type(name)[0] or "application/octet-stream",as_attachment=False,download_name=name)
+        return _send_uploaded_content(row["file_data"], name, row["mime_type"])
     path=UPLOAD_DIR/row["file_name"]
     if not path.is_file(): abort(404)
-    return send_file(path,mimetype=row["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream",as_attachment=False,download_name=row["original_name"] or path.name)
+    return _send_uploaded_content(path.read_bytes(), row["original_name"] or path.name, row["mime_type"])
 
 @app.route("/apps")
 @student_required
@@ -6087,10 +6302,10 @@ def resource(rid):
     data = r["file_data"]
     if data is not None:
         download_name = r["original_name"] or r["file_name"] or "resource-file"
-        return send_file(io.BytesIO(bytes(data)), mimetype=r["mime_type"] or mimetypes.guess_type(download_name)[0] or "application/octet-stream", as_attachment=False, download_name=download_name)
+        return _send_uploaded_content(data, download_name, r["mime_type"])
     path = UPLOAD_DIR / r["file_name"]
     if not path.is_file(): abort(404)
-    return send_file(path, mimetype=r["mime_type"] or mimetypes.guess_type(path.name)[0] or "application/octet-stream", as_attachment=False, download_name=r["original_name"] or path.name)
+    return _send_uploaded_content(path.read_bytes(), r["original_name"] or path.name, r["mime_type"])
 
 
 @app.route("/issues", methods=["GET"])
@@ -7321,9 +7536,11 @@ def admin_login():
             return redirect(url_for("admin_login"))
 
         session.clear()
+        session.permanent = True
         session["admin_authenticated"] = True
         session["admin_password_verified"] = True
         session["passkey_verified"] = False
+        session["_csrf_token"] = secrets.token_urlsafe(32)
 
         if passkey_count == 0:
             flash("Password accepted. Register your first admin passkey before using the dashboard.")
@@ -7396,8 +7613,10 @@ def admin_login_passkey_verify():
         con.commit()
         con.close()
         session.clear()
+        session.permanent = True
         session["admin_authenticated"] = True
         session["passkey_verified"] = True
+        session["_csrf_token"] = secrets.token_urlsafe(32)
         return jsonify(ok=True)
     except Exception as exc:
         try:
@@ -7585,7 +7804,7 @@ def admin_assistant():
     return layout("VYBE AI Settings", body, admin=True)
 
 
-@app.route("/admin/assistant/knowledge/<int:kid>/delete")
+@app.route("/admin/assistant/knowledge/<int:kid>/delete", methods=["POST"])
 @admin_required
 def delete_assistant_knowledge(kid):
     con=db(); row=con.execute("SELECT file_name FROM assistant_knowledge WHERE id=?",(kid,)).fetchone(); con.execute("DELETE FROM assistant_knowledge WHERE id=?",(kid,)); con.commit(); con.close()
@@ -7618,9 +7837,9 @@ def admin_students():
     con = db(); students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC").fetchall(); con.close()
     rows = ""
     for s in students:
-        if s["status"] == "pending": action = f'<a class="btn good" href="/admin/student/{s["id"]}/approve">Approve</a>'
-        elif s["status"] == "approved": action = f'<a class="btn danger" href="/admin/student/{s["id"]}/block">Block</a>'
-        else: action = f'<a class="btn good" href="/admin/student/{s["id"]}/unblock">Unblock</a>'
+        if s["status"] == "pending": action = f'<form method="post" action="/admin/student/{s["id"]}/approve"><button class="btn good">Approve</button></form>'
+        elif s["status"] == "approved": action = f'<form method="post" action="/admin/student/{s["id"]}/block"><button class="btn danger">Block</button></form>'
+        else: action = f'<form method="post" action="/admin/student/{s["id"]}/unblock"><button class="btn good">Unblock</button></form>'
         online = student_is_online(s["last_seen"]) if s["status"] == "approved" else False
         dot_class = "is-online" if online else "is-offline"
         dot_title = "Online" if online else "Offline"
@@ -7637,11 +7856,11 @@ def admin_students():
         else:
             access_action = '<span class="small muted">Approve first</span>'
         access_label = '<span class="pill">Publisher</span>' if publisher else '<span class="small muted">Student</span>'
-        rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}{access_action}<a class="btn danger" href="/admin/student/{sid_num}/delete" onclick="return confirm(&quot;Delete this student and all dependent records?&quot;)">Delete</a></div><div style="margin-top:6px">{access_label}</div></td></tr>'
+        rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}{access_action}<form method="post" action="/admin/student/{sid_num}/delete" onsubmit="return confirm(&quot;Delete this student and all dependent records?&quot;)"><button class="btn danger">Delete</button></form></div><div style="margin-top:6px">{access_label}</div></td></tr>'
     body = f'''<section class="section" id="pending"><h1>Students.</h1><p class="muted">Approve or block students, or give a trusted student limited Publisher access. Publisher access allows creating announcements and upcoming events only; deleting them remains admin-only.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
     return layout("Students", body, admin=True)
 
-@app.route("/admin/student/<int:sid>/<action>")
+@app.route("/admin/student/<int:sid>/<action>", methods=["POST"])
 @admin_required
 def student_action(sid, action):
     if action not in ("approve", "block", "unblock", "delete"): abort(400)
@@ -8027,7 +8246,7 @@ def admin_academic_updates():
         con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,description,"","","",event_date,external_url,filename,original_name,mime_type,file_data,now()))
         con.commit(); con.close(); flash(f"{kind} published successfully."); return redirect(url_for("admin_academic_updates"))
     rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
-    table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><a class="btn danger" href="/admin/academic-update/{r["id"]}/delete" onclick="return confirm('Delete this academic update?')">Delete</a></div>''' for r in rows)
+    table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
     body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="Direct official website link (required for Result and Admit Card)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
     return layout("Academic Updates",body,admin=True)
 
@@ -8091,12 +8310,12 @@ def admin_academic_hub():
     for k,v in allowed.items():
         active=" active" if k==section else ""
         tabs.append(f'<a class="admin-ah-tab{active}" href="/admin/academic-hub?section={k}"><b>{v}</b><span>{descriptions[k]}</span></a>')
-    rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><a class="btn danger" href="/admin/academic-hub/resource/{r["id"]}/delete" onclick="return confirm('Delete this resource?')">Delete</a></div></div>''' for r in rows)
+    rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><form method="post" action="/admin/academic-hub/resource/{r["id"]}/delete" onsubmit="return confirm('Delete this resource?')"><button class="btn danger">Delete</button></form></div></div>''' for r in rows)
     body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Manage Study Notes, Study Material and PYQ Papers separately. Every upload is organized by semester and subject. Upload one file with a custom title or upload multiple files together.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="single"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Supported document/image files are indexed for Ask VYBE when readable.</div></div><button class="btn accent" type="submit">Upload single file →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Choose multiple files at once. Each file becomes its own resource; the filename becomes its title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="bulk"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Select multiple files from the same subject and semester.</div></div><button class="btn dark" type="submit">Upload all selected files →</button></form><div class="admin-ah-note" style="margin-top:12px">For different subjects or semesters, upload another batch with the correct subject and semester.</div></div></div><div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
     return layout("Academic Hub",body,admin=True)
 
 
-@app.route("/admin/academic-update/<int:uid>/delete")
+@app.route("/admin/academic-update/<int:uid>/delete", methods=["POST"])
 @admin_required
 def admin_delete_academic_update(uid):
     con=db(); row=con.execute("SELECT file_name FROM academic_updates WHERE id=?",(uid,)).fetchone()
@@ -8106,7 +8325,7 @@ def admin_delete_academic_update(uid):
     con.execute("DELETE FROM academic_updates WHERE id=?",(uid,)); con.commit(); con.close(); flash("Academic update deleted."); return redirect(url_for("admin_academic_hub"))
 
 
-@app.route("/admin/academic-hub/resource/<int:rid>/delete")
+@app.route("/admin/academic-hub/resource/<int:rid>/delete", methods=["POST"])
 @admin_required
 def admin_academic_hub_delete_resource(rid):
     con=db(); row=con.execute("SELECT file_name,resource_type FROM resources WHERE id=?",(rid,)).fetchone()
@@ -8126,7 +8345,7 @@ def admin_academic_hub_delete_resource(rid):
 @admin_required
 def admin_resources():
     con = db(); resources = con.execute("SELECT * FROM resources ORDER BY id DESC").fetchall(); con.close()
-    rows = "".join(f'<tr><td>{esc(r["title"])}</td><td>{esc(r["resource_type"])}</td><td>{esc(r["course"])} · {esc(r["semester"])} · {esc(r["subject"])}</td><td>{esc(r["created_at"])}</td><td><a class="btn danger" href="/admin/resource/{r["id"]}/delete" onclick="return confirm(\'Delete this resource?\')">Delete</a></td></tr>' for r in resources)
+    rows = "".join(f'<tr><td>{esc(r["title"])}</td><td>{esc(r["resource_type"])}</td><td>{esc(r["course"])} · {esc(r["semester"])} · {esc(r["subject"])}</td><td>{esc(r["created_at"])}</td><td><form method="post" action="/admin/resource/{r["id"]}/delete" onsubmit="return confirm(\'Delete this resource?\')"><button class="btn danger">Delete</button></form></td></tr>' for r in resources)
     body = f'''<section class="section"><h1>Resources.</h1><div class="two"><div class="card"><h2>Add resource</h2><form id="adminResourceFileForm" class="form" method="post" action="/admin/resource" enctype="multipart/form-data"><input name="title" placeholder="Title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea><input id="adminResourceFile" type="file" name="file"><input id="adminResourceText" type="hidden" name="assistant_text"><div id="adminResourceStatus" class="small">PDF / Word / PowerPoint text is indexed automatically. Images are read before upload.</div><button class="btn accent">Add resource</button></form>{_resource_ocr_script("adminResourceFileForm","adminResourceFile","adminResourceText","adminResourceStatus")}</div><div class="card"><h2>Academic folder</h2><p class="muted">Students see the live Drive folder inside Academics.</p><a class="btn dark" href="/admin/settings">Configure Drive / WhatsApp →</a></div></div><div class="section card tablewrap"><table><tr><th>Title</th><th>Type</th><th>Course / term / subject</th><th>Created</th><th>Action</th></tr>{rows or '<tr><td colspan="5">No resources.</td></tr>'}</table></div></section>'''
     return layout("Resources", body, admin=True)
 
@@ -8147,7 +8366,7 @@ def add_resource():
         f.stream.seek(0); f.save(UPLOAD_DIR/filename)
     con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now())); con.commit(); con.close(); flash("Resource added and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
 
-@app.route("/admin/resource/<int:rid>/delete")
+@app.route("/admin/resource/<int:rid>/delete", methods=["POST"])
 @admin_required
 def delete_resource(rid):
     con=db(); r=con.execute("SELECT file_name FROM resources WHERE id=?",(rid,)).fetchone(); con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
@@ -8218,7 +8437,7 @@ def delete_problem(iid):
     return redirect(url_for("admin_problems"))
 
 
-@app.route("/admin/problem/<int:iid>/status")
+@app.route("/admin/problem/<int:iid>/status", methods=["POST"])
 @admin_required
 def problem_status(iid):
     con=db(); row=con.execute("SELECT status FROM issues WHERE id=?",(iid,)).fetchone()
@@ -8387,7 +8606,7 @@ def contact_terms():
             con.close(); flash("Please enter your name and Student ID."); return redirect(url_for("contact_terms"))
         if request.form.get("agree_terms")!="1":
             con.close(); flash("Please accept the terms before continuing."); return redirect(url_for("contact_terms"))
-        ip=(request.headers.get("X-Forwarded-For","").split(",")[0].strip() or request.remote_addr or "unknown")[:120]
+        ip=(request.remote_addr or "unknown")[:120]
         ua=request.headers.get("User-Agent","")[:500]
         try:
             con.execute("INSERT INTO contact_terms_consents(name,student_id,ip_address,user_agent,consented_at) VALUES(?,?,?,?,?)",(name,student_id,ip,ua,now_ist()))
@@ -8406,7 +8625,7 @@ def contact_terms():
         name_prefill=session.get("contact_terms_name",name_prefill) or name_prefill
         sid_prefill=session.get("contact_terms_student_id",sid_prefill) or sid_prefill
     name_display=esc(name_prefill); sid_display=esc(sid_prefill)
-    terms_html="""<ul class="contact-terms-list"><li>VYBE keeps the name and Student ID provided for the campus account and support features.</li><li>VYBE may keep operational information such as account timestamps, reported campus problems, solutions, community messages and contribution statistics.</li><li>This contact/terms action records the IP address used when consent is given for the admin audit record.</li><li>Passwords are stored as password hashes rather than plain-text passwords.</li><li>By accepting, you allow the submitted name, Student ID and IP address from this consent to appear on the VYBE admin desk for support and administration.</li><li>The configured admin email is revealed only after the terms are accepted.</li></ul>"""
+    terms_html="""<ul class="contact-terms-list"><li>VYBE keeps the name and Student ID provided for the campus account and support features.</li><li>VYBE may keep operational information such as account timestamps, reported campus problems, solutions, community messages and contribution statistics.</li><li>This contact/terms action records the IP address, browser user-agent and consent time for the admin audit record.</li><li>VYBE may keep operational information such as login timestamps and admin security audit logs, including IP address and browser information for security monitoring.</li><li>Passwords are stored as password hashes rather than plain-text passwords.</li><li>Campus problems, solutions, community messages and other content you submit may be stored so VYBE can provide the requested services.</li><li>If VYBE AI is enabled, your question and relevant VYBE information may be sent to the configured AI provider to generate an answer. Do not submit sensitive information to the assistant.</li><li>If admin WhatsApp notifications are enabled, selected administrative alerts may be sent to the configured admin WhatsApp account.</li><li>By accepting, you allow the submitted name, Student ID and IP address from this consent to appear on the VYBE admin desk for support and administration.</li><li>The configured admin email is revealed only after the terms are accepted.</li></ul>"""
     if custom_terms: terms_html += f'<p style="margin-top:14px;white-space:pre-wrap">{esc(custom_terms)}</p>'
     if admin_photo:
         admin_identity_photo=f'<img class="contact-admin-photo" src="{esc(admin_photo)}" alt="VYBE admin photo">'
@@ -8422,7 +8641,7 @@ def contact_terms():
     else:
         email_html='<div class="contact-terms-locked">Your admin contact and photo will appear here after you enter your details and accept the terms.</div>'
     checked=" checked" if consented else ""
-    body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-shell"><div class="contact-terms-hero"><div><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>A transparent space to understand what VYBE keeps, give the required consent, and connect directly with the person running it.</p><div class="contact-terms-admin">Here when you need me · keeping VYBE simple and human</div></div><div class="contact-admin-identity">{admin_identity_photo}<div><small>VYBE ADMIN</small><strong>{esc(admin_name)}</strong><span>Campus support &amp; administration</span></div></div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>What VYBE keeps.</h2><p>These are the main categories of information used to operate and support the platform.</p>{terms_html}</section><section class="contact-terms-card"><h2>Unlock direct contact.</h2><p>Your details are required before the admin contact is revealed.</p><form class="contact-terms-form" method="post"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div class="contact-reveal">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">Consent records the IP address used for this submission.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div><div class="contact-friend-note"><div class="friend-mark">V</div><div><small>THE VYBE PROMISE</small><strong>Running VYBE with you, not above you.</strong><span>Questions, ideas or a campus problem? Reach out directly. I’ll keep the platform useful, transparent and easy to talk to.</span></div></div></div></section>"""
+    body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-shell"><div class="contact-terms-hero"><div><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>A transparent space to understand what VYBE keeps, give the required consent, and connect directly with the person running it.</p><div class="contact-terms-admin">Here when you need me · keeping VYBE simple and human</div></div><div class="contact-admin-identity">{admin_identity_photo}<div><small>VYBE ADMIN</small><strong>{esc(admin_name)}</strong><span>Campus support &amp; administration</span></div></div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>What VYBE keeps.</h2><p>These are the main categories of information used to operate and support the platform.</p>{terms_html}</section><section class="contact-terms-card"><h2>Unlock direct contact.</h2><p>Your details are required before the admin contact is revealed.</p><form class="contact-terms-form" method="post"><input type="hidden" name="csrf_token" value="{esc(session.get("_csrf_token", ""))}"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div class="contact-reveal">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">Consent records the IP address used for this submission.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div><div class="contact-friend-note"><div class="friend-mark">V</div><div><small>THE VYBE PROMISE</small><strong>Running VYBE with you, not above you.</strong><span>Questions, ideas or a campus problem? Reach out directly. I’ll keep the platform useful, transparent and easy to talk to.</span></div></div></div></section>"""
     success_message = "" if not session.pop("contact_terms_just_consented", False) else "Contact unlocked. You can now reach the VYBE admin directly."
     error_message = session.pop("contact_terms_error", "")
     notice = (f'<div class="contact-terms-success">{esc(success_message)}</div>' if success_message else (f'<div class="contact-terms-success" style="border-color:rgba(255,100,100,.25);background:rgba(255,80,80,.08);color:#ffb0b0">{esc(error_message)}</div>' if error_message else ""))
@@ -8460,8 +8679,8 @@ def admin_contact_terms():
         if photo and photo.filename:
             mime=(photo.mimetype or "").lower()
             raw=photo.read(3*1024*1024+1)
-            if not mime.startswith("image/") or len(raw)>3*1024*1024:
-                con.close(); flash("Please upload an image up to 3 MB."); return redirect(url_for("admin_contact_terms"))
+            if mime not in ("image/png", "image/jpeg", "image/webp") or len(raw)>3*1024*1024:
+                con.close(); flash("Please upload a PNG, JPG or WEBP image up to 3 MB."); return redirect(url_for("admin_contact_terms"))
             set_setting(con,"contact_admin_photo",f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}")
         con.commit(); con.close(); flash("Contact / Terms settings saved."); return redirect(url_for("admin_contact_terms"))
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
@@ -8664,8 +8883,7 @@ def admin_verify():
     con.close()
     if count == 0:
         return redirect(url_for("admin_password"))
-    body = f'''<div class="auth"><div class="card authbox"><div class="badge">SECOND FACTOR</div><h1>Verify passkey.</h1><p class="muted">Your admin password is correct. Verify your registered passkey to open the control center.</p><button class="btn accent" id="verifyPasskey">Verify Current Passkey</button><div id="authMsg" class="small" style="margin-top:12px"></div></div></div><script>{WEBAUTHN_JS}</script>
-</script>'''
+    body = f'''<div class="auth"><div class="card authbox"><div class="badge">SECOND FACTOR</div><h1>Verify passkey.</h1><p class="muted">Your admin password is correct. Verify your registered passkey to open the control center.</p><button class="btn accent" id="verifyPasskey">Verify Current Passkey</button><div id="authMsg" class="small" style="margin-top:12px"></div></div></div><script>{WEBAUTHN_JS}</script>'''
     return layout("Admin Verification", body, admin=True)
 
 
@@ -8805,8 +9023,8 @@ def admin_password_request_action(rid, action):
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
 
     approved = now()
-    expires = None
-    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL WHERE id=?", (approved, rid))
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
+    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=? WHERE id=?", (approved, expires, rid))
     con.commit(); con.close()
     flash("Approved. The student can now set a new password directly on their recovery page for the next 15 minutes.")
     return redirect(url_for("admin_password_requests"))
