@@ -2903,7 +2903,7 @@ def _admin_update_feed(con, student_id, limit=18):
                 try: detail=str(r["message"] or r["original_name"] or "")[:120]
                 except Exception: detail=""
             rid=int(r["id"])
-            if typ=="academic": target=f"/academic-update/{rid}"
+            if typ=="academic": target=f"/updates#academic-update-{rid}"
             elif typ=="resource": target=f"/resource/{rid}"
             elif typ=="timetable": target=f"/timetable-file/{rid}"
             elif typ=="announcement": target="/announcements"
@@ -5757,7 +5757,10 @@ def academic_updates():
     if kind in allowed_kinds: sql+=" AND kind=?"; params.append(kind)
     if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ?)"; params += [f"%{q}%"]*3
     sql+=" ORDER BY id DESC"; rows=con.execute(sql,params).fetchall()
-    _mark_all_page_items_seen(con,session["student_db_id"],"academic","academic_updates"); con.commit(); con.close()
+    # Do not mark every academic update as viewed merely because the student
+    # opened the Academic Updates page. The bell is an unread inbox: only the
+    # specific update the student opens should disappear from it.
+    con.close()
     selected=lambda value,current:"selected" if value==current else ""
     cards_list=[]
     for r in rows:
@@ -5767,12 +5770,15 @@ def academic_updates():
             if parsed.scheme in ("http","https") and parsed.netloc: external_target=r["external_url"]
         file_available=bool(r["file_name"] or r["file_data"] is not None)
         if external_target:
-            card_href=esc(external_target); card_target=' target="_blank" rel="noopener noreferrer"'; action_text="Open official link"
+            final_target=external_target; card_target=' target="_blank" rel="noopener noreferrer"'; action_text="Open official link"
         elif file_available:
-            card_href=f"/academic-update-file/{r['id']}"; card_target=' target="_blank" rel="noopener"'; action_text="Open document"
+            final_target=f"/academic-update-file/{r['id']}"; card_target=' target="_blank" rel="noopener"'; action_text="Open document"
         else:
-            card_href=f"/academic-update/{r['id']}"; card_target=""; action_text="View notice"
-        cards_list.append(f'''<a class="academic-update-card academic-update-large academic-update-clickable" href="{card_href}"{card_target} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
+            final_target=f"/academic-update/{r['id']}"; card_target=""; action_text="View notice"
+        # Opening an update from the Academic Updates page also counts as
+        # viewing that specific notification, not every notification.
+        card_href=f"/student-update-seen/academic/{r['id']}?next={quote(final_target, safe=':/?=&%')}"
+        cards_list.append(f'''<a id="academic-update-{r['id']}" class="academic-update-card academic-update-large academic-update-clickable" href="{card_href}"{card_target} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
     cards="".join(cards_list)
     body=f'''{ACADEMIC_UPDATES_PAGE_CSS}{ACADEMIC_DIRECT_CARD_CSS}<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Important academic updates.</h1><p class="academic-lead">Results, date sheets, exam notices and admit cards — all in one place.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search academic updates"><select name="kind"><option value="">All four updates</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in allowed_kinds)}</select><button type="submit">Search</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>'''
     return layout("Academic Updates",body)
