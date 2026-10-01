@@ -4149,7 +4149,7 @@ def forgot_password():
         try:
             _ensure_password_reset_schema(con)
             con.commit()
-            student = con.execute("SELECT id,name,status FROM students WHERE student_id=?", (sid,)).fetchone()
+            student = con.execute("SELECT id,name,student_id,status FROM students WHERE student_id=?", (sid,)).fetchone()
             if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
                 flash("If the account is eligible, the password-change request has been sent to the admin.")
                 return redirect(url_for("forgot_password"))
