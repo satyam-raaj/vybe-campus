@@ -8119,21 +8119,50 @@ def admin_campus():
     return layout("Campus", body, admin=True)
 
 
+def _ensure_contact_terms_table(con):
+    """Ensure the consent table exists even on an older Render database.
+
+    This is intentionally called from the public/admin routes as well as init_db,
+    so an older deployment can self-heal without requiring a manual SQL migration.
+    """
+    if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS contact_terms_consents (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            user_agent TEXT NOT NULL DEFAULT '',
+            consented_at TEXT NOT NULL
+        )""")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS contact_terms_consents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            user_agent TEXT NOT NULL DEFAULT '',
+            consented_at TEXT NOT NULL
+        )""")
+
+
+
 CONTACT_TERMS_CSS = """<style>
-.contact-terms-page{max-width:980px!important;margin:0 auto!important;padding:48px 0 90px!important}.contact-terms-hero,.contact-terms-card,.admin-contact-card{border:1px solid #dfe5ea;background:#fff;box-shadow:0 14px 40px rgba(31,48,66,.07);border-radius:24px}.contact-terms-hero{padding:30px;background:linear-gradient(135deg,#fff,#f4f9ff)}.contact-terms-kicker,.admin-contact-kicker{font-size:10px;font-weight:900;letter-spacing:.14em;color:#2f6fca}.contact-terms-hero h1{margin:8px 0;font-size:clamp(38px,6vw,62px);letter-spacing:-.05em}.contact-terms-hero p{max-width:720px;color:#687482;line-height:1.65;margin:0}.contact-terms-admin{display:inline-block;margin-top:16px;padding:9px 12px;border-radius:12px;background:#edf8e6;color:#4d8f21;font-size:12px;font-weight:800}.contact-terms-grid,.admin-contact-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;margin-top:18px}.contact-terms-card,.admin-contact-card{padding:23px}.contact-terms-card h2,.admin-contact-card h2{margin:0 0 7px;font-size:21px}.contact-terms-card>p,.admin-contact-card>p{color:#687482;font-size:12px;line-height:1.6;margin:0 0 16px}.contact-terms-list{display:grid;gap:9px;padding:0;margin:0;list-style:none}.contact-terms-list li{display:flex;gap:9px;padding:12px;border:1px solid #e2e8ed;border-radius:14px;background:#f9fbfc;color:#53616d;font-size:12px;line-height:1.5}.contact-terms-list li:before{content:'✓';display:grid;place-items:center;flex:0 0 21px;height:21px;border-radius:7px;background:#edf8e6;color:#57952a;font-weight:900}.contact-terms-form{display:grid;gap:11px}.contact-terms-form label{font-size:10px;font-weight:900;letter-spacing:.07em;color:#687482;text-transform:uppercase}.contact-terms-form input{box-sizing:border-box;width:100%;padding:13px;border:1px solid #dfe5ea;border-radius:13px;background:#fbfcfd;font:inherit}.contact-terms-consent{display:flex!important;gap:10px;align-items:flex-start;padding:13px;border:1px solid #dfe5ea;border-radius:15px;background:#f7fafc}.contact-terms-consent input{width:18px!important;flex:0 0 18px;margin-top:2px}.contact-terms-consent span{font-size:11px;line-height:1.55;text-transform:none;letter-spacing:0;color:#5e6c78}.contact-terms-consent strong{display:block;color:#17202b;margin-bottom:3px}.contact-terms-email{padding:15px;border-radius:16px;background:#172033;color:#fff}.contact-terms-email small{display:block;color:#aeb9c7;font-size:9px;margin-bottom:4px}.contact-terms-email a{color:#fff;font-weight:850;text-decoration:none;word-break:break-word}.contact-terms-locked{padding:15px;border:1px dashed #ccd7e0;border-radius:16px;background:#f8fafc;color:#718090;font-size:11px;line-height:1.5}.contact-terms-foot{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:15px}.contact-terms-ip{font-size:10px;color:#87939e}.admin-consent-list{display:grid;gap:10px;margin-top:15px}.admin-consent-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:12px;align-items:center;padding:14px;border:1px solid #dfe5ea;border-radius:15px;background:#fff}.admin-consent-row strong{display:block;font-size:12px}.admin-consent-row small{display:block;color:#7b8792;font-size:10px;margin-top:3px;word-break:break-word}.admin-consent-pill{padding:6px 8px;border-radius:999px;background:#edf8e6;color:#4d8f21;font-size:9px;font-weight:900}@media(max-width:760px){.contact-terms-page{padding:26px 0 80px!important}.contact-terms-hero{padding:21px;border-radius:20px}.contact-terms-grid,.admin-contact-grid{grid-template-columns:1fr}.contact-terms-card,.admin-contact-card{padding:18px;border-radius:19px}.contact-terms-foot{display:grid}.contact-terms-foot .btn{width:100%;text-align:center}.admin-consent-row{grid-template-columns:1fr;gap:7px}.admin-consent-pill{width:max-content}}
+.contact-terms-page{max-width:1080px!important;margin:0 auto!important;padding:34px 0 90px!important;color:#17202b}.contact-terms-shell{position:relative;overflow:hidden;border:1px solid #dfe6ec;border-radius:32px;background:linear-gradient(145deg,#f9fcff 0%,#fff 48%,#f4faef 100%);box-shadow:0 24px 70px rgba(23,40,58,.10)}.contact-terms-shell:before{content:'';position:absolute;width:360px;height:360px;right:-150px;top:-180px;border-radius:50%;background:rgba(47,111,202,.10);filter:blur(4px)}.contact-terms-shell:after{content:'';position:absolute;width:260px;height:260px;left:-130px;bottom:-150px;border-radius:50%;background:rgba(104,184,46,.10)}.contact-terms-hero{position:relative;z-index:1;display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;padding:34px 36px 30px;border-bottom:1px solid rgba(223,230,236,.85)}.contact-terms-kicker,.admin-contact-kicker{font-size:10px;font-weight:950;letter-spacing:.16em;color:#2f6fca}.contact-terms-hero h1{margin:8px 0 8px;font-size:clamp(42px,6vw,70px);line-height:.95;letter-spacing:-.055em}.contact-terms-hero p{max-width:700px;color:#687482;line-height:1.7;margin:0;font-size:13px}.contact-terms-admin{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:9px 13px;border-radius:999px;background:#edf8e6;color:#4d8f21;font-size:11px;font-weight:850}.contact-terms-admin:before{content:'●';font-size:8px}.contact-admin-identity{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid rgba(223,230,236,.9);border-radius:22px;background:rgba(255,255,255,.72);backdrop-filter:blur(14px);min-width:230px}.contact-admin-photo,.contact-admin-photo-fallback{width:74px;height:74px;border-radius:20px;flex:0 0 74px;object-fit:cover;border:1px solid #dfe6ec;box-shadow:0 10px 25px rgba(23,40,58,.10)}.contact-admin-photo-fallback{display:grid;place-items:center;background:linear-gradient(145deg,#172033,#2f6fca);color:#fff;font-size:26px;font-weight:950}.contact-admin-identity small{display:block;color:#7b8792;font-size:9px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}.contact-admin-identity strong{display:block;margin-top:4px;font-size:15px}.contact-admin-identity span{display:block;margin-top:3px;color:#687482;font-size:10px}.contact-terms-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.08fr .92fr;gap:18px;padding:18px}.contact-terms-card,.admin-contact-card{border:1px solid #dfe6ec;background:rgba(255,255,255,.88);box-shadow:0 12px 36px rgba(31,48,66,.06);border-radius:24px;padding:23px;backdrop-filter:blur(12px)}.contact-terms-card h2,.admin-contact-card h2{margin:0 0 7px;font-size:21px;letter-spacing:-.02em}.contact-terms-card>p,.admin-contact-card>p{color:#687482;font-size:12px;line-height:1.6;margin:0 0 16px}.contact-terms-list{display:grid;gap:9px;padding:0;margin:0;list-style:none}.contact-terms-list li{display:flex;gap:10px;padding:13px;border:1px solid #e2e8ed;border-radius:16px;background:linear-gradient(135deg,#fff,#f8fbfd);color:#53616d;font-size:12px;line-height:1.55}.contact-terms-list li:before{content:'✓';display:grid;place-items:center;flex:0 0 23px;height:23px;border-radius:8px;background:#edf8e6;color:#57952a;font-weight:950}.contact-terms-form{display:grid;gap:11px}.contact-terms-form label{font-size:10px;font-weight:900;letter-spacing:.07em;color:#687482;text-transform:uppercase}.contact-terms-form input:not([type=checkbox]),.admin-contact-card input,.admin-contact-card textarea{box-sizing:border-box;width:100%;padding:13px;border:1px solid #dfe5ea;border-radius:14px;background:#fbfcfd;font:inherit;outline:none}.contact-terms-form input:focus,.admin-contact-card input:focus,.admin-contact-card textarea:focus{border-color:#2f6fca;box-shadow:0 0 0 4px rgba(47,111,202,.09)}.contact-terms-consent{display:flex!important;gap:10px;align-items:flex-start;padding:14px;border:1px solid #dfe5ea;border-radius:16px;background:#f7fafc}.contact-terms-consent input{width:18px!important;flex:0 0 18px;margin-top:2px}.contact-terms-consent span{font-size:11px;line-height:1.55;text-transform:none;letter-spacing:0;color:#5e6c78}.contact-terms-consent strong{display:block;color:#17202b;margin-bottom:3px}.contact-reveal{margin-top:14px}.contact-terms-email{padding:17px;border-radius:18px;background:linear-gradient(135deg,#172033,#0e1524);color:#fff;box-shadow:0 15px 32px rgba(16,25,40,.18)}.contact-terms-email small{display:block;color:#aeb9c7;font-size:9px;letter-spacing:.12em;margin-bottom:5px}.contact-terms-email a{color:#fff;font-weight:900;text-decoration:none;word-break:break-word;font-size:14px}.contact-terms-email a:hover{text-decoration:underline}.contact-revealed-admin{display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px;border:1px solid #dfe6ec;border-radius:17px;background:#f8fbfd}.contact-revealed-admin img,.contact-revealed-admin .contact-admin-photo-fallback{width:52px;height:52px;flex-basis:52px;border-radius:15px}.contact-revealed-admin strong{display:block;font-size:12px}.contact-revealed-admin span{display:block;margin-top:3px;color:#687482;font-size:10px}.contact-terms-locked{padding:16px;border:1px dashed #ccd7e0;border-radius:17px;background:#f8fafc;color:#718090;font-size:11px;line-height:1.5}.contact-terms-foot{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:15px}.contact-terms-ip{font-size:10px;color:#87939e}.contact-friend-note{position:relative;z-index:1;margin:0 18px 18px;padding:22px 24px;border-radius:22px;background:#172033;color:#fff;display:flex;align-items:center;gap:15px;box-shadow:0 18px 42px rgba(16,25,40,.18)}.contact-friend-note .friend-mark{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#2f6fca,#68b82e);font-weight:950;font-size:18px;flex:0 0 44px}.contact-friend-note small{display:block;color:#aeb9c7;font-size:9px;letter-spacing:.14em;font-weight:900;margin-bottom:4px}.contact-friend-note strong{display:block;font-size:15px}.contact-friend-note span{display:block;margin-top:4px;color:#d4dbe3;font-size:11px;line-height:1.5}.admin-contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.admin-contact-card textarea{min-height:150px;resize:vertical}.admin-contact-photo-box{display:grid;grid-template-columns:auto 1fr;gap:15px;align-items:center;padding:14px;border:1px solid #dfe6ec;border-radius:18px;background:#f8fafc;margin-bottom:13px}.admin-photo-preview,.admin-photo-fallback{width:72px;height:72px;border-radius:18px;object-fit:cover;border:1px solid #dfe6ec}.admin-photo-fallback{display:grid;place-items:center;background:#172033;color:#fff;font-size:24px;font-weight:950}.admin-consent-list{display:grid;gap:10px;margin-top:15px}.admin-consent-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:12px;align-items:center;padding:14px;border:1px solid #dfe5ea;border-radius:15px;background:#fff}.admin-consent-row strong{display:block;font-size:12px}.admin-consent-row small{display:block;color:#7b8792;font-size:10px;margin-top:3px;word-break:break-word}.admin-consent-pill{padding:6px 8px;border-radius:999px;background:#edf8e6;color:#4d8f21;font-size:9px;font-weight:900}@media(max-width:760px){.contact-terms-page{padding:18px 0 70px!important}.contact-terms-shell{border-radius:24px}.contact-terms-hero{grid-template-columns:1fr;padding:23px 19px 20px}.contact-admin-identity{min-width:0}.contact-terms-grid,.admin-contact-grid{grid-template-columns:1fr;padding:12px}.contact-terms-card,.admin-contact-card{padding:18px;border-radius:19px}.contact-friend-note{margin:0 12px 12px;padding:18px;border-radius:19px}.contact-friend-note strong{font-size:14px}.contact-terms-foot{display:grid}.contact-terms-foot .btn{width:100%;text-align:center}.admin-contact-photo-box{grid-template-columns:1fr}.admin-consent-row{grid-template-columns:1fr;gap:7px}.admin-consent-pill{width:max-content}}
 </style>"""
 
 @app.route("/contact-terms", methods=["GET","POST"])
 def contact_terms():
     con=db()
+    _ensure_contact_terms_table(con)
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
     custom_terms=setting(con,"contact_terms_text","")
+    admin_photo=setting(con,"contact_admin_photo","")
     name_prefill=""; sid_prefill=""
     if session.get("student_db_id"):
         try:
             st=con.execute("SELECT name,student_id FROM students WHERE id=?",(int(session["student_db_id"]),)).fetchone()
-            if st: name_prefill=str(st["name"] or ""); sid_prefill=str(st["student_id"] or "")
+            if st: name_prefill=st["name"]; sid_prefill=st["student_id"]
         except Exception: pass
     if request.method=="POST":
         name=request.form.get("name","").strip()[:160]
@@ -8142,11 +8171,14 @@ def contact_terms():
             con.close(); flash("Please enter your name and Student ID."); return redirect(url_for("contact_terms"))
         if request.form.get("agree_terms")!="1":
             con.close(); flash("Please accept the terms before continuing."); return redirect(url_for("contact_terms"))
-        ip=(request.headers.get("X-Forwarded-For",request.remote_addr or "").split(",")[0].strip())[:100]
+        ip=(request.headers.get("X-Forwarded-For","").split(",")[0].strip() or request.remote_addr or "unknown")[:120]
         ua=request.headers.get("User-Agent","")[:500]
         try:
             con.execute("INSERT INTO contact_terms_consents(name,student_id,ip_address,user_agent,consented_at) VALUES(?,?,?,?,?)",(name,student_id,ip,ua,now_ist()))
-            con.commit(); session["contact_terms_consent"]=True; session["contact_terms_name"]=name; session["contact_terms_student_id"]=student_id
+            con.commit()
+            session["contact_terms_consent"]=True
+            session["contact_terms_name"]=name
+            session["contact_terms_student_id"]=student_id
             flash("Consent recorded. You can now contact the VYBE admin.")
         except Exception:
             try: con.rollback()
@@ -8154,38 +8186,64 @@ def contact_terms():
             con.close(); flash("Could not save your consent. Please try again."); return redirect(url_for("contact_terms"))
         con.close(); return redirect(url_for("contact_terms"))
     consented=bool(session.get("contact_terms_consent"))
-    if sid_prefill:
-        try: consented=bool(con.execute("SELECT 1 FROM contact_terms_consents WHERE student_id=? LIMIT 1",(sid_prefill,)).fetchone())
-        except Exception: pass
-    name_display=esc(name_prefill or session.get("contact_terms_name","")); sid_display=esc(sid_prefill or session.get("contact_terms_student_id",""))
+    if consented:
+        name_prefill=session.get("contact_terms_name",name_prefill) or name_prefill
+        sid_prefill=session.get("contact_terms_student_id",sid_prefill) or sid_prefill
+    name_display=esc(name_prefill); sid_display=esc(sid_prefill)
     terms_html="""<ul class="contact-terms-list"><li>VYBE keeps the name and Student ID provided for the campus account and support features.</li><li>VYBE may keep operational information such as account timestamps, reported campus problems, solutions, community messages and contribution statistics.</li><li>This contact/terms action records the IP address used when consent is given for the admin audit record.</li><li>Passwords are stored as password hashes rather than plain-text passwords.</li><li>By accepting, you allow the submitted name, Student ID and IP address from this consent to appear on the VYBE admin desk for support and administration.</li><li>The configured admin email is revealed only after the terms are accepted.</li></ul>"""
     if custom_terms: terms_html += f'<p style="margin-top:14px;white-space:pre-wrap">{esc(custom_terms)}</p>'
-    if consented and admin_email: email_html=f'<div class="contact-terms-email"><small>VYBE ADMIN EMAIL</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a></div>'
-    elif consented: email_html='<div class="contact-terms-locked">Consent recorded. The admin has not configured an email yet.</div>'
-    else: email_html='<div class="contact-terms-locked">Your admin email will appear here after you enter your details and accept the terms.</div>'
+    if admin_photo:
+        admin_identity_photo=f'<img class="contact-admin-photo" src="{esc(admin_photo)}" alt="VYBE admin photo">'
+        revealed_photo=f'<img src="{esc(admin_photo)}" alt="VYBE admin photo">'
+    else:
+        initial=esc((admin_name or "V")[:1].upper())
+        admin_identity_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
+        revealed_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
+    if consented and admin_email:
+        email_html=f'<div class="contact-terms-email"><small>DIRECT VYBE ADMIN CONTACT</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a></div><div class="contact-revealed-admin">{revealed_photo}<div><strong>Contact revealed</strong><span>{esc(admin_name)} · VYBE Admin</span></div></div>'
+    elif consented:
+        email_html='<div class="contact-terms-locked">Consent recorded. The admin has not configured an email yet.</div>'
+    else:
+        email_html='<div class="contact-terms-locked">Your admin contact and photo will appear here after you enter your details and accept the terms.</div>'
     checked=" checked" if consented else ""
-    body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-hero"><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>Review what VYBE keeps, give the required consent, and then contact the VYBE admin directly.</p><div class="contact-terms-admin">Admin · {esc(admin_name)}</div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>Terms &amp; data use</h2><p>Read these points before revealing the admin contact.</p>{terms_html}</section><section class="contact-terms-card"><h2>Your details</h2><p>Name and Student ID are required before the contact email appears.</p><form class="contact-terms-form" method="post"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div style="margin-top:14px">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">IP is recorded with this consent.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div></section>"""
+    body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-shell"><div class="contact-terms-hero"><div><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>A transparent space to understand what VYBE keeps, give the required consent, and connect directly with the person running it.</p><div class="contact-terms-admin">Professional admin · always your friend</div></div><div class="contact-admin-identity">{admin_identity_photo}<div><small>VYBE ADMIN</small><strong>{esc(admin_name)}</strong><span>Campus support &amp; administration</span></div></div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>What VYBE keeps.</h2><p>These are the main categories of information used to operate and support the platform.</p>{terms_html}</section><section class="contact-terms-card"><h2>Unlock direct contact.</h2><p>Your details are required before the admin contact is revealed.</p><form class="contact-terms-form" method="post"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div class="contact-reveal">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">Consent records the IP address used for this submission.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div><div class="contact-friend-note"><div class="friend-mark">V</div><div><small>THE VYBE PROMISE</small><strong>Professional admin, but always your friend.</strong><span>Need help, spotted a problem, or simply have a question? Reach out — VYBE is built to keep campus support human, simple and approachable.</span></div></div></div></section>"""
     con.close(); return layout("Contact / Terms",body,admin=False)
 
 @app.route("/admin/contact-terms", methods=["GET","POST"])
 @admin_required
 def admin_contact_terms():
     con=db()
+    _ensure_contact_terms_table(con)
     if request.method=="POST":
+        action=request.form.get("action","save").strip()
+        if action=="delete_photo":
+            set_setting(con,"contact_admin_photo","")
+            con.commit(); con.close(); flash("Admin contact photo removed."); return redirect(url_for("admin_contact_terms"))
         admin_name=request.form.get("admin_name","").strip()[:160]
         admin_email=request.form.get("admin_email","").strip()[:254]
         custom_terms=request.form.get("custom_terms","").strip()[:10000]
         if not admin_name or not admin_email or "@" not in admin_email:
             con.close(); flash("Please enter a valid admin name and email."); return redirect(url_for("admin_contact_terms"))
-        set_setting(con,"contact_admin_name",admin_name); set_setting(con,"contact_admin_email",admin_email); set_setting(con,"contact_terms_text",custom_terms)
+        set_setting(con,"contact_admin_name",admin_name)
+        set_setting(con,"contact_admin_email",admin_email)
+        set_setting(con,"contact_terms_text",custom_terms)
+        photo=request.files.get("admin_photo")
+        if photo and photo.filename:
+            mime=(photo.mimetype or "").lower()
+            raw=photo.read(3*1024*1024+1)
+            if not mime.startswith("image/") or len(raw)>3*1024*1024:
+                con.close(); flash("Please upload an image up to 3 MB."); return redirect(url_for("admin_contact_terms"))
+            set_setting(con,"contact_admin_photo",f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}")
         con.commit(); con.close(); flash("Contact / Terms settings saved."); return redirect(url_for("admin_contact_terms"))
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
     custom_terms=setting(con,"contact_terms_text","")
+    admin_photo=setting(con,"contact_admin_photo","")
     rows=con.execute("SELECT name,student_id,ip_address,consented_at FROM contact_terms_consents ORDER BY id DESC LIMIT 200").fetchall()
     con.close()
+    photo_html=(f'<img class="admin-photo-preview" src="{esc(admin_photo)}" alt="Admin photo">' if admin_photo else f'<div class="admin-photo-fallback">{esc((admin_name or "V")[:1].upper())}</div>')
     rows_html="".join(f'<div class="admin-consent-row"><div><strong>{esc(r["name"])}</strong><small>ID: {esc(r["student_id"])}</small></div><div><small>IP address</small><strong>{esc(r["ip_address"])}</strong></div><div><small>Consent time</small><strong>{esc(r["consented_at"])}</strong></div><span class="admin-consent-pill">CONSENTED</span></div>' for r in rows)
-    body=f"""{CONTACT_TERMS_CSS}<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Set your admin name and email, add any extra terms, and review consent records.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin contact</h2><p>The email remains hidden from users until they accept the terms.</p><form class="form" method="post"><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form></div><div class="admin-contact-card"><span class="admin-contact-kicker">STUDENT VIEW</span><h2>Preview</h2><p>Students/visitors enter their name and ID, accept the data-use terms, and then see your clickable email.</p><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
+    body=f"""{CONTACT_TERMS_CSS}<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card"><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
     return layout("Contact / Terms",body,admin=True)
 
 
