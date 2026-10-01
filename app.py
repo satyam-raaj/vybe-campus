@@ -4139,114 +4139,105 @@ def login():
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
+    """Student password-change request flow.
+
+    The password request itself is the source of truth for the admin panel.
+    Optional admin notifications are created only AFTER the request has been
+    committed, so a notification/WhatsApp/schema problem can never prevent the
+    password request from reaching the admin.
+    """
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
         if not sid or not name:
             flash("Enter your full name and Student ID.")
             return redirect(url_for("forgot_password"))
+
         con = db()
+        request_id = None
+        student = None
         try:
+            # Always make sure the actual source-of-truth table exists before
+            # doing anything else. This also repairs older Render databases.
             _ensure_password_reset_schema(con)
             con.commit()
-            student = con.execute("SELECT id,name,student_id,status FROM students WHERE student_id=?", (sid,)).fetchone()
-            if not student or student["name"].strip().lower() != name.lower() or student["status"] == "blocked":
+
+            student = con.execute(
+                "SELECT id,name,student_id,status FROM students WHERE student_id=?",
+                (sid,),
+            ).fetchone()
+
+            if not student or student["name"].strip().lower() != name.lower() or str(student["status"]).lower() == "blocked":
                 flash("If the account is eligible, the password-change request has been sent to the admin.")
                 return redirect(url_for("forgot_password"))
-            existing = con.execute("SELECT id,status FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 1", (student["id"], now())).fetchone()
+
+            # Do not create duplicate active requests. If an approved request
+            # exists, the same recovery session can continue to reset the password.
+            existing = con.execute(
+                "SELECT id,status FROM password_reset_requests "
+                "WHERE student_id=? AND status IN ('pending','approved') "
+                "ORDER BY id DESC LIMIT 1",
+                (student["id"],),
+            ).fetchone()
+
             if existing:
-                session["password_reset_request_id"] = existing["id"]
-                flash("Admin has already approved your request. You can change your password below." if existing["status"] == "approved" else "Your password-change request is waiting for admin approval.")
+                request_id = int(existing["id"])
+                session["password_reset_request_id"] = request_id
+                if existing["status"] == "approved":
+                    flash("Your password-change request is already approved. You can continue to set a new password.")
+                else:
+                    flash("Your password-change request is already waiting for admin approval.")
                 return redirect(url_for("forgot_password"))
+
+            # IMPORTANT: only the password_reset_requests table is written in
+            # this transaction. Nothing optional can roll it back.
+            con.execute(
+                "INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)",
+                (student["id"], "pending", now()),
+            )
+            request_row = con.execute(
+                "SELECT id FROM password_reset_requests "
+                "WHERE student_id=? AND status='pending' "
+                "ORDER BY id DESC LIMIT 1",
+                (student["id"],),
+            ).fetchone()
+            if not request_row:
+                raise RuntimeError("Password reset request was not created")
+
+            request_id = int(request_row["id"])
+            con.commit()
+
+        except Exception as exc:
             try:
-                con.execute("INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)", (student["id"], "pending", now()))
-                request_row = con.execute("SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (student["id"],)).fetchone()
-                if not request_row:
-                    raise RuntimeError("Password reset request could not be created")
-                request_id = request_row["id"]
-                # Durable admin notification: this is what the admin dashboard can always see.
-                try:
-                    con.execute(
-                        "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
-                        (
-                            "password_reset",
-                            "Password change request",
-                            f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
-                            student["id"],
-                            now(),
-                            False,
-                        ),
-                    )
-                except Exception:
-                    # Notification is supplementary; the password request itself remains valid.
-                    try:
-                        con.rollback()
-                        con.execute(
-                            "INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)",
-                            (student["id"], "pending", now()),
-                        )
-                        request_row = con.execute(
-                            "SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
-                            (student["id"],),
-                        ).fetchone()
-                        request_id = request_row["id"]
-                    except Exception:
-                        raise
-                con.commit()
-            except Exception:
                 con.rollback()
-                flash("We couldn't start the password-change request right now. Please try again in a moment.")
-                return redirect(url_for("forgot_password"))
-            session["password_reset_request_id"] = request_id
-            try:
-                create_admin_notification("password_reset", "Password change request", f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.", student_id=student["id"])
             except Exception:
                 pass
-            flash("Request sent successfully. Keep this page open while the admin reviews it.")
+            app.logger.exception("PASSWORD RESET REQUEST FAILED: %s", exc)
+            flash("We couldn't send the password-change request right now. Please try again in a moment.")
             return redirect(url_for("forgot_password"))
         finally:
             con.close()
 
+        # Store the committed request ID in the student's session.
+        session["password_reset_request_id"] = request_id
+
+        # Create the admin alert only AFTER the request is safely committed.
+        # This is best-effort and can never cancel the request.
+        if student is not None:
+            try:
+                create_admin_notification(
+                    "password_reset",
+                    "Password change request",
+                    f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
+                    student_id=student["id"],
+                )
+            except Exception as exc:
+                app.logger.warning("Password reset admin notification failed: %s", exc)
+
+        flash("Request sent successfully. The admin can now see it in Password Access.")
+        return redirect(url_for("forgot_password"))
+
     request_id = session.get("password_reset_request_id")
-    waiting_ui = ""
-    if request_id:
-        waiting_ui = f"""
-        <div class=\"notice\" id=\"resetStatusBox\" style=\"margin-top:16px\">
-          <strong id=\"resetStatusTitle\">Waiting for admin approval...</strong>
-          <p class=\"small\" id=\"resetStatusText\" style=\"margin:7px 0 0\">Your request is with the admin. Keep this page open; when approved, VYBE will open the new-password page automatically.</p>
-        </div>
-        <script>
-        (()=>{{
-          const requestId = {int(request_id)};
-          const title = document.getElementById(\"resetStatusTitle\");
-          const text = document.getElementById(\"resetStatusText\");
-          let timer = null;
-          async function check(){{
-            try{{
-              const r = await fetch(`/forgot-password/status?request_id=${{requestId}}`, {{credentials: 'same-origin', cache: 'no-store'}});
-              if(!r.ok) return;
-              const j = await r.json();
-              if(j.status === 'approved'){{
-                title.textContent = 'Approved ';
-                text.textContent = 'Opening secure password page…';
-                if(timer) clearInterval(timer);
-                window.location.href = '/reset-password';
-              }} else if(j.status === 'rejected'){{
-                title.textContent = 'Request rejected';
-                text.textContent = 'Please submit a new request if you still need to change your password.';
-                if(timer) clearInterval(timer);
-              }} else if(['used','expired','invalid'].includes(j.status)){{
-                title.textContent = 'Request is no longer active';
-                text.textContent = 'Please submit a new password-change request.';
-                if(timer) clearInterval(timer);
-              }}
-            }}catch(e){{}}
-          }}
-          check(); timer=setInterval(check, 2000);
-        }})();
-        </script>
-        """
-    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Need a new password?</h1><p class="muted">Enter your name and Student ID to request a password change. After admin approval, this page will unlock the new-password form automatically.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Ask admin for approval</button></form>""" + waiting_ui + """<div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Back to login</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>"""
     return layout("Forgot Password", body)
 
 
