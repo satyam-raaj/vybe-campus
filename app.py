@@ -29,6 +29,15 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 
 from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
+
+# Optional WebSocket transport. The application remains importable if Flask-SocketIO
+# is not installed; in that case the client falls back to a low-frequency refresh.
+try:
+    from flask_socketio import SocketIO, emit
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SocketIO = None
+    SOCKETIO_AVAILABLE = False
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -108,6 +117,51 @@ app.config.update(
 # Render sits behind a reverse proxy. Trust the forwarded scheme/host so
 # HTTPS cookies, redirects and WebAuthn origin checks behave consistently.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Optional WebSocket transport. With Flask-SocketIO installed this replaces
+# repeated chat polling with one persistent connection. Without it, all existing
+# HTTP routes still work normally.
+if SOCKETIO_AVAILABLE:
+    socketio = SocketIO(
+        app,
+        async_mode="threading",
+        cors_allowed_origins=[],
+        ping_interval=25,
+        ping_timeout=60,
+        max_http_buffer_size=25 * 1024 * 1024,
+    )
+else:
+    socketio = None
+
+
+def _realtime_emit(event, payload):
+    if socketio is None:
+        return
+    try:
+        socketio.emit(event, payload)
+    except Exception:
+        app.logger.debug("Realtime emit failed", exc_info=True)
+
+
+if socketio is not None:
+    @socketio.on("connect")
+    def _socket_connect(auth=None):
+        if not session.get("student_db_id") and not session.get("admin_authenticated"):
+            return False
+        return True
+
+    @socketio.on("subscribe")
+    def _socket_subscribe(data=None):
+        return {"ok": True}
+
+
+@app.after_request
+def _realtime_after_request(response):
+    if socketio is not None and request.method in {"POST", "PUT", "PATCH", "DELETE"} and 200 <= response.status_code < 400:
+        path = request.path
+        if path.startswith("/admin/") or path.startswith("/content/"):
+            _realtime_emit("content_changed", {"path": path, "ts": time.time()})
+    return response
 
 
 _PG_POOL = None
@@ -4370,6 +4424,25 @@ if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPro
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
 }})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
+<script>
+(function(){{
+  window.VYBERealtimeRefresh=function(){{
+    clearTimeout(window.__vybeRealtimeTimer);
+    window.__vybeRealtimeTimer=setTimeout(function(){{
+      document.dispatchEvent(new CustomEvent('vybe:content-changed'));
+      if(window.__vybeChatRefresh)window.__vybeChatRefresh();
+    }},80);
+  }};
+  // Socket.IO is loaded only when the server has the transport installed.
+  if(!window.io){{
+    const sc=document.createElement('script');
+    sc.src='https://cdn.socket.io/4.8.1/socket.io.min.js';
+    sc.async=true;
+    sc.crossOrigin='anonymous';
+    document.head.appendChild(sc);
+  }}
+}})();
+</script>
 <script>(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();</script></body></html>'''
 
 
@@ -7296,6 +7369,22 @@ def community_chat():
             # student message fail.
             con.commit()
 
+            sent_row = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, s.name "
+                "FROM community_messages cm JOIN students s ON s.id=cm.student_id "
+                "WHERE cm.student_id=? AND cm.created_at=? ORDER BY cm.id DESC LIMIT 1",
+                (my_id, created_at),
+            ).fetchone()
+            if sent_row:
+                _realtime_emit("chat_message", {
+                    "id": int(sent_row["id"]),
+                    "student_id": int(sent_row["student_id"]),
+                    "name": sent_row["name"],
+                    "message": sent_row["message"],
+                    "created_at": sent_row["created_at"],
+                    "reply_to_id": int(sent_row["reply_to_id"]) if sent_row["reply_to_id"] else None,
+                })
+
             # If this is a reply to another student, create a personal notification
             # for the original sender. This does not notify the person who replied.
             if reply_recipient_id:
@@ -7319,6 +7408,15 @@ def community_chat():
                     app.logger.exception("Student reply notification failed; chat message was preserved")
 
             con.close()
+            if request.headers.get("X-VYBE-Live-Chat") == "1" and sent_row:
+                return jsonify(ok=True, message={
+                    "id": int(sent_row["id"]),
+                    "student_id": int(sent_row["student_id"]),
+                    "name": sent_row["name"],
+                    "message": sent_row["message"],
+                    "created_at": sent_row["created_at"],
+                    "reply_to_id": int(sent_row["reply_to_id"]) if sent_row["reply_to_id"] else None,
+                })
             return redirect(url_for("community_chat"))
         except Exception:
             try: con.rollback()
@@ -7455,7 +7553,7 @@ def community_chat():
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
       async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;const last=Array.from(chatWindow.querySelectorAll('.community-message')).reduce(function(max,e){{return Math.max(max,Number(e.dataset.messageId)||0)}},0);const qs=force?'':'?after_id='+encodeURIComponent(last);const res=await fetch('/community/chat/messages'+qs,{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];if(force){{chatWindow.querySelectorAll('.community-message').forEach(function(e){{e.remove();}});}}msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]'))chatWindow.appendChild(build(m));}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},5000);}} if(replyCancel)replyCancel.onclick=clearReply;
+      wire(document); if(chatWindow){{\n        chatWindow.scrollTop=chatWindow.scrollHeight;\n        window.__vybeChatRefresh = function(){{refresh(false);}};\n        // Socket.IO pushes new messages; the 30s fallback only covers transient\n        // WebSocket disconnects and is deliberately far less expensive than the\n        // previous 1.2/5 second full-feed polling loop.\n        if(window.io){{\n          try{{const sock=window.io({{transports:['websocket','polling'],withCredentials:true}});\n            sock.on('chat_message',function(m){{if(!m||!m.id)return;if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<120;chatWindow.appendChild(build(m));wire(chatWindow);if(near)chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'smooth'}});}}}});\n            sock.on('content_changed',function(){{if(window.VYBERealtimeRefresh)window.VYBERealtimeRefresh();}});\n            sock.on('connect_error',function(){{}});\n          }}catch(_){{}}\n        }}\n        setInterval(function(){{if(!document.hidden)refresh(false);}},30000);\n      }} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
@@ -9264,4 +9362,7 @@ def admin_delete_all_login_history():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    if socketio is not None:
+        socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+    else:
+        app.run(host="0.0.0.0", port=port, debug=False)
