@@ -6930,14 +6930,45 @@ def community_problems():
     my_rows = con.execute("SELECT * FROM issues WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall()
     saved = con.execute("SELECT * FROM saved_reports WHERE student_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall()
     con.close()
-    my_cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a></div>' for x in my_rows)
+    my_cards = "".join(f'<div class="card"><span class="pill">{esc(x["status"])}</span><h3>{esc(x["title"])}</h3><p class="small">{esc(x["category"])} · {esc(x["created_at"])}</p><p class="muted">{esc(x["description"])}</p><div class="actions"><a class="btn dark" href="/community/problems#problem-{x["id"]}">Open community chat →</a><form method="post" action="/community/problem/{x["id"]}/delete" onsubmit="return confirm(&quot;Delete this problem and its solutions? This cannot be undone.&quot;)"><button class="btn danger" type="submit">Delete my problem</button></form></div></div>' for x in my_rows)
     saved_cards = "".join(f'<div class="feed-item"><strong>{esc(x["issue_title"])}</strong><p class="muted">{esc(x["issue_description"])}</p><p class="small">Accepted solution: {esc(x["solution_text"])} · from {esc(x["solver_name"])} · {esc(x["saved_at"])}</p></div>' for x in saved)
     empty_problems = '<div class="empty">No campus problems have been reported yet. Be the first to report one.</div>'
-    body = f'''<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Report a problem or share practical solutions for problems reported by students.</p></div>
+    body = f'''{COMMUNITY_PROBLEM_ACTIONS_CSS}<section class="section community-page-section"><div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">SOLVE CAMPUS PROBLEM</div><h1>Help fix what matters.</h1><p class="muted">Report a problem or share practical solutions for problems reported by students.</p></div>
 <section class="section"><div class="two"><div class="card"><h2>Report a problem</h2><form class="form" method="post"><select name="category">{"".join(f'<option>{esc(c)}</option>' for c in CATEGORIES)}</select><input name="title" maxlength="120" placeholder="Short problem title" required><textarea name="description" maxlength="2000" placeholder="What is happening?" required></textarea><button class="btn accent">Submit report</button></form></div><div><h2>My reports</h2>{my_cards or '<div class="empty">No active reports yet.</div>'}</div></div></section>
 <section class="section"><div class="card"><h2> Saved Reports</h2><p class="muted">When you accept a solution, VYBE saves the report and accepted solution here.</p><div class="feed-list">{saved_cards or '<div class="empty">No saved reports yet.</div>'}</div></div></section>
 <section class="section"><h2>Campus problems</h2><div class="community-problem-list">{blocks or empty_problems}</div></section></section>'''
     return layout("Solve Campus Problem", body)
+
+
+@app.route("/community/problem/<int:iid>/delete", methods=["POST"])
+@student_required
+def delete_my_problem(iid):
+    con = db()
+    try:
+        issue = con.execute("SELECT id,student_id,title FROM issues WHERE id=?", (iid,)).fetchone()
+        if not issue:
+            con.close(); flash("That problem no longer exists."); return redirect(url_for("community_problems"))
+        if int(issue["student_id"]) != int(session["student_db_id"]):
+            con.close(); abort(403)
+
+        # Remove everything attached to this report first. This keeps the
+        # feature compatible with existing VYBE databases and avoids relying
+        # on an issue_id column in accepted_solutions, which older schemas do
+        # not have.
+        con.execute("DELETE FROM helpful_votes WHERE solution_id IN (SELECT id FROM solutions WHERE issue_id=?)", (iid,))
+        con.execute("DELETE FROM accepted_solutions WHERE student_id=? AND issue_title=?", (issue["student_id"], issue["title"]))
+        con.execute("DELETE FROM admin_problem_solutions WHERE issue_id=?", (iid,))
+        con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
+        con.execute("DELETE FROM issues WHERE id=?", (iid,))
+        con.commit()
+        flash("Your campus problem was deleted.")
+    except Exception:
+        con.rollback()
+        app.logger.exception("Student problem deletion failed")
+        flash("We couldn't delete that problem right now. Please try again.")
+    finally:
+        con.close()
+    return redirect(url_for("community_problems"))
 
 
 @app.route("/community/solution/<int:solution_id>/helpful", methods=["POST"])
@@ -7813,6 +7844,14 @@ def delete_resource(rid):
 
 
 
+COMMUNITY_PROBLEM_ACTIONS_CSS = """
+<style>
+.community-page-section .actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.community-page-section .actions form{margin:0}
+@media(max-width:600px){.community-page-section .actions{display:grid;grid-template-columns:1fr}.community-page-section .actions .btn,.community-page-section .actions form,.community-page-section .actions form .btn{width:100%;box-sizing:border-box;text-align:center}}
+</style>
+"""
+
 ADMIN_PROBLEMS_CSS = """
 <style>
 .admin-problems-page,.admin-campus-page{max-width:1180px!important;margin:0 auto!important;padding:54px 0 90px!important}
@@ -7850,8 +7889,13 @@ def admin_problems():
 @admin_required
 def delete_problem(iid):
     con = db()
+    # accepted_solutions in older VYBE databases does not have issue_id.
+    # Remove matching saved/accepted records using the issue owner + title
+    # instead of querying a column that may not exist.
+    issue = con.execute("SELECT student_id,title FROM issues WHERE id=?", (iid,)).fetchone()
+    if issue:
+        con.execute("DELETE FROM accepted_solutions WHERE student_id=? AND issue_title=?", (issue["student_id"], issue["title"]))
     con.execute("DELETE FROM helpful_votes WHERE solution_id IN (SELECT id FROM solutions WHERE issue_id=?)", (iid,))
-    con.execute("DELETE FROM accepted_solutions WHERE issue_id=?", (iid,))
     con.execute("DELETE FROM admin_problem_solutions WHERE issue_id=?", (iid,))
     con.execute("DELETE FROM solutions WHERE issue_id=?", (iid,))
     con.execute("DELETE FROM issues WHERE id=?", (iid,))
