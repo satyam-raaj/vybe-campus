@@ -3,3 +3,4 @@ Werkzeug
 itsdangerous
 psycopg[binary]
 gunicorn
+webauthn
