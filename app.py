@@ -1075,6 +1075,38 @@ def admin_required(fn):
     return wrapper
 
 
+def content_manager_required(fn):
+    """Allow the admin or an approved publisher/content manager to publish content."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if session.get("admin_authenticated"):
+            # Reuse the normal admin security checks for admin users.
+            if not session.get("passkey_verified"):
+                try:
+                    con = db()
+                    count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+                    con.close()
+                except Exception:
+                    count = 0
+                if count > 0:
+                    return redirect(url_for("admin_verify"))
+            return fn(*args, **kwargs)
+        sid = session.get("student_db_id")
+        if not sid:
+            return redirect(url_for("login"))
+        try:
+            con = db()
+            row = con.execute("SELECT status, publisher_access FROM students WHERE id=?", (sid,)).fetchone()
+            con.close()
+        except Exception:
+            return redirect(url_for("login"))
+        if not row or row["status"] != "approved" or not row["publisher_access"]:
+            flash("Publisher access is required.")
+            return redirect(url_for("dashboard"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def passkey_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -9246,3 +9278,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
