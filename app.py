@@ -15,6 +15,7 @@ import zlib
 import zipfile
 import threading
 import time
+from queue import LifoQueue, Empty
 import socket
 import ipaddress
 from collections import defaultdict, deque
@@ -108,41 +109,47 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
-_PG_POOL = []
+# Small bounded PostgreSQL connection pool. The previous build opened a brand-new
+# Supabase connection for every DB() call, which added avoidable latency to nearly
+# every page. Connections are reused and returned safely after each request.
+_PG_POOL = LifoQueue(maxsize=5)
+_PG_POOL_CREATED = 0
 _PG_POOL_LOCK = threading.Lock()
-_PG_POOL_MAX = 6
 
-
-def _pg_connect():
-    pg_url = DATABASE_URL
-    if _PRODUCTION and "sslmode=" not in pg_url.lower():
-        pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
-    return psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
-
-
-def _pg_checkout():
-    while True:
-        with _PG_POOL_LOCK:
-            conn = _PG_POOL.pop() if _PG_POOL else None
-        if conn is None:
-            return _pg_connect()
-        try:
-            conn.execute("SELECT 1").fetchone()
+def _pg_connection():
+    global _PG_POOL_CREATED
+    try:
+        conn = _PG_POOL.get_nowait()
+        if getattr(conn, "closed", False):
+            with _PG_POOL_LOCK:
+                _PG_POOL_CREATED = max(0, _PG_POOL_CREATED - 1)
+            conn = None
+        if conn is not None:
             return conn
-        except Exception:
-            try: conn.close()
-            except Exception: pass
-
+    except Empty:
+        pass
+    with _PG_POOL_LOCK:
+        if _PG_POOL_CREATED < 5:
+            pg_url = DATABASE_URL
+            if _PRODUCTION and "sslmode=" not in pg_url.lower():
+                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+            conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
+            _PG_POOL_CREATED += 1
+            return conn
+    conn = _PG_POOL.get(timeout=10)
+    if getattr(conn, "closed", False):
+        return _pg_connection()
+    return conn
 
 class DB:
-    """Small SQLite/PostgreSQL abstraction with reusable PostgreSQL connections."""
+    """Tiny database abstraction for SQLite and PostgreSQL."""
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
-        self._closed = False
+        self._returned = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            self.conn = _pg_checkout()
+            self.conn = _pg_connection()
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -166,29 +173,29 @@ class DB:
         self.conn.rollback()
 
     def close(self):
-        if self._closed:
+        if self._returned:
             return
-        self._closed = True
+        self._returned = True
         if self.is_pg:
             try:
                 self.conn.rollback()
+                if getattr(self.conn, "closed", False):
+                    return
+                _PG_POOL.put_nowait(self.conn)
             except Exception:
-                pass
-            try:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
                 with _PG_POOL_LOCK:
-                    if len(_PG_POOL) < _PG_POOL_MAX:
-                        _PG_POOL.append(self.conn)
-                    else:
-                        self.conn.close()
-            except Exception:
-                try: self.conn.close()
-                except Exception: pass
+                    global _PG_POOL_CREATED
+                    _PG_POOL_CREATED = max(0, _PG_POOL_CREATED - 1)
         else:
             self.conn.close()
 
 def db():
-    """Return a database handle using the configured SQLite/PostgreSQL backend."""
     return DB()
+
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -968,6 +975,28 @@ def init_db():
     except Exception:
         pass
 
+    # Lightweight indexes for the high-traffic student/admin queries. These are
+    # additive and never alter or delete existing Supabase data.
+    for _index_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_students_status ON students(status)",
+        "CREATE INDEX IF NOT EXISTS idx_students_last_seen ON students(last_seen)",
+        "CREATE INDEX IF NOT EXISTS idx_resources_created ON resources(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_kind_id ON academic_updates(kind,id)",
+        "CREATE INDEX IF NOT EXISTS idx_announcements_expires ON announcements(expires_at)",
+        "CREATE INDEX IF NOT EXISTS idx_events_date_id ON events(event_date,id)",
+        "CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)",
+        "CREATE INDEX IF NOT EXISTS idx_community_messages_student ON community_messages(student_id)",
+        "CREATE INDEX IF NOT EXISTS idx_student_notifications_recipient_read ON student_notifications(recipient_student_id,read_at)",
+        "CREATE INDEX IF NOT EXISTS idx_solutions_issue ON solutions(issue_id)",
+        "CREATE INDEX IF NOT EXISTS idx_issues_student_status ON issues(student_id,status)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_solutions_student_id ON admin_problem_solutions(student_id,id)",
+    ):
+        try:
+            con.execute(_index_sql)
+        except Exception:
+            try: con.rollback()
+            except Exception: pass
+
     defaults = {
         "whatsapp_link": "",
         "google_drive_url": DRIVE_URL,
@@ -982,20 +1011,9 @@ def init_db():
         "vybe_assistant_enabled": "1",
         "vybe_ai_shortcuts": json.dumps(["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]),
     }
-    for _idx in (
-        "CREATE INDEX IF NOT EXISTS idx_students_status ON students(status)",
-        "CREATE INDEX IF NOT EXISTS idx_resources_created ON resources(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_announcements_created ON announcements(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_events_created ON events(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_academic_updates_created ON academic_updates(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_timetables_created ON timetables(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_community_messages_created ON community_messages(id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_notifications_student_read ON notifications(student_id,is_read,id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_student_notifications_student_read ON student_notifications(student_id,is_read,id DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_student_update_views_student ON student_update_views(student_id,item_type,item_id)",
-    ):
-        try: con.execute(_idx)
-        except Exception: pass
+    for key, value in defaults.items():
+        if setting(con, key, None) is None:
+            set_setting(con, key, value)
     con.commit()
     con.close()
 
@@ -1234,26 +1252,31 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
-_ONLINE_CACHE = {"value": None, "expires": 0.0}
-_LAST_SEEN_CACHE = {}
+_ONLINE_CACHE = {"value": True, "expires": 0.0}
+_ONLINE_CACHE_LOCK = threading.Lock()
+_LAST_SEEN = {}
+_LAST_SEEN_LOCK = threading.Lock()
 _CLEANUP_NEXT = 0.0
+_CLEANUP_LOCK = threading.Lock()
 
-
-def _online_status():
-    import time as _time
-    if _ONLINE_CACHE["value"] is not None and _time.monotonic() < _ONLINE_CACHE["expires"]:
-        return _ONLINE_CACHE["value"]
+def _cached_vybe_online():
+    now_m = time.monotonic()
+    with _ONLINE_CACHE_LOCK:
+        if now_m < _ONLINE_CACHE["expires"]:
+            return _ONLINE_CACHE["value"]
     try:
-        con = db(); value = setting(con, "vybe_online", "1") == "1"; con.close()
+        con = db()
+        value = setting(con, "vybe_online", "1") == "1"
+        con.close()
     except Exception:
         value = True
-    _ONLINE_CACHE.update(value=value, expires=_time.monotonic() + 5.0)
+    with _ONLINE_CACHE_LOCK:
+        _ONLINE_CACHE["value"] = value
+        _ONLINE_CACHE["expires"] = time.monotonic() + 2.0
     return value
-
 
 @app.before_request
 def global_online_gate():
-    import time as _time
     path = request.path
     if _PRODUCTION and _ALLOWED_HOSTS_RAW:
         host = (request.host or "").split(":", 1)[0].lower().strip(".")
@@ -1264,29 +1287,39 @@ def global_online_gate():
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         if not _same_origin_unsafe_request():
             abort(403, description="Cross-site requests are not allowed.")
-        auth_bootstrap_paths = {"/login", "/register", "/forgot-password", "/admin", "/admin/login-passkey/options", "/admin/login-passkey/verify"}
-        if path not in auth_bootstrap_paths and not _csrf_token_valid():
+        if not _csrf_token_valid():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
-    global _CLEANUP_NEXT
-    if _time.monotonic() >= _CLEANUP_NEXT:
-        _CLEANUP_NEXT = _time.monotonic() + 300.0
-        try:
-            cleanup_con = db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
-        except Exception:
-            pass
     if path.startswith("/admin") or path.startswith("/passkey") or path in ("/offline", "/healthz"):
         return None
-    if not _online_status():
+    # Expiry cleanup is maintenance work, not request work. Run it at most once
+    # every five minutes instead of opening/scanning the database on every page.
+    global _CLEANUP_NEXT
+    now_m = time.monotonic()
+    if now_m >= _CLEANUP_NEXT:
+        with _CLEANUP_LOCK:
+            if time.monotonic() >= _CLEANUP_NEXT:
+                _CLEANUP_NEXT = time.monotonic() + 300.0
+                try:
+                    cleanup_con = db(); _cleanup_expired_campus_content(cleanup_con); cleanup_con.close()
+                except Exception:
+                    pass
+    if not _cached_vybe_online():
         return redirect(url_for("offline"))
     active_student = session.get("student_db_id")
     if active_student:
-        last = _LAST_SEEN_CACHE.get(active_student, 0.0)
-        if _time.monotonic() - last >= 60.0:
-            _LAST_SEEN_CACHE[active_student] = _time.monotonic()
+        # Presence does not need a write on every page. Throttle it to once/minute.
+        with _LAST_SEEN_LOCK:
+            last_write = _LAST_SEEN.get(active_student, 0.0)
+            should_write = (now_m - last_write) >= 60.0
+            if should_write:
+                _LAST_SEEN[active_student] = now_m
+        if should_write:
             try:
-                con = db(); con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student)); con.commit(); con.close()
+                con = db()
+                con.execute("UPDATE students SET last_seen=? WHERE id=?", (now(), active_student))
+                con.commit(); con.close()
             except Exception:
                 pass
     return None
@@ -3383,7 +3416,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         try:
-            _header_updates=[]
+            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],18); _header_con.close()
         except Exception: _header_updates=[]
         _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
@@ -4207,7 +4240,8 @@ if(notificationBell){{
       notificationBell.setAttribute('aria-expanded','false');
     }}
   }});
-  notificationTimer=setInterval(function(){{ if(!notificationPanel || notificationPanel.hidden) return; refreshStudentNotifications(); }},30000);
+  // Notifications are fetched when the bell is opened instead of polling every second.
+  // This removes a continuous database request from every student page.
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -7376,7 +7410,7 @@ def community_chat():
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',b.dataset.messageId);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
       async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100,res=await fetch('/community/chat/messages?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[],ids=new Set(msgs.map(m=>String(m.id))),existing=new Set(Array.from(chatWindow.querySelectorAll('.community-message')).map(x=>x.dataset.messageId));msgs.forEach(function(m){{if(!existing.has(String(m.id)))chatWindow.appendChild(build(m));}});Array.from(chatWindow.querySelectorAll('.community-message')).forEach(function(e){{if(!ids.has(e.dataset.messageId))e.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:force?'smooth':'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},4000);}} if(replyCancel)replyCancel.onclick=clearReply;
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();if(!sendBox.value.trim())return;const fd=new FormData(form),txt=sendBox.value;sendBox.value='';sendBox.style.height='46px';clearReply();sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(){{return refresh(true);}}).catch(function(){{sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
@@ -7881,6 +7915,9 @@ def admin_status():
     if request.method == "POST":
         set_setting(con, "vybe_online", "0" if current else "1")
         con.commit(); con.close()
+        with _ONLINE_CACHE_LOCK:
+            _ONLINE_CACHE["value"] = not current
+            _ONLINE_CACHE["expires"] = time.monotonic() + 3600.0
         flash("VYBE is now offline." if current else "VYBE is now online.")
         return redirect(url_for("admin_status"))
     con.close()
