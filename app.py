@@ -247,9 +247,6 @@ class DB:
 def db():
     return DB()
 
-def db():
-    return DB()
-
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -4305,7 +4302,7 @@ if(notificationBell){{
     }}
   }});
   refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,1000);
+  notificationTimer=setInterval(function(){{if(!document.hidden)refreshStudentNotifications();}},10000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
