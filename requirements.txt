@@ -7,3 +7,4 @@ flask-socketio
 simple-websocket
 gevent
 gevent-websocket
+packaging
