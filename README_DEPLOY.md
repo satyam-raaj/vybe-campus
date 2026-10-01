@@ -1,55 +1,85 @@
 # VYBE public deployment
 
-This package is prepared for a public VYBE beta using:
-- Render Free Web Service for Flask
-- Neon Free Postgres for persistent student/issue/community data
-- Your existing Google Drive folder for the student Academics button
+This repository contains the current VYBE Flask application prepared for
+Render + PostgreSQL/Supabase deployment.
 
 ## Files
-- `VYBE_PUBLIC.py` — production Flask app
+
+- `app.py` — current production Flask application
 - `requirements.txt` — Python dependencies
-- `render.yaml` — Render service configuration
-- `.python-version` — Python 3.13
+- `render.yaml` — Render build/start/health configuration
+- `.python-version` — Python version
 
-## 1. Create the database
-1. Create a free Neon account and a new Postgres project.
-2. Copy the connection string (`postgresql://...`).
-3. Keep it private; it becomes the `DATABASE_URL` secret in Render.
+## Database
 
-## 2. Put these files in a GitHub repository
-Upload the four files above to a private GitHub repo, for example `vybe`.
-Do NOT upload passwords, database URLs, or student data.
+VYBE uses the PostgreSQL database supplied through the `DATABASE_URL`
+environment variable.
 
-## 3. Deploy on Render
-1. Create a Render account.
-2. New -> Web Service -> connect the GitHub repo.
-3. Render can use `render.yaml`, or set:
-   - Build: `pip install -r requirements.txt`
-   - Start: `gunicorn VYBE_PUBLIC:app`
-   - Plan: Free
-4. Add environment variables:
-   - `DATABASE_URL` = your Neon connection string
-   - `VYBE_ADMIN_PASSWORD` = a strong admin password
-   - `VYBE_SECRET_KEY` = a long random secret
-   - `VYBE_DRIVE_URL` = the existing VYBE Google Drive folder URL
+For the current deployment, use your **Supabase PostgreSQL connection string**
+as Render's `DATABASE_URL`.
 
-## 4. First launch
-The app creates its PostgreSQL tables automatically on first startup.
+Do **not** restore or reset the existing database. The application performs
+schema creation/migration with `CREATE TABLE IF NOT EXISTS` and
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
 
-## 5. Test before sharing
-- Student registration -> pending -> admin approval
-- Student login uses Name + Student ID only
-- Student IDs remain private from other students
-- Community solutions appear immediately
-- Only the reporter sees "Accept solution & delete chat", and only after a solution exists
-- Accepting deletes the issue and its solution chat
-- Admin can approve/block/unblock students
-- Admin can delete one student or all student data
-- Academics -> Google Drive works
+## Render setup
 
-## Important free-tier notes
-Render Free is suitable for a beta/hobby deployment but has sleep/usage limitations.
-Neon's Free plan has usage limits and can scale to zero. Monitor usage before treating this as a permanent college production system.
+The included `render.yaml` uses:
 
-## Custom domain later
-Once VYBE is live on its Render `onrender.com` address, buy your preferred domain and add it to the Render service's Custom Domains section. Render provides HTTPS for custom domains.
+- Build: `pip install -r requirements.txt`
+- Start: `gunicorn -w 2 -b 0.0.0.0:$PORT app:app`
+- Health check: `/healthz`
+
+Set these Render environment variables:
+
+### Required
+
+- `DATABASE_URL` — the PostgreSQL connection string from Supabase
+- `VYBE_SECRET_KEY` — a long random secret; the Render blueprint can generate it
+- `VYBE_ADMIN_INITIAL_PASSWORD` — only for initial admin setup if the database
+  does not already contain an admin password
+
+### Optional
+
+- `VYBE_PASSKEY_RP_ID`
+- `VYBE_PASSKEY_ORIGIN`
+- `VYBE_AI_API_KEY`
+- `VYBE_AI_ENDPOINT`
+- `VYBE_AI_MODEL`
+
+Never commit real passwords, database URLs, API keys, passkeys, or student data.
+
+## Deployment order
+
+1. Confirm the Supabase database already contains the migrated VYBE data.
+2. Deploy this repository to Render.
+3. In Render, set `DATABASE_URL` to the **Supabase PostgreSQL connection string**.
+4. Set `VYBE_SECRET_KEY`.
+5. Set `VYBE_ADMIN_INITIAL_PASSWORD` only if initial admin setup is required.
+6. Deploy/redeploy.
+7. Open `/healthz` and confirm the service reports healthy.
+8. Test admin login, student registration/login, existing data, community,
+   academics, events, and the Global VYBE Online/Offline control.
+9. Only after testing should VYBE be made publicly available.
+
+## Global Online / Offline control
+
+The admin panel contains the VYBE Public Status control.
+
+- Offline: public/student routes are blocked while admin access remains available.
+- Online: normal student/public access is restored.
+
+This status is stored in the database and is not a database reset.
+
+## Important
+
+The application must receive a valid PostgreSQL `DATABASE_URL` at startup.
+If Render still points to an old Render/Neon/internal PostgreSQL service, the
+application will connect to that service instead of Supabase.
+
+A PostgreSQL error such as:
+
+`role "..." is not permitted to log in`
+
+indicates a database credential/role problem in the configured `DATABASE_URL`;
+it is not fixed by restoring the VYBE database or changing the Flask routes.
