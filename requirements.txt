@@ -1,0 +1,5 @@
+Flask
+Werkzeug
+itsdangerous
+psycopg[binary]
+gunicorn
