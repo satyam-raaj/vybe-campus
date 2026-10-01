@@ -6497,13 +6497,87 @@ def community_chat():
     status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
-    select_controls = f'''<div class="community-chat-tools"><div class="community-select-help">Tap Reply on any message to respond</div></div>'''
+    select_controls = f'''<div class="community-chat-tools">
+        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Community Chat</strong><span class="community-chat-tools-sub">Reply to any message to start a thread</span></div>
+      </div>'''
     if not chat_enabled:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
     else:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div><form class="community-chat-form" method="post" action="/community/chat" id="community-send-form"><input type="hidden" name="reply_to_id" id="community-reply-to" value=""><textarea name="message" maxlength="1500" rows="1" placeholder="Write a message..." required autocomplete="off" aria-label="Message"></textarea><button class="community-send-button" type="submit" aria-label="Send message" title="Send">➤</button></form>'''
 
-    body = f'''<section class="section community-page-section community-chat-page-section">
+    chat_page_style = r'''
+<style>
+/* ===== VYBE COMMUNITY CHAT — FINAL DESKTOP + PHONE UI ===== */
+.community-chat-page-section{width:100%!important;max-width:1120px!important;margin:0 auto!important;padding:20px 22px 34px!important;box-sizing:border-box!important}
+.community-chat-page-section .community-page-top{max-width:100%!important;margin:0 0 14px!important;padding:0!important}
+.community-chat-page-section .community-page-top h1{font-size:clamp(32px,4.4vw,52px)!important;letter-spacing:-.045em!important;margin:7px 0 5px!important;line-height:1!important}
+.community-chat-page-section .community-page-top p{margin:0!important;font-size:12px!important;color:#74818d!important}
+.community-chat-page-section .community-chat-page-card{width:100%!important;max-width:1040px!important;height:min(68vh,690px)!important;min-height:500px!important;margin:0 auto!important;padding:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;background:#fff!important;border:1px solid #dfe5ea!important;border-radius:24px!important;box-shadow:0 18px 55px rgba(30,48,65,.10),0 2px 8px rgba(30,48,65,.04)!important}
+.community-chat-page-section .community-chat-tools{height:58px!important;min-height:58px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 18px!important;margin:0!important;background:linear-gradient(180deg,#fff,#fbfcfd)!important;border-bottom:1px solid #e7ebef!important;flex:0 0 auto!important}
+.community-chat-tools-left{display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;color:#17202b!important}
+.community-chat-tools-left strong{font-size:13px!important;font-weight:850!important;white-space:nowrap!important}
+.community-chat-tools-sub{font-size:11px!important;color:#8995a0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.community-chat-live-dot{width:8px!important;height:8px!important;border-radius:50%!important;background:#68b82e!important;box-shadow:0 0 0 4px #edf8e6!important;flex:0 0 8px!important}
+.community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:20px 22px 16px!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:linear-gradient(180deg,#fbfcfd 0%,#f7f9fb 100%)!important;scroll-behavior:smooth!important;overscroll-behavior:contain!important}
+.community-chat-page-section .community-message{max-width:min(70%,650px)!important;padding:11px 13px!important;border-radius:17px!important;background:#fff!important;border:1px solid #e0e6eb!important;box-shadow:0 3px 12px rgba(31,45,58,.055)!important}
+.community-chat-page-section .community-message.mine{background:#edf5ff!important;border-color:#d4e4f5!important;border-bottom-right-radius:6px!important;align-self:flex-end!important}
+.community-chat-page-section .community-message:not(.mine){align-self:flex-start!important;border-bottom-left-radius:6px!important}
+.community-chat-page-section .community-message-head{margin-bottom:4px!important}
+.community-chat-page-section .community-message-head strong{font-size:11px!important;font-weight:850!important;color:#38546c!important}
+.community-chat-page-section .community-message.mine .community-message-head strong{color:#2862a2!important}
+.community-chat-page-section .community-message-text{font-size:14px!important;line-height:1.5!important;color:#1c2934!important;overflow-wrap:anywhere!important}
+.community-chat-page-section .community-message-meta{margin-top:5px!important;font-size:9px!important;color:#8a96a0!important}
+.community-chat-page-section .community-message-actions{display:flex!important;gap:5px!important;margin-top:7px!important;opacity:0!important;max-height:0!important;overflow:hidden!important;transition:opacity .16s ease,max-height .16s ease!important}
+.community-chat-page-section .community-message:hover .community-message-actions,.community-chat-page-section .community-message:focus-within .community-message-actions{opacity:1!important;max-height:34px!important}
+.community-chat-page-section .community-message-action{border:1px solid #d9e2e9!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:5px 9px!important;font-size:10px!important;font-weight:800!important;cursor:pointer!important;line-height:1!important}
+.community-chat-page-section .community-message-action:hover{background:#f1f6fa!important;color:#245f92!important}
+.community-chat-page-section .community-message-action.delete{color:#bd3e4c!important;border-color:#f0d5d8!important}
+.community-chat-page-section .community-reply-reference{margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important}
+.community-chat-page-section .community-reply-bar{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin:0!important;padding:9px 16px!important;background:#f4f8fc!important;border-top:1px solid #dfe7ee!important;border-left:3px solid #2f6fca!important;border-radius:0!important;flex:0 0 auto!important;min-height:42px!important;box-sizing:border-box!important}
+.community-chat-page-section .community-reply-bar[hidden]{display:none!important}
+.community-chat-page-section .community-reply-bar>div{min-width:0!important;display:flex!important;flex-direction:column!important;gap:2px!important}
+.community-chat-page-section .community-reply-bar strong{font-size:10px!important;color:#2f6fca!important}
+.community-chat-page-section .community-reply-bar span{font-size:11px!important;color:#6d7b87!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.community-chat-page-section .community-reply-bar button{border:0!important;background:transparent!important;color:#6f7d88!important;font-size:21px!important;line-height:1!important;cursor:pointer!important;padding:3px 6px!important}
+.community-chat-page-section .community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 46px!important;gap:8px!important;margin:0!important;padding:10px 12px!important;background:#fff!important;border-top:1px solid #e5e9ed!important;flex:0 0 auto!important;box-sizing:border-box!important}
+.community-chat-page-section .community-chat-form textarea{width:100%!important;box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:110px!important;resize:none!important;padding:11px 14px!important;border-radius:15px!important;background:#f5f7f9!important;color:#1e2a34!important;border:1px solid #dce3e8!important;outline:none!important;font-size:13px!important;line-height:1.4!important}
+.community-chat-page-section .community-chat-form textarea:focus{background:#fff!important;border-color:#9dbfe0!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
+.community-chat-page-section .community-send-button{width:44px!important;height:44px!important;border:0!important;border-radius:14px!important;background:#2f6fca!important;color:#fff!important;font-size:18px!important;font-weight:850!important;cursor:pointer!important;box-shadow:0 7px 17px rgba(47,111,202,.22)!important;display:grid!important;place-items:center!important;transition:transform .15s ease,box-shadow .15s ease!important}
+.community-chat-page-section .community-send-button:hover{transform:translateY(-1px)!important;box-shadow:0 10px 20px rgba(47,111,202,.26)!important}
+.community-chat-page-section .community-send-button:active{transform:scale(.96)!important}
+.community-chat-page-section .community-chat-disabled-note{padding:14px 18px!important;border-top:1px solid #e5e9ed!important;color:#687482!important;font-size:12px!important;background:#fff!important}
+.community-chat-page-section .empty{margin:auto!important;padding:18px!important;color:#8995a0!important;text-align:center!important}
+.community-chat-page-section .community-chat-keyboard-hint{display:none!important}
+@media(max-width:850px){
+  .community-chat-page-section{max-width:none!important;padding:10px 10px 96px!important}
+  .community-chat-page-section .community-page-top{margin-bottom:10px!important;padding:0 2px!important}
+  .community-chat-page-section .community-page-top h1{font-size:30px!important;margin:5px 0!important}
+  .community-chat-page-section .community-page-top p{font-size:11px!important}
+  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 226px)!important;min-height:420px!important;max-height:none!important;border-radius:20px!important}
+  .community-chat-page-section .community-chat-tools{height:52px!important;min-height:52px!important;padding:0 13px!important}
+  .community-chat-tools-sub{display:none!important}
+  .community-chat-page-section .community-chat-window{padding:14px 9px 14px!important;gap:8px!important}
+  .community-chat-page-section .community-message{max-width:88%!important;padding:10px 11px!important;border-radius:15px!important}
+  .community-chat-page-section .community-message-text{font-size:13px!important}
+  .community-chat-page-section .community-message-actions{opacity:1!important;max-height:34px!important;margin-top:6px!important}
+  .community-chat-page-section .community-message-action{padding:6px 9px!important;font-size:10px!important}
+  .community-chat-page-section .community-reply-bar{padding:8px 11px!important}
+  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:8px 8px calc(8px + env(safe-area-inset-bottom))!important;gap:7px!important}
+  .community-chat-page-section .community-chat-form textarea{height:44px!important;min-height:44px!important;border-radius:15px!important;padding:11px 13px!important}
+  .community-chat-page-section .community-send-button{width:44px!important;height:44px!important;border-radius:14px!important}
+}
+@media(max-width:390px){
+  .community-chat-page-section{padding-left:8px!important;padding-right:8px!important}
+  .community-chat-page-section .community-page-top h1{font-size:27px!important}
+  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 216px)!important;min-height:400px!important;border-radius:18px!important}
+  .community-chat-page-section .community-chat-tools{padding:0 11px!important}
+  .community-chat-page-section .community-chat-window{padding-left:7px!important;padding-right:7px!important}
+  .community-chat-page-section .community-message{max-width:92%!important}
+}
+</style>
+    '''
+
+    body = chat_page_style + f'''<section class="section community-page-section community-chat-page-section">
       <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
       <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
     </section>
