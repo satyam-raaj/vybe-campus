@@ -1189,6 +1189,40 @@ def _csrf_token_valid():
     return bool(supplied) and secrets.compare_digest(str(expected), str(supplied))
 
 
+def _bump_live_revision_for_admin_change(response):
+    """Bump a DB-backed revision after successful admin/publisher mutations.
+
+    This lets every Gunicorn worker share one tiny live-update signal without
+    keeping websocket state in process memory.
+    """
+    try:
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return response
+        if response.status_code >= 400:
+            return response
+        path = request.path or ""
+        # Only content/control mutations should wake the campus live updater.
+        # Student chat already has its own fast incremental polling loop.
+        if not (path.startswith("/admin/") or path.startswith("/publisher")):
+            return response
+        con = db()
+        current = int(setting(con, "vybe_live_revision", "0") or "0")
+        set_setting(con, "vybe_live_revision", str(current + 1))
+        con.commit()
+        con.close()
+    except Exception:
+        try:
+            con.close()
+        except Exception:
+            pass
+    return response
+
+
+@app.after_request
+def _vybe_live_revision_after_request(response):
+    return _bump_live_revision_for_admin_change(response)
+
+
 @app.before_request
 def global_online_gate():
     path = request.path
@@ -1199,22 +1233,9 @@ def global_online_gate():
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_urlsafe(32)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        # Authentication bootstrap endpoints are protected by the same-origin
-        # check below, but do not depend on an already-established CSRF token.
-        # This is important for first-time login/passkey flows, where the
-        # browser may not yet have a valid VYBE session cookie (or may be
-        # submitting a freshly loaded login page after a deployment).
-        auth_bootstrap_paths = {
-            "/login",
-            "/register",
-            "/forgot-password",
-            "/admin",
-            "/admin/login-passkey/options",
-            "/admin/login-passkey/verify",
-        }
         if not _same_origin_unsafe_request():
             abort(403, description="Cross-site requests are not allowed.")
-        if path not in auth_bootstrap_paths and not _csrf_token_valid():
+        if not _csrf_token_valid():
             abort(403, description="Security verification failed. Refresh the page and try again.")
     if _rate_limited(request.method, path):
         abort(429, description="Too many requests. Please try again shortly.")
@@ -4008,6 +4029,63 @@ def layout(title, body, admin=False):
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}
 <script>(function(){{
+/* ===== VYBE LIVE CAMPUS UPDATES =====
+   Admin/publisher changes are detected in the background. The browser
+   refreshes only the visible page content; there is no full page reload. */
+(function(){{
+  const LIVE_REVISION_URL='/api/live/revision';
+  let lastRevision=null, liveBusy=false, liveTimer=null;
+  const isEditable=()=>{{
+    const a=document.activeElement;
+    return !!(a && (a.matches('input,textarea,select,[contenteditable="true"]') || a.closest('form')));
+  }};
+  async function checkLiveRevision(){{
+    if(liveBusy || document.hidden) return;
+    liveBusy=true;
+    try{{
+      const r=await fetch(LIVE_REVISION_URL+'?t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
+      if(!r.ok)return;
+      const d=await r.json();
+      const rev=String(d.revision||'0');
+      if(lastRevision===null){{lastRevision=rev;return;}}
+      if(rev===lastRevision)return;
+      lastRevision=rev;
+      // Never overwrite a form while the student is typing. It will catch
+      // the next revision automatically when the form is no longer focused.
+      if(isEditable())return;
+      await softRefreshCampusPage();
+    }}catch(_){{}}finally{{liveBusy=false;}}
+  }}
+  async function softRefreshCampusPage(){{
+    try{{
+      // Live chat has its own incremental message loop; do not replace its
+      // DOM or interrupt its composer when an admin publishes something.
+      if(/^\/(community\/chat|chat)(?:\/|$)/.test(window.location.pathname))return;
+      const shell=document.querySelector('main.page-shell');
+      if(!shell)return;
+      const y=window.scrollY;
+      const r=await fetch(window.location.href+(window.location.search?'&':'?')+'_vybe_live='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Refresh':'1',Accept:'text/html'}}}});
+      if(!r.ok)return;
+      const html=await r.text();
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const next=doc.querySelector('main.page-shell');
+      if(!next)return;
+      shell.innerHTML=next.innerHTML;
+      window.scrollTo({{top:y,behavior:'auto'}});
+      document.dispatchEvent(new CustomEvent('vybe:live-refresh'));
+      showLiveToast();
+    }}catch(_){{}}
+  }}
+  function showLiveToast(){{
+    let t=document.getElementById('vybeLiveToast');
+    if(!t){{t=document.createElement('div');t.id='vybeLiveToast';t.textContent='VYBE updated';t.style.cssText='position:fixed;right:18px;bottom:86px;z-index:2147483646;padding:9px 13px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(12,20,32,.88);color:#fff;font:700 11px/1 system-ui,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.25);backdrop-filter:blur(14px);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s';document.body.appendChild(t);}}
+    requestAnimationFrame(()=>{{t.style.opacity='1';t.style.transform='translateY(0)';}});
+    clearTimeout(t._timer);t._timer=setTimeout(()=>{{t.style.opacity='0';t.style.transform='translateY(8px)';}},1500);
+  }}
+  function schedule(){{clearInterval(liveTimer);liveTimer=setInterval(checkLiveRevision,1200);}}
+  document.addEventListener('visibilitychange',schedule);
+  if(document.querySelector('main.page-shell')){{checkLiveRevision();schedule();}}
+}})();
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
 const bottomMenu=document.querySelector(".mobile-menu-nav");
@@ -5368,6 +5446,25 @@ def student_notifications_read():
         return jsonify({"ok": False})
     finally:
         con.close()
+
+
+@app.route("/api/live/revision")
+@student_required
+def live_revision():
+    """Tiny DB-backed signal used to detect admin content changes."""
+    con = db()
+    try:
+        revision = setting(con, "vybe_live_revision", "0") or "0"
+        con.close()
+        resp = jsonify({"ok": True, "revision": str(revision)})
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
+    except Exception:
+        try:
+            con.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "revision": "0"}), 200
 
 
 @app.route("/announcements")
