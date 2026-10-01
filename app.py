@@ -780,6 +780,7 @@ def init_db():
         "whatsapp_admin_number": "",
         "community_chat_enabled": "1",
         "vybe_assistant_enabled": "1",
+        "vybe_ai_shortcuts": json.dumps(["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]),
     }
     for key, value in defaults.items():
         if setting(con, key, None) is None:
@@ -2903,8 +2904,45 @@ def layout(title, body, admin=False):
     flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
     assistant_widget = ""
     if student:
-        assistant_widget = '''<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus help, anytime</small></div></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions"><a class="vybe-assistant-suggestion" href="/academics?resource_type=Study+material">Study Material</a><a class="vybe-assistant-suggestion" href="/profile#admit-card">Admit Card</a><a class="vybe-assistant-suggestion" href="/updates?category=Examination">Date Sheets</a><a class="vybe-assistant-suggestion" href="/papers">Previous Papers</a><a class="vybe-assistant-suggestion" href="/timetable">Timetable</a><a class="vybe-assistant-suggestion" href="/updates">Results &amp; Updates</a></div></div></section>'''
+        try:
+            _ai_con = db()
+            _ai_enabled = setting(_ai_con, "vybe_assistant_enabled", "1") == "1"
+            _ai_raw = setting(_ai_con, "vybe_ai_shortcuts", "[]") or "[]"
+            _ai_con.close()
+            try:
+                _ai_selected = json.loads(_ai_raw)
+                if not isinstance(_ai_selected, list): _ai_selected = []
+            except Exception:
+                _ai_selected = []
+        except Exception:
+            _ai_enabled = True
+            _ai_selected = ["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]
+        _ai_catalog = {
+            "study_material": ("Study Material", "/academics?resource_type=Study+material"),
+            "admit_card": ("Admit Card", "/profile#admit-card"),
+            "date_sheets": ("Date Sheets", "/updates?category=Examination"),
+            "previous_papers": ("Previous Papers", "/papers"),
+            "timetable": ("Timetable", "/timetable"),
+            "updates": ("Results & Updates", "/updates"),
+            "notes": ("Notes", "/academics?resource_type=Notes"),
+            "syllabus": ("Syllabus", "/academics?resource_type=Syllabus"),
+            "assignments": ("Assignments", "/academics?resource_type=Assignments"),
+            "helpdesk": ("Help Desk", "/issues"),
+            "announcements": ("Announcements", "/announcements"),
+            "events": ("Events", "/events"),
+            "community": ("Community", "/community"),
+            "profile": ("My Profile", "/profile"),
+        }
+        if _ai_enabled:
+            _ai_links = "".join(f'<a class="vybe-assistant-suggestion" href="{url}">{esc(label)}</a>' for key,(label,url) in _ai_catalog.items() if key in _ai_selected)
+            if not _ai_links:
+                _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
+            assistant_widget = f"""<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus shortcuts</small></div></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions">{_ai_links}</div></div></section>"""
     mobile_runtime_css = r'''
+/* ===== VYBE AI SETTINGS ===== */
+.ai-settings-page{max-width:1120px!important;margin:0 auto!important;padding-bottom:80px}.ai-settings-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:24px}.ai-settings-head h1{margin:8px 0 8px;font-size:clamp(34px,5vw,56px);letter-spacing:-.045em}.ai-settings-head p{max-width:700px;color:#687482;font-size:15px;line-height:1.65;margin:0}.ai-live-status{min-width:130px;padding:15px 17px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;box-shadow:0 12px 30px rgba(31,48,66,.07);display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center}.ai-live-status small{grid-column:2;color:#7b8792;font-size:11px;margin-top:2px}.ai-status-dot{width:10px;height:10px;border-radius:50%;grid-row:1 / span 2;background:#9aa4ad;box-shadow:0 0 0 5px #f0f2f4}.ai-live-status.is-on .ai-status-dot{background:#68b82e;box-shadow:0 0 0 5px #edf8e6}.ai-live-status.is-off .ai-status-dot{background:#d65a5a;box-shadow:0 0 0 5px #faecec}.ai-control-card{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 14px 36px rgba(31,48,66,.07);margin-bottom:18px}.ai-control-label{display:block;font-size:10px;font-weight:900;letter-spacing:.14em;color:#2f6fca;margin-bottom:7px}.ai-control-card h2,.ai-shortcuts-head h2{margin:0 0 6px;font-size:22px;letter-spacing:-.025em}.ai-control-card p,.ai-shortcuts-head p{margin:0;color:#687482;line-height:1.55;font-size:13px}.ai-toggle-button{display:inline-flex;align-items:center;gap:10px;border-radius:14px;padding:11px 14px;font:inherit;font-size:12px;font-weight:850;cursor:pointer;white-space:nowrap}.ai-toggle-button.on{background:#fff0f0;color:#a83232;border:1px solid #f1d1d1}.ai-toggle-button.off{background:#edf8e6;color:#3c7f1a;border:1px solid #d6edc8}.ai-toggle-track{width:39px;height:22px;border-radius:99px;background:#a9b1b9;padding:3px;display:flex;align-items:center}.ai-toggle-track span{width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .18s ease}.ai-toggle-button.on .ai-toggle-track{background:#d85d5d}.ai-toggle-button.on .ai-toggle-track span{transform:translateX(17px)}.ai-toggle-button.off .ai-toggle-track{background:#68b82e}.ai-shortcuts-section{padding:24px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 14px 36px rgba(31,48,66,.07)}.ai-shortcuts-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-end;margin-bottom:18px}.ai-selected-count{background:#f4f7fa;border:1px solid #e1e7ec;border-radius:999px;padding:7px 11px;font-size:11px;color:#687482;white-space:nowrap}.ai-selected-count b{color:#17202b}.ai-shortcut-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ai-shortcut-card{position:relative;display:flex;align-items:center;gap:11px;padding:14px 15px;border:1px solid #e0e6eb;border-radius:15px;background:#fbfcfd;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.ai-shortcut-card:hover{transform:translateY(-2px);border-color:#b9d2ec;background:#fff;box-shadow:0 8px 22px rgba(47,111,202,.08)}.ai-shortcut-card input{position:absolute;opacity:0;pointer-events:none}.ai-shortcut-check{width:22px;height:22px;flex:0 0 22px;border-radius:7px;border:1.5px solid #cbd5de;background:#fff;color:transparent;display:grid;place-items:center;font-size:13px;font-weight:900}.ai-shortcut-card:has(input:checked){border-color:#9fc3e8;background:#f3f8ff;box-shadow:0 7px 20px rgba(47,111,202,.08)}.ai-shortcut-card:has(input:checked) .ai-shortcut-check{background:#2f6fca;border-color:#2f6fca;color:#fff}.ai-shortcut-copy{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}.ai-shortcut-copy strong{font-size:13px;color:#17202b}.ai-shortcut-copy small{font-size:11px;color:#75818c;line-height:1.35}.ai-shortcut-arrow{font-size:20px;color:#a2adb7}.ai-save-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding-top:17px;border-top:1px solid #e7ebef}.ai-save-row span{font-size:11px;color:#7b8792}.vybe-assistant-empty{grid-column:1/-1;padding:18px;border:1px dashed rgba(159,182,205,.35);border-radius:13px;color:#a9bbcc;text-align:center;font-size:12px}
+@media(max-width:760px){.ai-settings-head{display:block}.ai-live-status{margin-top:16px;width:max-content}.ai-control-card{display:block}.ai-toggle-button{margin-top:18px;width:100%;justify-content:center}.ai-shortcuts-head{display:block}.ai-selected-count{display:inline-block;margin-top:10px}.ai-shortcut-grid{grid-template-columns:1fr}.ai-save-row{display:block}.ai-save-row .btn{width:100%;margin-top:12px}}
+
 /* ===== HEADER ADMIN ALERTS ===== */
 .vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.vybe-header-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 11px 26px rgba(23,32,51,.20)}.vybe-header-alert:active{transform:translateY(0) scale(.98)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 17px 14px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:4px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:6px 9px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:390px;overflow:auto;padding:8px}.vybe-header-alert-item{display:flex;align-items:center;gap:10px;padding:11px 10px;border-radius:13px;color:#17202b;text-decoration:none;transition:background .15s ease,transform .15s ease}.vybe-header-alert-item:hover{background:#f4f8fc;transform:translateX(2px)}.vybe-header-alert-item.is-new{background:#f7fbff}.vybe-alert-type{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eef5ff;color:#2f6fca;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-header-alert-item.is-new .vybe-alert-type{background:#eaf7df;color:#4d8f21}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vybe-alert-open{flex:0 0 auto;padding:5px 7px;border-radius:7px;background:#f0f2f5;color:#7b8793;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-item.is-new .vybe-alert-open{background:#eaf7df;color:#4d8f21}.vybe-alert-arrow{flex:0 0 auto;font-size:19px;line-height:1;color:#a2adb8}.vybe-header-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}.vybe-header-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}.vybe-header-alert-all:hover{background:#f5f9fd}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.vybe-header-alert-list{max-height:calc(100vh - 180px)}}
 
@@ -6967,49 +7005,67 @@ def admin_analytics():
 @app.route("/admin/assistant", methods=["GET", "POST"])
 @admin_required
 def admin_assistant():
-    con=db()
-    current=setting(con,"vybe_assistant_enabled","1")=="1"
-    if request.method=="POST":
-        action=request.form.get("action","").strip()
-        if action=="toggle":
-            set_setting(con,"vybe_assistant_enabled","0" if current else "1"); con.commit(); con.close()
-            flash("VYBE Assistant disabled." if current else "VYBE Assistant enabled.")
+    con = db()
+    current = setting(con, "vybe_assistant_enabled", "1") == "1"
+    raw_selected = setting(con, "vybe_ai_shortcuts", "[]") or "[]"
+    try:
+        selected = json.loads(raw_selected)
+        if not isinstance(selected, list): selected = []
+    except Exception:
+        selected = []
+
+    shortcut_catalog = [
+        ("study_material", "Study Material", "Open the main study-material collection.", "/academics?resource_type=Study+material"),
+        ("notes", "Notes", "Quick access to student notes.", "/academics?resource_type=Notes"),
+        ("syllabus", "Syllabus", "Open syllabus resources.", "/academics?resource_type=Syllabus"),
+        ("assignments", "Assignments", "Open assignment resources.", "/academics?resource_type=Assignments"),
+        ("previous_papers", "Previous Papers", "Open previous-year papers.", "/papers"),
+        ("admit_card", "Admit Card", "Open the student's admit-card area.", "/profile#admit-card"),
+        ("date_sheets", "Date Sheets", "Open examination/date-sheet updates.", "/updates?category=Examination"),
+        ("updates", "Results & Updates", "Open the latest academic updates.", "/updates"),
+        ("timetable", "Timetable", "Open the current campus timetable.", "/timetable"),
+        ("helpdesk", "Help Desk", "Open campus problem reporting and support.", "/issues"),
+        ("announcements", "Announcements", "Open campus-wide announcements.", "/announcements"),
+        ("events", "Events", "Open upcoming campus events.", "/events"),
+        ("community", "Community", "Open the student community area.", "/community"),
+        ("profile", "My Profile", "Open the student's profile.", "/profile"),
+    ]
+
+    if request.method == "POST":
+        action = request.form.get("action", "").strip()
+        if action == "toggle":
+            current = not current
+            set_setting(con, "vybe_assistant_enabled", "1" if current else "0")
+            con.commit(); con.close()
+            flash("Ask VYBE is now ON for students." if current else "Ask VYBE is now OFF for students.")
             return redirect(url_for("admin_assistant"))
-        if action=="note":
-            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; content=request.form.get("content","").strip()[:50000]
-            if not title or not content: flash("Enter a title and information for assistant memory.")
-            else:
-                stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,None,None,None,None,content,"note",stamp,stamp)); con.commit(); flash("Assistant memory saved.")
-            con.close(); return redirect(url_for("admin_assistant"))
-        if action=="file":
-            title=request.form.get("title","").strip()[:150]; desc=request.form.get("description","").strip()[:500]; f=request.files.get("file")
-            if not f or not f.filename:
-                flash("Choose a file first."); con.close(); return redirect(url_for("admin_assistant"))
-            original_name=Path(f.filename).name[:240]; suffix=Path(original_name).suffix.lower(); file_data=f.read()
-            if not file_data:
-                flash("The selected file is empty."); con.close(); return redirect(url_for("admin_assistant"))
-            content=request.form.get("assistant_text","").strip()[:50000] or _extract_doc_text(file_data,suffix,50000)
-            if not title: title=Path(original_name).stem[:150] or "VYBE Assistant file"
-            stored_name=secrets.token_hex(16)+(suffix if suffix else ""); mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
-            try: f.stream.seek(0); f.save(UPLOAD_DIR/stored_name)
-            except Exception: pass
-            readable=bool(content)
-            if not content: content=f"File uploaded as {original_name}. VYBE currently has no text extractor for this file type."
-            stamp=now(); con.execute("INSERT INTO assistant_knowledge(title,description,original_name,file_name,mime_type,file_data,content,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,desc,original_name,stored_name,mime_type,file_data,content,"file",stamp,stamp)); con.commit(); con.close()
-            flash("File added to VYBE Assistant Knowledge. "+("Its text was indexed." if readable else "The file was saved, but its format could not be read automatically."))
+        if action == "shortcuts":
+            allowed = {x[0] for x in shortcut_catalog}
+            selected = [x for x in request.form.getlist("shortcuts") if x in allowed]
+            set_setting(con, "vybe_ai_shortcuts", json.dumps(selected))
+            con.commit(); con.close()
+            flash(f"Ask VYBE shortcuts updated. {len(selected)} shortcut(s) will appear for students.")
             return redirect(url_for("admin_assistant"))
-    rows=con.execute("SELECT id,title,description,original_name,source_type,content,created_at FROM assistant_knowledge ORDER BY id DESC").fetchall(); con.close()
-    state=" ON" if current else " OFF"; action_label=" Turn Assistant OFF" if current else " Turn Assistant ON"; tone="danger" if current else "good"
-    cards=[]
-    for r in rows:
-        title_html=esc(r["title"]); rid=int(r["id"]); date_html=esc(r["created_at"]); desc_html=esc(r["description"] or "No description"); preview=esc((r["content"] or "")[:280]); source=esc("Permanent note" if r["source_type"]=="note" else (r["original_name"] or "Uploaded file"))
-        cards.append('<div class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h3 style="margin:0 0 5px">'+title_html+'</h3><p class="small">'+source+' · added '+date_html+'</p></div><a class="btn danger" href="/admin/assistant/knowledge/'+str(rid)+'/delete" onclick="return confirm(\'Delete this assistant knowledge item?\')">Delete</a></div><p class="muted">'+desc_html+'</p><div class="small" style="white-space:pre-wrap;max-height:150px;overflow:auto">'+preview+'</div></div>')
-    body='<section class="section"><div class="badge">VYBE ASSISTANT CONTROL</div><h1>VYBE Assistant.</h1>'
-    body+='<div class="card"><h2>'+state+'</h2><p class="muted">The assistant answers from VYBE campus data plus its own persistent Knowledge Space. Anything added here stays in the database for future questions until the admin updates or deletes it.</p><form method="post"><input type="hidden" name="action" value="toggle"><button class="btn '+tone+'">'+action_label+'</button></form></div>'
-    body+='<section class="section grid2"><div class="card"><h2> Upload Assistant Knowledge</h2><p class="muted">Upload PDF, images, Word, PowerPoint, Excel, text, CSV, JSON, HTML and other files. Readable formats are indexed automatically; image uploads can be OCR-read before saving.</p><form id="assistantKnowledgeFileForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="file"><input name="title" placeholder="Knowledge title (optional)"><input name="description" placeholder="What is this file about? (optional)"><input id="assistantKnowledgeFile" type="file" name="file" required><input id="assistantKnowledgeText" type="hidden" name="assistant_text"><div id="assistantKnowledgeStatus" class="small">Maximum upload follows VYBE 25 MB limit.</div><button class="btn accent">Add to Assistant Knowledge →</button></form>'+_resource_ocr_script("assistantKnowledgeFileForm","assistantKnowledgeFile","assistantKnowledgeText","assistantKnowledgeStatus")+'</div>'
-    body+='<div class="card"><h2> Save Assistant Memory</h2><p class="muted">Use this for permanent facts, rules, procedures or updates that the assistant should remember for future students.</p><form class="form" method="post"><input type="hidden" name="action" value="note"><input name="title" placeholder="Memory title" required><input name="description" placeholder="Short description"><textarea name="content" rows="9" maxlength="50000" placeholder="Example: From 1 October, the library closes at 7 PM on weekdays..." required></textarea><button class="btn accent">Save Memory →</button></form></div></section>'
-    body+='<section class="section"><div class="badge">ASSISTANT KNOWLEDGE SPACE · '+str(len(rows))+' ITEMS</div><h2>Stored knowledge.</h2><div class="grid2">'+(''.join(cards) if cards else '<div class="card"><p class="muted">No assistant knowledge has been added yet.</p></div>')+'</div></section></section>'
-    return layout("Assistant",body,admin=True)
+
+    con.close()
+    state = "ON" if current else "OFF"
+    state_class = "is-on" if current else "is-off"
+    allowed_keys = {c[0] for c in shortcut_catalog}
+    checked_count = len([x for x in selected if x in allowed_keys])
+    cards = []
+    for key, label, description, href in shortcut_catalog:
+        checked = " checked" if key in selected else ""
+        cards.append(f"""<label class=\"ai-shortcut-card\"><input type=\"checkbox\" name=\"shortcuts\" value=\"{esc(key)}\"{checked}><span class=\"ai-shortcut-check\" aria-hidden=\"true\">✓</span><span class=\"ai-shortcut-copy\"><strong>{esc(label)}</strong><small>{esc(description)}</small></span><span class=\"ai-shortcut-arrow\">›</span></label>""")
+
+    body = f"""<section class=\"section ai-settings-page\">
+      <div class=\"ai-settings-head\"><div><a href=\"/admin/panel\" class=\"admin-back\">← Dashboard</a><span class=\"admin-page-kicker\">VYBE AI SETTINGS</span><h1>Ask VYBE.</h1><p>Control the floating Ask VYBE button students see. Turn it on or off, then choose exactly which shortcuts appear inside its panel.</p></div><div class=\"ai-live-status {state_class}\"><span class=\"ai-status-dot\"></span><strong>{state}</strong><small>Student access</small></div></div>
+      <div class=\"ai-control-card\"><div><span class=\"ai-control-label\">FLOATING BUTTON</span><h2>Ask VYBE is {state}</h2><p>{'Students can see and open the floating Ask VYBE button.' if current else 'The floating Ask VYBE button and its panel are completely hidden from student pages.'}</p></div><form method=\"post\"><input type=\"hidden\" name=\"action\" value=\"toggle\"><button class=\"ai-toggle-button {'on' if current else 'off'}\" type=\"submit\"><span class=\"ai-toggle-track\"><span></span></span>{'Turn OFF' if current else 'Turn ON'} Ask VYBE</button></form></div>
+      <form method=\"post\" class=\"ai-shortcuts-section\"><input type=\"hidden\" name=\"action\" value=\"shortcuts\"><div class=\"ai-shortcuts-head\"><div><span class=\"ai-control-label\">STUDENT SHORTCUTS</span><h2>What should appear in the Ask VYBE panel?</h2><p>Select the shortcuts students should see. The panel updates from this list automatically.</p></div><span class=\"ai-selected-count\"><b id=\"aiShortcutCount\">{checked_count}</b> selected</span></div><div class=\"ai-shortcut-grid\">{''.join(cards)}</div><div class=\"ai-save-row\"><span>Changes affect the student side immediately after saving.</span><button class=\"btn accent\" type=\"submit\">Save shortcuts →</button></div></form>
+    </section>
+    <script>
+    (function(){{const boxes=[...document.querySelectorAll('.ai-shortcut-card input[type=\"checkbox\"]')];const count=document.getElementById('aiShortcutCount');function update(){{if(count)count.textContent=boxes.filter(x=>x.checked).length;}}boxes.forEach(x=>x.addEventListener('change',update));}})();
+    </script>"""
+    return layout("VYBE AI Settings", body, admin=True)
 
 
 @app.route("/admin/assistant/knowledge/<int:kid>/delete")
