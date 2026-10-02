@@ -39,14 +39,16 @@ except ImportError:
     psycopg = None
     dict_row = None
 
+GOOGLE_AUTH_IMPORT_ERROR = ""
 try:
     from google.oauth2 import service_account as _google_service_account
     from google.auth.transport.requests import Request as GoogleAuthRequest
     GOOGLE_AUTH_AVAILABLE = True
-except ImportError:
+except Exception as _google_auth_exc:
     _google_service_account = None
     GoogleAuthRequest = None
     GOOGLE_AUTH_AVAILABLE = False
+    GOOGLE_AUTH_IMPORT_ERROR = f"{type(_google_auth_exc).__name__}: {_google_auth_exc}"
 
 
 try:
@@ -9627,7 +9629,12 @@ DRIVE_CATEGORY_MAP = {
 
 def _drive_credentials():
     if not GOOGLE_AUTH_AVAILABLE:
-        raise RuntimeError("Google Drive dependency is missing: install google-auth in Vercel requirements.txt.")
+        detail = GOOGLE_AUTH_IMPORT_ERROR or "unknown import error"
+        raise RuntimeError(
+            "Google Drive authentication library could not be imported. "
+            f"Vercel google-auth import error: {detail}. "
+            "Confirm google-auth is installed in requirements.txt and redeploy without build cache."
+        )
     if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON:
         raise RuntimeError("Google Drive credentials are missing: VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not available in this deployment.")
     try:
