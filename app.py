@@ -9628,22 +9628,63 @@ DRIVE_CATEGORY_MAP = {
 }
 
 def _drive_credentials():
+    """Build Google Drive service-account credentials from the Vercel env var.
+
+    The JSON is read at call time so a Vercel deployment always uses the
+    currently configured value. Errors are converted into actionable messages
+    without exposing the private key.
+    """
     if not GOOGLE_AUTH_AVAILABLE:
         detail = GOOGLE_AUTH_IMPORT_ERROR or "unknown import error"
         raise RuntimeError(
             "Google Drive authentication library could not be imported. "
-            f"Vercel google-auth import error: {detail}. "
-            "Confirm google-auth is installed in requirements.txt and redeploy without build cache."
+            f"google-auth import error: {detail}. "
+            "Ensure google-auth is present in requirements.txt and redeploy."
         )
-    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON:
-        raise RuntimeError("Google Drive credentials are missing: VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not available in this deployment.")
+
+    raw = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw:
+        raise RuntimeError(
+            "Google Drive credentials are missing: "
+            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is empty or unavailable in this deployment."
+        )
+
     try:
-        info=json.loads(VYBE_GOOGLE_SERVICE_ACCOUNT_JSON)
-    except Exception as e:
-        raise RuntimeError("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.") from e
-    creds=_google_service_account.Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/drive"])
-    if not creds.valid:
-        creds.refresh(GoogleAuthRequest())
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. "
+            "Paste the complete service-account JSON as the Vercel environment variable."
+        ) from exc
+
+    if not isinstance(info, dict):
+        raise RuntimeError("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON must contain a JSON object.")
+
+    required = ("type", "project_id", "private_key", "client_email")
+    missing = [key for key in required if not str(info.get(key, "")).strip()]
+    if missing:
+        raise RuntimeError(
+            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is missing required field(s): "
+            + ", ".join(missing)
+            + "."
+        )
+
+    try:
+        creds = _google_service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/drive"],
+        )
+        if not creds.valid or not creds.token:
+            creds.refresh(GoogleAuthRequest())
+    except Exception as exc:
+        raise RuntimeError(
+            "Google Drive service-account authentication failed: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    if not creds.token:
+        raise RuntimeError("Google Drive authentication succeeded but no access token was returned.")
+
     return creds
 
 def _drive_access_token():
