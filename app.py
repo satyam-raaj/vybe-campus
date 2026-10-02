@@ -8555,7 +8555,7 @@ def admin_academic_updates():
             con.commit(); con.close(); flash(f"{kind} published successfully." if file_data is None else f"{kind} published to Google Drive successfully."); return redirect(url_for("admin_academic_updates"))
         except Exception as exc:
             con.rollback(); con.close(); app.logger.exception("Academic update Drive upload failed")
-            flash("Could not publish the academic update to Google Drive. No update was published.")
+            flash(f"Could not publish the academic update to Google Drive: {type(exc).__name__}: {exc}")
             return redirect(url_for("admin_academic_updates"))
     rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
     table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
@@ -9626,8 +9626,10 @@ DRIVE_CATEGORY_MAP = {
 }
 
 def _drive_credentials():
-    if not GOOGLE_AUTH_AVAILABLE or not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON:
-        raise RuntimeError("Google Drive is not configured. Add VYBE_GOOGLE_SERVICE_ACCOUNT_JSON and install google-auth.")
+    if not GOOGLE_AUTH_AVAILABLE:
+        raise RuntimeError("Google Drive dependency is missing: install google-auth in Vercel requirements.txt.")
+    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError("Google Drive credentials are missing: VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not available in this deployment.")
     try:
         info=json.loads(VYBE_GOOGLE_SERVICE_ACCOUNT_JSON)
     except Exception as e:
