@@ -1450,6 +1450,25 @@ def _security_blocked_request_response():
         try:
             payload = security_lock_serializer.loads(raw_lock, max_age=_SECURITY_LOCK_MAX_AGE)
             until = float(payload.get("until", 0)) if isinstance(payload, dict) else 0
+            device_hash = str(payload.get("device_hash", "")) if isinstance(payload, dict) else ""
+            if until > time.time() and len(device_hash) == 64:
+                # A lock cookie is the fast path, but an administrator must be
+                # able to revoke the lock immediately. Only requests carrying
+                # an active lock cookie hit Neon; normal users still avoid this
+                # database query entirely.
+                con = db()
+                try:
+                    row = con.execute("SELECT blocked_until FROM vybe_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+                finally:
+                    con.close()
+                server_until = float(row["blocked_until"] or 0) if row else 0
+                if server_until > time.time():
+                    return _security_block_page(server_until)
+                # The admin removed the lock (or it expired). Clear the stale
+                # browser cookie and let this request continue normally.
+                response = redirect(request.path)
+                response.delete_cookie(_SECURITY_LOCK_COOKIE, path="/")
+                return response
             if until > time.time():
                 return _security_block_page(until)
         except (BadSignature, SignatureExpired, ValueError, TypeError):
@@ -1515,7 +1534,7 @@ def set_security_device_cookie(response):
         )
     lock_until = getattr(g, "vybe_security_lock_until", 0)
     if lock_until and float(lock_until) > time.time():
-        signed = security_lock_serializer.dumps({"until": float(lock_until)})
+        signed = security_lock_serializer.dumps({"until": float(lock_until), "device_hash": _security_device_hash()})
         response.set_cookie(
             _SECURITY_LOCK_COOKIE,
             signed,
@@ -8259,113 +8278,62 @@ def admin_security_alerts():
         blocks = con.execute("SELECT * FROM vybe_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC", (time.time(),)).fetchall()
     finally:
         con.close()
-    active = "".join(
-        f'''<tr><td>{esc(r["last_name"] or "Unknown")}</td><td>{esc(r["last_student_id"] or "—")}</td><td><b>{esc(r["last_ip"] or "—")}</b></td><td>{esc(r["last_area"] or "—")}</td><td>{esc(datetime.fromtimestamp(float(r["blocked_until"]), timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M") if r["blocked_until"] else "—")}</td></tr>'''
-        for r in blocks
-    ) or '<tr><td colspan="5">No VYBE devices are currently blocked.</td></tr>'
+
+    def block_time(ts):
+        try:
+            return datetime.fromtimestamp(float(ts), timezone.utc).astimezone().strftime("%d %b %Y, %I:%M %p")
+        except Exception:
+            return "—"
+
+    if blocks:
+        cards = []
+        for r in blocks:
+            cards.append(f'''<article class="security-block-card">
+              <div class="security-block-main"><div class="security-avatar">!</div><div><div class="security-user">{esc(r["last_name"] or "Unknown")}</div><div class="security-meta">{esc(r["last_student_id"] or "—")} · {esc(r["last_area"] or "—")}</div></div></div>
+              <div class="security-block-grid"><div><span>IP ADDRESS</span><b>{esc(r["last_ip"] or "—")}</b></div><div><span>BLOCKED UNTIL</span><b>{block_time(r["blocked_until"])}</b></div><div><span>FAILED ATTEMPTS</span><b>{int(r["failed_attempts"] or 0)}</b></div></div>
+              <form method="post" action="/admin/security-alerts/unblock/{int(r["id"])}" onsubmit="return confirm('Remove this 24-hour VYBE security block and allow this user to log in again?')"><button class="btn good security-unblock">✓ Remove Block</button></form>
+            </article>''')
+        active = "".join(cards)
+    else:
+        active = '<div class="security-empty"><div>✓</div><strong>No active blocks</strong><span>VYBE has no devices currently restricted.</span></div>'
+
     rows = "".join(
-        f'''<tr><td>{esc(r["created_at"])}</td><td>{esc(r["name"] or "Unknown")}</td><td>{esc(r["student_id"] or "—")}</td><td><b>{esc(r["ip_address"] or "—")}</b></td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"] or "—")}</td></tr>'''
+        f'''<tr><td>{esc(r["created_at"])}</td><td><strong>{esc(r["name"] or "Unknown")}</strong><br><span class="small">{esc(r["student_id"] or "—")}</span></td><td>{esc(r["ip_address"] or "—")}</td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"] or "—")}</td></tr>'''
         for r in alerts
-    ) or '<tr><td colspan="6">No security alerts yet.</td></tr>'
-    body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Login security alerts.</h1><p class="muted">Three failed password attempts on one VYBE browser/device create a 24-hour device lock. The IP is recorded for the administrator but is not used as the primary lock key.</p><section class="section"><div class="card tablewrap"><h2>Currently blocked</h2><table><tr><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Blocked until</th></tr>{active}</table></div></section><section class="section"><div class="card tablewrap"><h2>Security alert history</h2><table><tr><th>Time (IST)</th><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section></section>'''
+    ) or '<tr><td colspan="5">No security alerts yet.</td></tr>'
+
+    body = f'''<section class="section security-center-page">
+      <div class="security-center-head"><div><a href="/admin/password" class="admin-back">← Password Access</a><div class="badge" style="margin-top:14px">VYBE SECURITY</div><h1>Security alerts.</h1><p class="muted">Review temporary login blocks created after three failed password attempts. The IP is recorded for investigation, but it is not the primary block key.</p></div><div class="security-summary"><strong>{len(blocks)}</strong><span>currently blocked</span></div></div>
+      <section class="security-panel"><div class="security-panel-head"><div><span class="security-kicker">ACTION REQUIRED</span><h2>Currently blocked</h2><p>Remove a block when you have confirmed the student is genuine. Removing it resets the failed-attempt counter and allows immediate login.</p></div><a class="btn dark" href="/admin/password">← Password Access</a></div><div class="security-block-list">{active}</div></section>
+      <section class="security-panel"><div class="security-panel-head"><div><span class="security-kicker">AUDIT TRAIL</span><h2>Security alert history</h2><p>Unblock actions are recorded here instead of deleting the original security event.</p></div></div><div class="tablewrap"><table><tr><th>Time</th><th>User</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section>
+    </section>
+    <style>.security-center-page{{max-width:1080px;margin:0 auto}}.security-center-head{{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:22px}}.security-center-head h1{{margin:8px 0}}.security-summary{{min-width:145px;padding:20px;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(255,255,255,.035);text-align:center}}.security-summary strong{{display:block;font-size:30px}}.security-summary span{{display:block;color:#9fb3c0;font-size:12px;margin-top:3px}}.security-panel{{margin-top:18px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.025)}}.security-panel-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:16px}}.security-panel-head h2{{margin:5px 0}}.security-panel-head p{{max-width:680px;margin:0;color:#9fb3c0}}.security-kicker{{font-size:10px;letter-spacing:.14em;font-weight:850;color:#7dc4e8}}.security-block-list{{display:grid;gap:12px}}.security-block-card{{padding:17px;border:1px solid rgba(255,112,112,.16);border-radius:17px;background:linear-gradient(145deg,rgba(255,82,82,.055),rgba(255,255,255,.025))}}.security-block-main{{display:flex;gap:12px;align-items:center}}.security-avatar{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(255,100,100,.12);color:#ff9c9c;font-weight:900}}.security-user{{font-weight:850;font-size:16px}}.security-meta{{color:#9fb3c0;font-size:12px;margin-top:3px}}.security-block-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}}.security-block-grid div{{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.035)}}.security-block-grid span{{display:block;font-size:9px;letter-spacing:.12em;color:#8299a8;margin-bottom:5px}}.security-block-grid b{{font-size:12px;word-break:break-word}}.security-empty{{padding:34px;text-align:center;color:#9fb3c0}}.security-empty div{{font-size:26px;color:#76d59a;margin-bottom:7px}}.security-empty strong{{display:block;color:#eef8ff}}.security-empty span{{display:block;font-size:12px;margin-top:4px}}@media(max-width:700px){{.security-center-head,.security-panel-head{{display:block}}.security-summary{{margin-top:16px}}.security-panel-head .btn{{display:inline-flex;margin-top:12px}}.security-block-grid{{grid-template-columns:1fr}}}}</style>'''
     return layout("Security Alerts", body, admin=True)
 
 
-@app.route("/admin/login-history")
+@app.route("/admin/security-alerts/unblock/<int:device_id>", methods=["POST"])
 @admin_required
-def admin_login_history():
+def admin_security_unblock(device_id):
     con = db()
-    rows = con.execute("SELECT id,logged_at_ist,success,event,ip_address,user_agent FROM admin_login_logs ORDER BY id DESC LIMIT 100").fetchall()
-    con.close()
-    items = ""
-    for r in rows:
-        state = '<span class="pill status-good">Success</span>' if r["success"] else '<span class="pill status-bad">Failed</span>'
-        items += f'''<tr><td>{esc(r["logged_at_ist"])}</td><td>{state}</td><td>{esc(r["event"])}</td><td>{esc(r["ip_address"] or "—")}</td><td class="small">{esc(r["user_agent"] or "—")}</td><td><form method="post" action="{{ url_for('admin_delete_login_history', history_id=r['id']) }}" onsubmit="return confirm('Delete this login history entry?');"><button type="submit" class="danger">Delete</button></form></td></tr>'''
-    body=f'''<section class="section"><div class="badge">SECURITY AUDIT</div><h1>Admin login history.</h1><p class="muted">Authentication attempts are recorded in IST. Passwords are never stored in this log.</p><div class="card tablewrap"><table><tr><th>Time (IST)</th><th>Result</th><th>Event</th><th>IP</th><th>Browser / device</th><th>Action</th></tr>{items or '<tr><td colspan="5">No admin login activity yet.</td></tr>'}</table>
-<div style="display:flex;justify-content:flex-end;margin:10px 0;">
-<form method="post" action="/admin/login-history/delete-all" onsubmit="return confirm('Delete all login history?');">
-<button type="submit" class="danger">Delete All History</button>
-</form>
-</div>
-</div></section>'''
-    return layout("Admin Login History", body, admin=True)
-
-
-@app.route("/admin/logout")
-def admin_logout():
-    session.clear(); return redirect(url_for("home"))
-
-
-@app.route("/admin/panel")
-@admin_required
-def admin_panel():
-    con = db()
-    stats = {
-        "students": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],
-        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
-        "messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
-        "timetables": con.execute("SELECT COUNT(*) AS c FROM timetables").fetchone()["c"],
-        "updates": con.execute("SELECT COUNT(*) AS c FROM academic_updates").fetchone()["c"],
-        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
-        "problems": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
-        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
-        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
-    }
-    online = setting(con, "vybe_online", "1") == "1"
-    con.close()
-    cards = [
-        ("01", "Students & Access", "Approve requests, block/unblock students and manage publisher access.", "/admin/students", stats["students"], "STUDENTS", "blue", "♙"),
-        ("02", "Community", "Turn Community Chat on/off and moderate student messages.", "/admin/community-chat", stats["messages"], "MESSAGES", "purple", "◉"),
-        ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green", "◷"),
-        ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue", "⚑"),
-        ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green", "▦"),
-        ("06", "Help Desk", "Review student problems, send official solutions and manage reports.", "/admin/problems", stats["problems"], "REPORTS", "orange", "?"),
-        ("07", "Announcements", "Create campus-wide announcements and remove outdated ones.", "/admin/announcements", stats["announcements"], "LIVE", "orange", "▤"),
-        ("08", "Events", "Create upcoming campus events and delete finished or incorrect ones.", "/admin/events", stats["events"], "EVENTS", "purple", "✦"),
-    ]
-    card_html = ''.join(f'<a class="admin-home-card admin-home-card-{tone}" href="{href}"><div class="admin-home-card-top"><span class="admin-home-number">{num}</span><span class="admin-home-count">{count} {label}</span></div><div class="admin-home-icon" aria-hidden="true">{icon}</div><h2>{title}</h2><p>{desc}</p><span class="admin-home-open">Open page <b>→</b></span></a>' for num,title,desc,href,count,label,tone,icon in cards)
-    body = f"""<section class="section admin-home-page">
-      <div class="admin-home-hero">
-        <div><span class="admin-home-kicker">PRIVATE VYBE ADMIN</span><h1>Control everything<br><em>from one place.</em></h1><p>Choose exactly what you want to manage. Every card opens its own admin page with the controls for that area.</p></div>
-        <div class="admin-home-status {"online" if online else "offline"}"><span></span><div><strong>{"VYBE is online" if online else "VYBE is offline"}</strong><small>Public access status</small></div><a href="/admin/status">Manage</a></div>
-      </div>
-      <div class="admin-home-stats"><div><b>{stats["students"]}</b><span>Students</span></div><div><b>{stats["pending"]}</b><span>Pending</span></div><div><b>{stats["updates"]}</b><span>Academic updates</span></div><div><b>{stats["problems"]}</b><span>Help desk</span></div><div><b>{stats["events"]}</b><span>Events</span></div></div>
-      <div class="admin-home-section-title"><div><span>ADMIN AREAS</span><h2>Choose a section</h2></div><small>Each card opens a separate management page.</small></div>
-      <div class="admin-home-grid">{card_html}</div>
-      <div class="admin-home-bottom"><a href="/admin/settings"><span>⚙</span><div><b>Settings</b><small>General VYBE configuration, Drive links and notifications.</small></div><strong>→</strong></a><a href="/admin/analytics"><span>↗</span><div><b>Analytics</b><small>See usage, students, content and community activity.</small></div><strong>→</strong></a><a href="/admin/assistant"><span>✦</span><div><b>VYBE AI Settings</b><small>Manage assistant knowledge and controls.</small></div><strong>→</strong></a></div>
-    </section>"""
-    return layout("Admin Dashboard", body, admin=True)
-
-
-@app.route("/admin/manage")
-@admin_required
-def admin_manage():
-    con = db()
-    counts = {
-        "students": con.execute("SELECT COUNT(*) AS c FROM students").fetchone()["c"],
-        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
-        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
-        "updates": con.execute("SELECT COUNT(*) AS c FROM academic_updates").fetchone()["c"],
-        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
-        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
-        "faculty": con.execute("SELECT COUNT(*) AS c FROM faculty").fetchone()["c"],
-        "problems": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
-        "community": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
-    }
-    con.close()
-    def action(label, href, desc):
-        return f'<a class="admin-tool" href="{href}"><span class="admin-tool-name">{label}</span><span class="admin-tool-desc">{desc}</span><span class="admin-tool-arrow">→</span></a>'
-    body = f"""<section class="section admin-manage-page">
-      <div class="admin-inner-top"><a href="/admin/panel" class="admin-back">← Dashboard</a><div class="badge admin-eyebrow">VYBE ADMIN</div></div>
-      <div class="admin-manage-title"><h1>Manage VYBE.</h1><p>Every control is grouped by purpose, so you can operate the admin side without hunting through a long dashboard.</p></div>
-      <section id="people" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>01 · PEOPLE</span><h2>Students & access</h2></div><b>{counts["students"]} students</b></div><div class="admin-tool-grid">{action("Students", "/admin/students", str(counts["students"]) + " student accounts")}{action("Pending requests", "/admin/students#pending", str(counts["pending"]) + " waiting for approval")}{action("Problem reports & solutions", "/admin/problems-solutions", str(counts["problems"]) + " reports")}{action("Problem chats", "/admin/chats", "Saved problem and solution history")}</div></section>
-      <section id="academics" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>02 · ACADEMICS</span><h2>Academic content</h2></div><b>{counts["resources"] + counts["updates"]} items</b></div><div class="admin-tool-grid">{action("Academic Hub", "/admin/academic-hub", "Results, datesheets, forms and updates")}{action("Resources", "/admin/resources", str(counts["resources"]) + " resources")}{action("Timetable", "/admin/timetable", "Post or replace student timetables")}{action("Academic updates", "/admin/academic-hub", str(counts["updates"]) + " published updates")}</div></section>
-      <section id="campus" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>03 · CAMPUS</span><h2>Campus updates</h2></div><b>{counts["announcements"] + counts["events"]} live items</b></div><div class="admin-tool-grid">{action("Announcements", "/admin/announcements", str(counts["announcements"]) + " published")}{action("Events", "/admin/events", str(counts["events"]) + " campus events")}{action("Faculty & contacts", "/admin/campus", str(counts["faculty"]) + " faculty records")}</div></section>
-      <section id="community" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>04 · COMMUNITY</span><h2>Student community</h2></div><b>{counts["community"]} messages</b></div><div class="admin-tool-grid">{action("Community Chat", "/admin/community-chat", str(counts["community"]) + " live messages")}{action("Problem chats", "/admin/chats", "Saved student problem conversations")}</div></section>
-      <section id="assistant" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>05 · VYBE AI</span><h2>Assistant control</h2></div><b>Knowledge & memory</b></div><div class="admin-tool-grid">{action("VYBE Assistant", "/admin/assistant", "Knowledge, memory and ON/OFF control")}</div></section>
-      <section id="system" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>06 · SYSTEM</span><h2>Security & settings</h2></div><b>Admin only</b></div><div class="admin-tool-grid">{action("Settings", "/admin/settings", "General VYBE configuration")}{action("Security center", "/admin/password", "Admin password and passkey")}{action("Password requests", "/admin/password-requests", "Review student password requests")}{action("Login history", "/admin/login-history", "Review admin authentication activity")}{action("Security alerts", "/admin/security-alerts", "Blocked IPs and failed-login alerts")}{action("Analytics", "/admin/analytics", "Usage and community activity")}{action("Public status", "/admin/status", "Take VYBE online or offline")}</div></section>
-    </section>"""
-    return layout("Manage VYBE", body, admin=True)
+    try:
+        row = con.execute("SELECT * FROM vybe_security_devices WHERE id=?", (device_id,)).fetchone()
+        if not row:
+            con.close()
+            flash("That security block no longer exists.")
+            return redirect(url_for("admin_security_alerts"))
+        con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE id=?", (now(), device_id))
+        con.execute("INSERT INTO vybe_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
+                     (now_ist(), "admin_unblock", row["last_name"] or "Unknown", row["last_student_id"] or "", row["last_ip"] or "", row["last_area"] or "", 0, "Security block manually removed by an administrator."))
+        con.commit()
+        _security_cache_set(row["device_hash"], 0)
+        con.close()
+        flash(f'Security block removed for {row["last_name"] or "the user"}. They can log in again immediately.')
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        con.close()
+        flash("We could not remove that security block. Please try again.")
+    return redirect(url_for("admin_security_alerts"))
 
 
 @app.route("/admin/analytics")
@@ -9937,6 +9905,7 @@ def admin_password():
         <div class="small">{"Current passkey verified " if session.get("passkey_verified") else "Verify current passkey above before changing the password."}</div>
       </div>
     </div></section><script>{WEBAUTHN_JS}</script>'''
+    body = body.replace("</section><script>", "</section><style>.security-password-head{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;margin-bottom:20px}.security-password-head h1{margin:7px 0}.security-alert-button{display:flex;align-items:center;gap:12px;min-width:280px;padding:15px 17px;border:1px solid rgba(125,196,232,.2);border-radius:17px;background:linear-gradient(145deg,rgba(20,75,105,.32),rgba(255,255,255,.035));color:inherit;text-decoration:none}.security-alert-button>span{font-size:20px}.security-alert-button div{flex:1}.security-alert-button strong,.security-alert-button small{display:block}.security-alert-button small{color:#9fb3c0;font-size:11px;margin-top:3px}.security-alert-button>b{font-size:18px}@media(max-width:760px){.security-password-head{display:block}.security-alert-button{margin-top:16px;min-width:0;width:100%;box-sizing:border-box}}</style><script>")
     return layout("Security", body, admin=True)
 
 
