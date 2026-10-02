@@ -27,7 +27,7 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, g
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -623,6 +623,17 @@ def init_db():
                 ip_address TEXT,
                 user_agent TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS login_security_blocks (
+                ip_address TEXT PRIMARY KEY, failed_attempts INTEGER NOT NULL DEFAULT 0,
+                first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0, blocked_until DOUBLE PRECISION NOT NULL DEFAULT 0,
+                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '', last_area TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS login_security_alerts (
+                id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
+                area TEXT NOT NULL DEFAULT '', blocked_until DOUBLE PRECISION, message TEXT NOT NULL DEFAULT '', read_at TEXT
+            )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id BIGSERIAL PRIMARY KEY,
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -772,6 +783,16 @@ def init_db():
                 event TEXT NOT NULL DEFAULT 'login',
                 ip_address TEXT,
                 user_agent TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS login_security_blocks (
+                ip_address TEXT PRIMARY KEY, failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at REAL NOT NULL DEFAULT 0,
+                blocked_until REAL NOT NULL DEFAULT 0, last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
+                last_area TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS login_security_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
+                area TEXT NOT NULL DEFAULT '', blocked_until REAL, message TEXT NOT NULL DEFAULT '', read_at TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1014,6 +1035,42 @@ def student_is_online(last_seen, timeout_seconds=300):
         return False
 
 
+_AUTHZ_CACHE_LOCK = threading.Lock()
+_AUTHZ_CACHE = {}
+_AUTHZ_CACHE_TTL = 20.0
+
+def _student_status_cached(sid):
+    key = int(sid)
+    now_m = time.monotonic()
+    with _AUTHZ_CACHE_LOCK:
+        item = _AUTHZ_CACHE.get(("student", key))
+        if item and item[0] > now_m:
+            return item[1]
+    con = db()
+    try:
+        row = con.execute("SELECT id,status FROM students WHERE id=?", (key,)).fetchone()
+        status = row["status"] if row else None
+    finally:
+        con.close()
+    with _AUTHZ_CACHE_LOCK:
+        _AUTHZ_CACHE[("student", key)] = (now_m + _AUTHZ_CACHE_TTL, status)
+    return status
+
+def _passkey_count_cached():
+    now_m = time.monotonic()
+    with _AUTHZ_CACHE_LOCK:
+        item = _AUTHZ_CACHE.get(("passkey", 0))
+        if item and item[0] > now_m:
+            return int(item[1])
+    con = db()
+    try:
+        count = int(con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"])
+    finally:
+        con.close()
+    with _AUTHZ_CACHE_LOCK:
+        _AUTHZ_CACHE[("passkey", 0)] = (now_m + _AUTHZ_CACHE_TTL, count)
+    return count
+
 def student_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -1021,15 +1078,13 @@ def student_required(fn):
         if not sid:
             return redirect(url_for("login"))
         try:
-            con = db()
-            row = con.execute("SELECT id,status FROM students WHERE id=?", (sid,)).fetchone()
-            con.close()
+            status = _student_status_cached(sid)
         except Exception as exc:
             app.logger.error("Student authentication check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
             session.clear()
             flash("VYBE could not verify your account right now. Please try again.")
             return redirect(url_for("login"))
-        if not row or row["status"] != "approved":
+        if status != "approved":
             session.clear()
             flash("Your student access is not currently active.")
             return redirect(url_for("login"))
@@ -1090,9 +1145,7 @@ def admin_required(fn):
         }
         if endpoint not in allowed_without_passkey:
             try:
-                con = db()
-                count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
-                con.close()
+                count = _passkey_count_cached()
             except Exception as exc:
                 app.logger.error("Admin passkey check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
                 flash("VYBE could not verify admin security right now. Please try again.")
@@ -1204,6 +1257,164 @@ def _rate_limited(method, path):
         q.append(now_m)
     return False
 
+def _security_client_ip():
+    """Return the client IP as seen through Vercel's trusted proxy headers."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        candidate = forwarded.split(",", 1)[0].strip()
+        try:
+            ipaddress.ip_address(candidate)
+            return candidate
+        except ValueError:
+            pass
+    real = request.headers.get("X-Real-IP", "").strip()
+    try:
+        ipaddress.ip_address(real)
+        return real
+    except ValueError:
+        return (request.remote_addr or "unknown")[:100]
+
+_SECURITY_CACHE_LOCK = threading.Lock()
+_SECURITY_DEVICE_CACHE = {}
+_SECURITY_CACHE_TTL = 30.0
+_SECURITY_DEVICE_COOKIE = "__Host-vybe_device" if _COOKIE_SECURE else "vybe_device"
+_SECURITY_DEVICE_MAX_AGE = 60 * 60 * 24 * 365
+
+
+def _security_device_token():
+    """Return a stable random browser token, never a hardware fingerprint."""
+    token = getattr(g, "vybe_device_token", None)
+    if token:
+        return token
+    token = request.cookies.get(_SECURITY_DEVICE_COOKIE, "").strip()
+    if len(token) < 32 or len(token) > 200:
+        token = secrets.token_urlsafe(32)
+        g.vybe_device_cookie_new = True
+    g.vybe_device_token = token
+    return token
+
+
+def _security_device_hash(token=None):
+    token = token or _security_device_token()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _security_cache_set(device_hash, blocked_until):
+    with _SECURITY_CACHE_LOCK:
+        _SECURITY_DEVICE_CACHE[device_hash] = (time.monotonic() + _SECURITY_CACHE_TTL, float(blocked_until or 0))
+        if len(_SECURITY_DEVICE_CACHE) > 10000:
+            now_m = time.monotonic()
+            stale = [k for k, (expires, _) in _SECURITY_DEVICE_CACHE.items() if expires <= now_m]
+            for k in stale[:5000]:
+                _SECURITY_DEVICE_CACHE.pop(k, None)
+
+
+def _security_cache_get(device_hash):
+    with _SECURITY_CACHE_LOCK:
+        item = _SECURITY_DEVICE_CACHE.get(device_hash)
+        if not item:
+            return None
+        expires, blocked_until = item
+        if expires <= time.monotonic():
+            _SECURITY_DEVICE_CACHE.pop(device_hash, None)
+            return None
+        return blocked_until
+
+
+def _security_block_status(con, device_hash):
+    row = con.execute("SELECT * FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+    if not row:
+        return None
+    until = float(row["blocked_until"] or 0)
+    if until > time.time():
+        return row
+    try:
+        con.execute("UPDATE login_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
+        con.commit()
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+    _security_cache_set(device_hash, 0)
+    return None
+
+
+def _security_block_page(until=0):
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Access temporarily blocked · VYBE</title><style>body{margin:0;background:#020817;color:#eef8ff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.box{width:min(560px,100%);padding:38px;border:1px solid rgba(111,190,230,.2);border-radius:24px;background:linear-gradient(145deg,rgba(9,30,47,.97),rgba(3,14,25,.98));box-shadow:0 25px 80px rgba(0,0,0,.45);text-align:center;box-sizing:border-box}.mark{width:62px;height:62px;border-radius:18px;margin:0 auto 22px;display:grid;place-items:center;background:rgba(255,112,112,.12);border:1px solid rgba(255,112,112,.28);color:#ff9b9b;font-weight:900;font-size:25px}.eyebrow{font-size:11px;font-weight:850;letter-spacing:.14em;color:#8fc9e8}h1{font-size:31px;line-height:1.1;margin:10px 0 14px}p{color:#aac0cf;line-height:1.65;margin:0}.notice{margin-top:22px;padding:15px 16px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);font-size:13px}strong{color:#fff}</style></head><body><main class="box"><div class="mark">!</div><div class="eyebrow">VYBE SECURITY</div><h1>Access temporarily blocked.</h1><p>There were too many unsuccessful login attempts from this browser.</p><div class="notice"><strong>Limit exceeded.</strong><br>For your security, access to VYBE is blocked for 24 hours. Please try again after the block expires.</div></main></body></html>"""
+
+
+def _security_failed_login(con, name, student_id, area):
+    """Track failures per account + VYBE device; never block a shared campus IP."""
+    device_hash = _security_device_hash()
+    ip = _security_client_ip()
+    current = time.time()
+    existing_device = _security_block_status(con, device_hash)
+    if existing_device:
+        return True, float(existing_device["blocked_until"] or current), int(existing_device["failed_attempts"] or 3)
+
+    name = str(name or "Unknown").strip()[:120]
+    student_id = str(student_id or "").strip()[:120]
+    area = str(area or "").strip()[:40]
+    account_key = hashlib.sha256((area.lower() + "|" + student_id.lower()).encode("utf-8")).hexdigest()
+    row = con.execute("SELECT * FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area)).fetchone()
+    if row and float(row["first_failed_at"] or 0) and current - float(row["first_failed_at"]) >= 86400:
+        attempts, first = 0, current
+    elif row:
+        attempts, first = int(row["failed_attempts"] or 0), float(row["first_failed_at"] or current)
+    else:
+        attempts, first = 0, current
+    attempts += 1
+
+    if row:
+        con.execute("UPDATE login_security_attempts SET failed_attempts=?, first_failed_at=?, updated_at=? WHERE account_key=? AND device_hash=? AND area=?", (attempts, first, now(), account_key, device_hash, area))
+    else:
+        con.execute("INSERT INTO login_security_attempts(account_key,device_hash,area,failed_attempts,first_failed_at,updated_at) VALUES(?,?,?,?,?,?)", (account_key, device_hash, area, attempts, first, now()))
+
+    blocked_until = current + 86400 if attempts >= 3 else 0
+    if blocked_until:
+        existing = con.execute("SELECT device_hash FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+        if existing:
+            con.execute("UPDATE login_security_devices SET failed_attempts=?, first_failed_at=?, blocked_until=?, last_name=?, last_student_id=?, last_area=?, last_ip=?, updated_at=? WHERE device_hash=?", (attempts, first, blocked_until, name, student_id, area, ip, now(), device_hash))
+        else:
+            con.execute("INSERT INTO login_security_devices(device_hash,failed_attempts,first_failed_at,blocked_until,last_name,last_student_id,last_area,last_ip,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (device_hash, attempts, first, blocked_until, name, student_id, area, ip, now(), now()))
+        con.execute("INSERT INTO login_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)", (now_ist(), "login_block", name, student_id, ip, area, blocked_until, f"3 failed {area.lower()} password attempts on one VYBE device; device blocked for 24 hours."))
+        _security_cache_set(device_hash, blocked_until)
+    con.commit()
+    return bool(blocked_until), blocked_until, attempts
+
+
+def _security_successful_login(con, area, student_id):
+    """Clear the failed counter for this account/device after a valid login."""
+    try:
+        device_hash = _security_device_hash()
+        account_key = hashlib.sha256((str(area).lower() + "|" + str(student_id).lower()).encode("utf-8")).hexdigest()
+        con.execute("DELETE FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area))
+        con.commit()
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+
+
+def _security_blocked_request_response():
+    """Fast path: use a short in-process cache; Neon is consulted only on cache miss."""
+    token = request.cookies.get(_SECURITY_DEVICE_COOKIE, "").strip()
+    if len(token) < 32 or len(token) > 200:
+        return None
+    device_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    cached = _security_cache_get(device_hash)
+    if cached is not None:
+        if cached > time.time():
+            return _security_block_page(cached)
+        return None
+    con = db()
+    try:
+        row = _security_block_status(con, device_hash)
+        until = float(row["blocked_until"] or 0) if row else 0
+        _security_cache_set(device_hash, until)
+        return _security_block_page(until) if until > time.time() else None
+    finally:
+        try: con.close()
+        except Exception: pass
+
 def _same_origin_unsafe_request():
     """Layered CSRF protection: same-origin plus a per-session token."""
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -1237,6 +1448,21 @@ def _csrf_token_valid():
 _VYBE_ONLINE_CACHE = {"at": 0.0, "value": True}
 
 
+@app.after_request
+def set_security_device_cookie(response):
+    if getattr(g, "vybe_device_cookie_new", False):
+        response.set_cookie(
+            _SECURITY_DEVICE_COOKIE,
+            g.vybe_device_token,
+            max_age=_SECURITY_DEVICE_MAX_AGE,
+            secure=_COOKIE_SECURE,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
+    return response
+
+
 @app.before_request
 def global_online_gate():
     path = request.path
@@ -1244,6 +1470,10 @@ def global_online_gate():
         host = (request.host or "").split(":", 1)[0].lower().strip(".")
         if host not in _ALLOWED_HOSTS:
             abort(400, description="Unrecognized VYBE host.")
+    _security_device_token()
+    blocked_response = _security_blocked_request_response()
+    if blocked_response:
+        return blocked_response, 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_urlsafe(32)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -4569,15 +4799,22 @@ def login():
             flash("Student ID and password are required.")
             return redirect(url_for("login"))
         con = db()
-        row = con.execute("SELECT id,status,password_hash FROM students WHERE student_id=?", (sid,)).fetchone()
+        row = con.execute("SELECT id,name,status,password_hash FROM students WHERE student_id=?", (sid,)).fetchone()
         if not row:
-            con.close(); session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
+            blocked, until, _ = _security_failed_login(con, "Unknown student", sid, "Student")
+            con.close()
+            if blocked: return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
+            session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
         if row["status"] == "pending":
             con.close(); flash("Your registration is still pending admin approval."); return redirect(url_for("login"))
         if row["status"] == "blocked":
             con.close(); flash("Your student access is currently blocked."); return redirect(url_for("login"))
         if not check_password(password, row["password_hash"]):
-            con.close(); session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
+            blocked, until, _ = _security_failed_login(con, row["name"], sid, "Student")
+            con.close()
+            if blocked: return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
+            session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
+        _security_successful_login(con, "Student", sid)
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
         session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
@@ -7842,12 +8079,15 @@ def admin_login():
         stored = admin_password_hash(con)
         ok = check_password(password, stored)
         record_admin_login(con, ok, "password_login")
-        con.commit()
-        con.close()
         if not ok:
+            blocked, until, _ = _security_failed_login(con, "Admin", "", "Admin")
+            con.close()
+            if blocked: return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
             session["admin_login_password_error"] = True
             flash("Incorrect admin password.")
             return redirect(url_for("admin_login"))
+        _security_successful_login(con, "Admin", "admin")
+        con.commit(); con.close()
 
         session.clear()
         session.permanent = True
@@ -7944,6 +8184,16 @@ def admin_login_passkey_verify():
         return jsonify(error="Passkey verification failed.", detail=str(exc) if app.debug else None), 403
 
 
+@app.route("/admin/security-alerts")
+@admin_required
+def admin_security_alerts():
+    con=db(); alerts=con.execute("SELECT * FROM login_security_alerts ORDER BY id DESC LIMIT 200").fetchall(); blocks=con.execute("SELECT * FROM login_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC",(time.time(),)).fetchall(); con.close()
+    active="".join(f'''<tr><td>{esc(r["last_name"] or "Unknown")}</td><td>{esc(r["last_student_id"] or "—")}</td><td><b>{esc(r["ip_address"])}</b></td><td>{esc(r["last_area"] or "—")}</td><td>{esc(datetime.fromtimestamp(float(r["blocked_until"]), timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M") if r["blocked_until"] else "—")}</td></tr>''' for r in blocks) or '<tr><td colspan="5">No VYBE devices are currently blocked.</td></tr>'
+    rows="".join(f'''<tr><td>{esc(r["created_at"])}</td><td>{esc(r["name"] or "Unknown")}</td><td>{esc(r["student_id"] or "—")}</td><td><b>{esc(r["ip_address"])}</b></td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"])}</td></tr>''' for r in alerts) or '<tr><td colspan="6">No security alerts yet.</td></tr>'
+    body=f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Login security alerts.</h1><p class="muted">VYBE records the source IP and account name when three failed password attempts on one VYBE device trigger a 24-hour block.</p><section class="section"><div class="card tablewrap"><h2>Currently blocked</h2><table><tr><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Blocked until</th></tr>{active}</table></div></section><section class="section"><div class="card tablewrap"><h2>Security alert history</h2><table><tr><th>Time (IST)</th><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section></section>'''
+    return layout("Security Alerts",body,admin=True)
+
+
 @app.route("/admin/login-history")
 @admin_required
 def admin_login_history():
@@ -8036,7 +8286,7 @@ def admin_manage():
       <section id="campus" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>03 · CAMPUS</span><h2>Campus updates</h2></div><b>{counts["announcements"] + counts["events"]} live items</b></div><div class="admin-tool-grid">{action("Announcements", "/admin/announcements", str(counts["announcements"]) + " published")}{action("Events", "/admin/events", str(counts["events"]) + " campus events")}{action("Faculty & contacts", "/admin/campus", str(counts["faculty"]) + " faculty records")}</div></section>
       <section id="community" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>04 · COMMUNITY</span><h2>Student community</h2></div><b>{counts["community"]} messages</b></div><div class="admin-tool-grid">{action("Community Chat", "/admin/community-chat", str(counts["community"]) + " live messages")}{action("Problem chats", "/admin/chats", "Saved student problem conversations")}</div></section>
       <section id="assistant" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>05 · VYBE AI</span><h2>Assistant control</h2></div><b>Knowledge & memory</b></div><div class="admin-tool-grid">{action("VYBE Assistant", "/admin/assistant", "Knowledge, memory and ON/OFF control")}</div></section>
-      <section id="system" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>06 · SYSTEM</span><h2>Security & settings</h2></div><b>Admin only</b></div><div class="admin-tool-grid">{action("Settings", "/admin/settings", "General VYBE configuration")}{action("Security center", "/admin/password", "Admin password and passkey")}{action("Password requests", "/admin/password-requests", "Review student password requests")}{action("Login history", "/admin/login-history", "Review admin authentication activity")}{action("Analytics", "/admin/analytics", "Usage and community activity")}{action("Public status", "/admin/status", "Take VYBE online or offline")}</div></section>
+      <section id="system" class="admin-tool-section"><div class="admin-tool-section-head"><div><span>06 · SYSTEM</span><h2>Security & settings</h2></div><b>Admin only</b></div><div class="admin-tool-grid">{action("Settings", "/admin/settings", "General VYBE configuration")}{action("Security center", "/admin/password", "Admin password and passkey")}{action("Password requests", "/admin/password-requests", "Review student password requests")}{action("Login history", "/admin/login-history", "Review admin authentication activity")}{action("Security alerts", "/admin/security-alerts", "Blocked IPs and failed-login alerts")}{action("Analytics", "/admin/analytics", "Usage and community activity")}{action("Public status", "/admin/status", "Take VYBE online or offline")}</div></section>
     </section>"""
     return layout("Manage VYBE", body, admin=True)
 
@@ -10147,7 +10397,45 @@ def init_drive_db():
         con.commit()
     finally: con.close()
 
+def _ensure_login_security_schema():
+    con = db()
+    try:
+        if con.is_pg:
+            con.execute("""CREATE TABLE IF NOT EXISTS login_security_devices (
+                device_hash TEXT PRIMARY KEY,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                blocked_until DOUBLE PRECISION NOT NULL DEFAULT 0,
+                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
+                last_area TEXT NOT NULL DEFAULT '', last_ip TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS login_security_attempts (
+                account_key TEXT NOT NULL, device_hash TEXT NOT NULL, area TEXT NOT NULL,
+                failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL, PRIMARY KEY(account_key, device_hash, area)
+            )""")
+        else:
+            con.execute("""CREATE TABLE IF NOT EXISTS login_security_devices (
+                device_hash TEXT PRIMARY KEY,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                first_failed_at REAL NOT NULL DEFAULT 0,
+                blocked_until REAL NOT NULL DEFAULT 0,
+                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
+                last_area TEXT NOT NULL DEFAULT '', last_ip TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS login_security_attempts (
+                account_key TEXT NOT NULL, device_hash TEXT NOT NULL, area TEXT NOT NULL,
+                failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at REAL NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL, PRIMARY KEY(account_key, device_hash, area)
+            )""")
+        con.commit()
+    finally:
+        con.close()
+
 init_db()
+_ensure_login_security_schema()
 init_drive_db()
 
 
@@ -10201,4 +10489,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
