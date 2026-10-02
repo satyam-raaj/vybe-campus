@@ -9252,7 +9252,7 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=()=>reject(new Error('Drive upload could not reach Google Drive. Please retry; if it repeats, open the browser Network tab and check the Google upload request.'));xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=2*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
@@ -9266,6 +9266,114 @@ def admin_drive_upload_session():
     if category not in DRIVE_CATEGORY_MAP: return jsonify(error="Choose a valid VYBE Drive section."),400
     try: return jsonify(upload_url=_drive_start_resumable(name,str(data.get("mimeType") or "application/octet-stream"),_drive_category_folder(category,True),int(data.get("size") or 0)))
     except Exception as e: return jsonify(error=str(e)),502
+
+def _drive_validate_session_url(session_url):
+    parsed = urlparse(session_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in {"www.googleapis.com", "googleapis.com"}:
+        raise ValueError("Invalid Google Drive upload session URL.")
+    return session_url
+
+@app.route("/admin/drive/upload-status", methods=["POST"])
+@admin_required
+def admin_drive_upload_status():
+    data=request.get_json(force=True) or {}
+    session_url=str(data.get("session_url") or "").strip()
+    try:
+        total=int(data.get("total") or 0)
+    except (TypeError,ValueError):
+        return jsonify(error="Invalid upload size."),400
+    if not session_url or total <= 0:
+        return jsonify(error="Missing upload session or size."),400
+    try:
+        session_url=_drive_validate_session_url(session_url)
+        req=URLRequest(
+            session_url,
+            data=b"",
+            headers={
+                "Authorization": f"Bearer {_drive_access_token()}",
+                "Content-Length": "0",
+                "Content-Range": f"bytes */{total}",
+            },
+            method="PUT",
+        )
+        try:
+            with urlopen(req, timeout=60) as resp:
+                body=resp.read()
+                payload=json.loads(body.decode("utf-8")) if body else {}
+                if resp.status in (200,201):
+                    return jsonify(complete=True,next_start=total,metadata=payload)
+        except HTTPError as e:
+            if e.code == 308:
+                rng=e.headers.get("Range", "")
+                m=re.search(r"(\d+)-(\d+)$", rng)
+                next_start=int(m.group(2))+1 if m else 0
+                return jsonify(complete=False,next_start=next_start),200
+            raw_error=e.read()
+            try: detail=json.loads(raw_error.decode("utf-8"))
+            except Exception: detail=raw_error.decode("utf-8",errors="replace")
+            return jsonify(error=f"Google Drive API {e.code}: {detail}"),502
+    except Exception as e:
+        return jsonify(error=f"Google Drive upload status failed: {type(e).__name__}: {e}"),502
+    return jsonify(error="Google Drive did not return an upload status."),502
+
+@app.route("/admin/drive/upload-chunk", methods=["POST"])
+@admin_required
+def admin_drive_upload_chunk():
+    """Fallback for browsers that block CORS to Google's resumable session URL.
+
+    Each request is deliberately small so it stays within typical Vercel request
+    body limits. The file is still written to the Google Drive resumable session;
+    VYBE does not store the uploaded file on disk or in the database.
+    """
+    session_url = request.args.get("session_url", "").strip()
+    try:
+        session_url = _drive_validate_session_url(session_url)
+    except ValueError as e:
+        return jsonify(error=str(e)),400
+    try:
+        start = int(request.args.get("start", "0"))
+        end = int(request.args.get("end", "-1"))
+        total = int(request.args.get("total", "0"))
+    except ValueError:
+        return jsonify(error="Invalid upload range."),400
+    if not session_url or start < 0 or end < start or total <= end:
+        return jsonify(error="Invalid Drive upload session or range."),400
+    raw = request.get_data(cache=False, as_text=False)
+    expected = end - start + 1
+    if len(raw) != expected:
+        return jsonify(error=f"Upload chunk size mismatch: expected {expected} bytes, received {len(raw)}."),400
+    try:
+        req = URLRequest(
+            session_url,
+            data=raw,
+            headers={
+                "Authorization": f"Bearer {_drive_access_token()}",
+                "Content-Length": str(len(raw)),
+                "Content-Range": f"bytes {start}-{end}/{total}",
+                "Content-Type": "application/octet-stream",
+            },
+            method="PUT",
+        )
+        try:
+            with urlopen(req, timeout=120) as resp:
+                body = resp.read()
+                payload = json.loads(body.decode("utf-8")) if body else {}
+                return jsonify(next_start=total if resp.status in (200,201) else end + 1, complete=resp.status in (200,201), metadata=payload)
+        except HTTPError as e:
+            raw_error = e.read()
+            if e.code == 308:
+                rng = e.headers.get("Range", "")
+                m = re.search(r"(\d+)-(\d+)$", rng)
+                next_start = int(m.group(2)) + 1 if m else end + 1
+                return jsonify(next_start=next_start, complete=False),200
+            try:
+                detail=json.loads(raw_error.decode("utf-8"))
+            except Exception:
+                detail=raw_error.decode("utf-8", errors="replace")
+            return jsonify(error=f"Google Drive API {e.code}: {detail}"),502
+    except Exception as e:
+        return jsonify(error=f"Google Drive upload failed: {type(e).__name__}: {e}"),502
 
 @app.route("/admin/drive/register", methods=["POST"])
 @admin_required
@@ -9819,7 +9927,11 @@ def _drive_credentials():
 def _drive_access_token():
     return _drive_credentials().token
 
-def _drive_http(method, url, body=None, headers=None, timeout=30):
+def _drive_http(method, url, body=None, headers=None, timeout=30, query=None):
+    if query:
+        from urllib.parse import urlencode
+        sep = "&" if "?" in url else "?"
+        url += sep + urlencode(query)
     hdr={"Authorization": f"Bearer {_drive_access_token()}", "Accept":"application/json"}
     if headers: hdr.update(headers)
     data=body
