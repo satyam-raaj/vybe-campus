@@ -1584,6 +1584,13 @@ def global_online_gate():
     _security_device_token()
     blocked_response = _security_blocked_request_response()
     if blocked_response:
+        # When an admin has revoked a block, the security check returns a real
+        # redirect after scheduling deletion of the stale lock cookie. Do not
+        # wrap that redirect in HTTP 429: browsers will not follow redirects
+        # carrying a 429 status, which would leave the student stuck on the
+        # blocked page even though the Neon block was already removed.
+        if getattr(blocked_response, "status_code", 200) in {301, 302, 303, 307, 308}:
+            return blocked_response
         return blocked_response, 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
     if "_csrf_token" not in session:
         session["_csrf_token"] = secrets.token_urlsafe(32)
@@ -8347,13 +8354,44 @@ def admin_security_unblock(device_hash):
             con.close()
             flash("That security block no longer exists.")
             return redirect(url_for("admin_security_alerts"))
-        con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
+        # A student may have more than one VYBE device record (for example
+        # after clearing cookies or switching between phone/desktop). Remove
+        # every active block belonging to this student, not just the one
+        # device card the admin happened to click. This prevents another
+        # device row from continuing to return the 429 security page.
+        student_id = str(row["last_student_id"] or "").strip()
+        if student_id:
+            device_rows = con.execute(
+                "SELECT device_hash,last_area,last_ip FROM vybe_security_devices WHERE last_student_id=? AND blocked_until>?",
+                (student_id, time.time()),
+            ).fetchall()
+            con.execute(
+                "UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE last_student_id=?",
+                (now(), student_id),
+            )
+            account_keys = []
+            for area in {str(r["last_area"] or "Student").strip() or "Student" for r in device_rows} or {str(row["last_area"] or "Student").strip() or "Student"}:
+                account_keys.append(hashlib.sha256((area.lower() + "|" + student_id.lower()).encode("utf-8")).hexdigest())
+            if account_keys:
+                placeholders = ",".join("?" for _ in account_keys)
+                con.execute(
+                    f"DELETE FROM vybe_security_attempts WHERE account_key IN ({placeholders}) AND area IS NOT NULL AND area != ''",
+                    tuple(account_keys),
+                )
+            for device_row in device_rows:
+                _security_cache_set(device_row["device_hash"], 0)
+        else:
+            device_rows = []
+            con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
+            con.execute("DELETE FROM vybe_security_attempts WHERE device_hash=?", (device_hash,))
+            _security_cache_set(device_hash, 0)
+
         con.execute("INSERT INTO vybe_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
-                     (now_ist(), "admin_unblock", row["last_name"] or "Unknown", row["last_student_id"] or "", row["last_ip"] or "", row["last_area"] or "", 0, "Security block manually removed by an administrator."))
+                     (now_ist(), "admin_unblock", row["last_name"] or "Unknown", student_id, row["last_ip"] or "", row["last_area"] or "", 0, "Security block manually removed by an administrator; all active device blocks for this student were cleared."))
         con.commit()
         _security_cache_set(row["device_hash"], 0)
         con.close()
-        flash(f'Security block removed for {row["last_name"] or "the user"}. They can log in again immediately.')
+        flash(f'Security block removed for {row["last_name"] or "the user"}. All active VYBE device blocks for this student were cleared, so they can log in again immediately.')
     except Exception:
         try: con.rollback()
         except Exception: pass
