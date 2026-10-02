@@ -87,8 +87,8 @@ INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
 PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERCEL_HOST or "localhost"
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
-DRIVE_URL = "https://drive.google.com/drive/folders/1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_?usp=sharing"
-VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1xHRB6-j6UI8F_-q_E9w6GDlmeXWxKkc_").strip()
+DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
+VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
 VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
 VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "1").strip() == "1"
 VYBE_DRIVE_WEBHOOK_TOKEN = os.environ.get("VYBE_DRIVE_WEBHOOK_TOKEN", "").strip() or hashlib.sha256((SECRET_KEY + "|drive-webhook").encode()).hexdigest()
@@ -8240,11 +8240,11 @@ def publisher():
                     if suffix not in allowed:
                         flash("Timetable must be a PDF or image file.")
                     else:
-                        filename=secrets.token_hex(16)+suffix
+                        original_name=Path(f.filename).name[:240]
                         file_data=f.read()
                         assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
-                        con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
-                        con.commit(); flash("Timetable posted to VYBE.")
+                        _drive_store_timetable(con,title=title,original_name=original_name,mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream",data=file_data,assistant_text=assistant_text)
+                        con.commit(); flash("Timetable posted to VYBE and stored in Google Drive.")
             elif kind == "academic_updates":
                 title=request.form.get("title","").strip()[:180]
                 description=request.form.get("description","").strip()[:4000]
@@ -8267,12 +8267,12 @@ def publisher():
                         if suffix not in ALLOWED_EXT:
                             flash("That file type is not allowed.")
                             raise ValueError("unsupported academic update file")
-                        original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
+                        original_name=Path(f.filename).name[:240]
                         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
                         if len(file_data)>20*1024*1024:
                             flash("Academic update files must be 20 MB or smaller.")
                             raise ValueError("academic update file too large")
-                        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(update_kind,category,title,description,course,semester,subject,event_date,external_url,filename,original_name,mime_type,file_data,now()))
+                        _drive_store_academic_update(con,update_kind=update_kind,category=category,title=title,description=description,course=course,semester=semester,subject=subject,event_date=event_date,external_url=external_url,original_name=original_name,mime_type=mime_type,data=file_data)
                     con.commit(); flash("Academic update published.")
             elif kind == "academic_resources":
                 title=request.form.get("resource_title","").strip()[:150]
@@ -8291,10 +8291,13 @@ def publisher():
                         if suffix not in ALLOWED_EXT:
                             flash("That file type is not allowed.")
                             raise ValueError("unsupported resource file")
-                        original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix
+                        original_name=Path(f.filename).name[:240]
                         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+                        if len(file_data)>20*1024*1024:
+                            flash("Resource files must be 20 MB or smaller.")
+                            raise ValueError("resource file too large")
                         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-                        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now()))
+                        _drive_store_resource(con,title=title,resource_type=typ,course=course,semester=sem,subject=subject,description=desc,original_name=original_name,mime_type=mime_type,data=file_data,assistant_text=assistant_text)
                     con.commit(); flash("Academic resource added and indexed for Ask VYBE.")
         except ValueError:
             try: con.rollback()
@@ -8491,12 +8494,13 @@ def admin_timetable():
         allowed={".pdf",".png",".jpg",".jpeg",".webp"}
         if suffix not in allowed:
             con.close(); flash("Timetable must be a PDF or image file."); return redirect(url_for("admin_timetable"))
-        filename=secrets.token_hex(16)+suffix
         try:
             file_data=f.read()
+            if len(file_data)>20*1024*1024:
+                raise ValueError("Timetable files must be 20 MB or smaller.")
             assistant_text=_timetable_text(file_data,suffix,request.form.get("assistant_text",""))
-            con.execute("INSERT INTO timetables(title,file_name,original_name,created_at,file_data,assistant_text) VALUES(?,?,?,?,?,?)",(title,filename,Path(f.filename).name[:240],now(),file_data,assistant_text))
-            con.commit(); flash("Timetable posted to VYBE.")
+            _drive_store_timetable(con,title=title,original_name=Path(f.filename).name[:240],mime_type=f.mimetype or mimetypes.guess_type(f.filename)[0] or "application/octet-stream",data=file_data,assistant_text=assistant_text)
+            con.commit(); flash("Timetable posted to VYBE and stored in Google Drive.")
         except Exception as exc:
             con.rollback()
             app.logger.error("Timetable upload failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
@@ -8512,10 +8516,14 @@ def admin_timetable():
 @app.route("/admin/timetable/<int:tid>/delete", methods=["POST"])
 @admin_required
 def delete_timetable(tid):
-    con=db(); row=con.execute("SELECT file_name FROM timetables WHERE id=?",(tid,)).fetchone()
+    con=db(); row=con.execute("SELECT file_name,drive_file_id FROM timetables WHERE id=?",(tid,)).fetchone()
     if row:
-        try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
-        except Exception: pass
+        if row["drive_file_id"]:
+            try: _drive_delete_file(row["drive_file_id"])
+            except Exception: app.logger.exception("Could not delete Drive timetable %s", row["drive_file_id"])
+        if row["file_name"]:
+            try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
+            except Exception: pass
         con.execute("DELETE FROM timetables WHERE id=?",(tid,)); con.commit(); flash("Timetable deleted.")
     else: flash("Timetable not found.")
     con.close(); return redirect(url_for("admin_timetable"))
@@ -8533,14 +8541,22 @@ def admin_academic_updates():
             parsed=urlparse(external_url)
             if parsed.scheme not in ("http","https") or not parsed.netloc: con.close(); flash("Use a valid http or https direct website URL."); return redirect(url_for("admin_academic_updates"))
         if kind in ("Result","Admit Card") and not external_url: con.close(); flash(f"A direct website link is required for {kind}."); return redirect(url_for("admin_academic_updates"))
-        filename=original_name=mime_type=None; file_data=None
+        original_name=mime_type=None; file_data=None
         if f and f.filename:
             suffix=Path(f.filename).suffix.lower()
             if suffix not in ALLOWED_EXT: con.close(); flash("That file type is not allowed."); return redirect(url_for("admin_academic_updates"))
-            original_name=Path(f.filename).name[:240]; filename=secrets.token_hex(16)+suffix; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
+            original_name=Path(f.filename).name[:240]; mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"; file_data=f.read()
             if len(file_data)>20*1024*1024: con.close(); flash("Academic update files must be 20 MB or smaller."); return redirect(url_for("admin_academic_updates"))
-        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,description,"","","",event_date,external_url,filename,original_name,mime_type,file_data,now()))
-        con.commit(); con.close(); flash(f"{kind} published successfully."); return redirect(url_for("admin_academic_updates"))
+        try:
+            if file_data is not None:
+                _drive_store_academic_update(con,update_kind=kind,category=kind,title=title,description=description,course="",semester="",subject="",event_date=event_date,external_url=external_url,original_name=original_name,mime_type=mime_type,data=file_data)
+            else:
+                con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,description,"","","",event_date,external_url,None,None,None,None,now()))
+            con.commit(); con.close(); flash(f"{kind} published successfully." if file_data is None else f"{kind} published to Google Drive successfully."); return redirect(url_for("admin_academic_updates"))
+        except Exception as exc:
+            con.rollback(); con.close(); app.logger.exception("Academic update Drive upload failed")
+            flash("Could not publish the academic update to Google Drive. No update was published.")
+            return redirect(url_for("admin_academic_updates"))
     rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
     table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
     body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="Direct official website link (required for Result and Admit Card)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
@@ -8586,11 +8602,10 @@ def admin_academic_hub():
                 data=f.read()
                 if len(data)>20*1024*1024: raise ValueError(f"File is larger than 20 MB: {Path(f.filename).name}")
                 original=Path(f.filename).name[:240]
-                filename=secrets.token_hex(16)+suffix
                 mime=f.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
                 assistant_text=_extract_doc_text(data,suffix,50000)
                 item_title=title if mode!="bulk" else Path(original).stem[:150]
-                con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(item_title,typ,course,semester,subject,description,filename,original,mime,data,assistant_text,now()))
+                _drive_store_resource(con,title=item_title,resource_type=typ,course=course,semester=semester,subject=subject,description=description,original_name=original,mime_type=mime,data=data,assistant_text=assistant_text)
                 added+=1
             con.commit(); con.close(); flash(f"{added} {typ} resource{'s' if added!=1 else ''} uploaded successfully.")
         except ValueError as e:
@@ -8613,7 +8628,10 @@ def admin_academic_hub():
 @app.route("/admin/academic-update/<int:uid>/delete", methods=["POST"])
 @admin_required
 def admin_delete_academic_update(uid):
-    con=db(); row=con.execute("SELECT file_name FROM academic_updates WHERE id=?",(uid,)).fetchone()
+    con=db(); row=con.execute("SELECT file_name,drive_file_id FROM academic_updates WHERE id=?",(uid,)).fetchone()
+    if row and row["drive_file_id"]:
+        try: _drive_delete_file(row["drive_file_id"])
+        except Exception: app.logger.exception("Could not delete Drive academic update %s", row["drive_file_id"])
     if row and row["file_name"]:
         try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
         except Exception: pass
@@ -8623,12 +8641,15 @@ def admin_delete_academic_update(uid):
 @app.route("/admin/academic-hub/resource/<int:rid>/delete", methods=["POST"])
 @admin_required
 def admin_academic_hub_delete_resource(rid):
-    con=db(); row=con.execute("SELECT file_name,resource_type FROM resources WHERE id=?",(rid,)).fetchone()
+    con=db(); row=con.execute("SELECT file_name,resource_type,drive_file_id FROM resources WHERE id=?",(rid,)).fetchone()
     if not row:
         con.close(); flash("Resource not found."); return redirect(url_for("admin_academic_hub"))
     typ=row["resource_type"] or "Notes"
     section={"Notes":"notes","Study material":"study_material","Previous Year Questions":"pyq"}.get(typ,"notes")
     con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
+    if row["drive_file_id"]:
+        try: _drive_delete_file(row["drive_file_id"])
+        except Exception: app.logger.exception("Could not delete Drive resource %s", row["drive_file_id"])
     if row["file_name"]:
         try: (UPLOAD_DIR/row["file_name"]).unlink(missing_ok=True)
         except OSError: pass
@@ -8654,17 +8675,25 @@ def add_resource():
         suffix=Path(f.filename).suffix.lower()
         if suffix not in ALLOWED_EXT: flash("That file type is not allowed."); return redirect(url_for("admin_resources"))
         original_name=Path(f.filename).name[:240]
-        filename=secrets.token_hex(16)+suffix
         mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         file_data=f.read()
+        if len(file_data)>20*1024*1024: flash("Resource files must be 20 MB or smaller."); return redirect(url_for("admin_resources"))
         if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-        f.stream.seek(0); f.save(UPLOAD_DIR/filename)
-    con=db(); con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,filename,original_name,mime_type,file_data,assistant_text,now())); con.commit(); con.close(); flash("Resource added and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
+    con=db()
+    try:
+        _drive_store_resource(con,title=title,resource_type=typ,course=course,semester=sem,subject=subject,description=desc,original_name=original_name,mime_type=mime_type,data=file_data,assistant_text=assistant_text) if f and f.filename else con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,None,None,None,None,assistant_text,now()))
+        con.commit()
+    except Exception:
+        con.rollback(); app.logger.exception("Resource Drive upload failed"); con.close(); flash("Could not upload the resource to Google Drive. No resource was published."); return redirect(url_for("admin_resources"))
+    con.close(); flash("Resource added to Google Drive and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
 
 @app.route("/admin/resource/<int:rid>/delete", methods=["POST"])
 @admin_required
 def delete_resource(rid):
-    con=db(); r=con.execute("SELECT file_name FROM resources WHERE id=?",(rid,)).fetchone(); con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
+    con=db(); r=con.execute("SELECT file_name,drive_file_id FROM resources WHERE id=?",(rid,)).fetchone(); con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
+    if r and r["drive_file_id"]:
+        try: _drive_delete_file(r["drive_file_id"])
+        except Exception: app.logger.exception("Could not delete Drive resource %s", r["drive_file_id"])
     if r and r["file_name"]:
         try: (UPLOAD_DIR/r["file_name"]).unlink(missing_ok=True)
         except OSError: pass
@@ -9670,6 +9699,11 @@ def _drive_category_folder(category,create=True):
             parent=found[0]["id"]
     return parent
 
+def _drive_delete_file(file_id):
+    if not file_id:
+        return
+    _drive_api("DELETE", f"files/{file_id}")
+
 def _drive_make_public(file_id):
     if not VYBE_DRIVE_PUBLIC_FILES: return
     try:
@@ -9688,6 +9722,95 @@ def _drive_start_resumable(name,mime_type,folder_id,size=None):
     location=resp_headers.get("Location") or resp_headers.get("location")
     if not location: raise RuntimeError("Google Drive did not return a resumable upload session.")
     return location
+
+def _drive_upload_bytes(name, mime_type, folder_id, data):
+    """Upload an in-memory file to Drive and return its Drive metadata.
+
+    Normal admin uploads are intentionally stored in Drive first. The database
+    then keeps only the Drive metadata/reference, not the uploaded bytes.
+    """
+    if data is None:
+        raise ValueError("No file data supplied.")
+    session_url = _drive_start_resumable(name, mime_type, folder_id, len(data))
+    headers = {
+        "Content-Type": mime_type or "application/octet-stream",
+        "Content-Length": str(len(data)),
+    }
+    _, _, meta = _drive_http("PUT", session_url, body=data, headers=headers, timeout=120)
+    fid = meta.get("id")
+    if not fid:
+        raise RuntimeError("Google Drive upload completed without returning a file ID.")
+    _drive_make_public(fid)
+    return _drive_file_meta(fid)
+
+def _drive_category_for_resource_type(resource_type):
+    mapping = {
+        "Notes": "Notes",
+        "Study material": "Study Material",
+        "Previous Year Questions": "Previous Year Questions",
+        "Syllabus": "Syllabus",
+        "Assignments": "Assignments",
+    }
+    return mapping.get(resource_type, "Study Material")
+
+def _drive_category_for_update_kind(update_kind):
+    mapping = {
+        "Result": "Results",
+        "Date Sheet": "Date Sheets",
+        "Admit Card": "Admit Cards",
+        "Exam Form": "Exam Forms & Notices",
+        "General Update": "Exam Forms & Notices",
+        "Online Class": "Exam Forms & Notices",
+        "Recorded Lecture": "Exam Forms & Notices",
+        "E-Book": "Exam Forms & Notices",
+        "Finance Support": "Exam Forms & Notices",
+    }
+    return mapping.get(update_kind, "Exam Forms & Notices")
+
+def _drive_metadata_values(meta):
+    return (
+        meta.get("id"),
+        (meta.get("parents") or [None])[0],
+        meta.get("webContentLink") or meta.get("webViewLink"),
+    )
+
+def _drive_store_resource(con, *, title, resource_type, course, semester, subject,
+                          description, original_name, mime_type, data, assistant_text):
+    category = _drive_category_for_resource_type(resource_type)
+    folder = _drive_category_folder(category, create=True)
+    meta = _drive_upload_bytes(original_name, mime_type, folder, data)
+    fid, folder_id, web = _drive_metadata_values(meta)
+    con.execute(
+        "INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (title, resource_type, course, semester, subject, description, None,
+         original_name, mime_type, None, assistant_text, now(), fid, folder_id, web)
+    )
+    return meta
+
+def _drive_store_academic_update(con, *, update_kind, category, title, description,
+                                 course, semester, subject, event_date, external_url,
+                                 original_name, mime_type, data):
+    drive_category = _drive_category_for_update_kind(update_kind)
+    folder = _drive_category_folder(drive_category, create=True)
+    meta = _drive_upload_bytes(original_name, mime_type, folder, data)
+    fid, folder_id, web = _drive_metadata_values(meta)
+    con.execute(
+        "INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (update_kind, category, title, description, course, semester, subject,
+         event_date, external_url, None, original_name, mime_type, None, now(),
+         fid, folder_id, web)
+    )
+    return meta
+
+def _drive_store_timetable(con, *, title, original_name, mime_type, data, assistant_text):
+    folder = _drive_category_folder("Timetable", create=True)
+    meta = _drive_upload_bytes(original_name, mime_type, folder, data)
+    fid, folder_id, web = _drive_metadata_values(meta)
+    con.execute(
+        "INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (title, None, original_name, mime_type, None, now(), fid, folder_id, web, assistant_text)
+    )
+    return meta
 
 def _drive_record_file(con, category, meta, title=None, course="All", semester="All", subject="General", description="", assistant_text=""):
     _,_,kind,mapped=DRIVE_CATEGORY_MAP[category]
