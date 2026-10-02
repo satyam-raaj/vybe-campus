@@ -8291,7 +8291,7 @@ def admin_security_alerts():
             cards.append(f'''<article class="security-block-card">
               <div class="security-block-main"><div class="security-avatar">!</div><div><div class="security-user">{esc(r["last_name"] or "Unknown")}</div><div class="security-meta">{esc(r["last_student_id"] or "—")} · {esc(r["last_area"] or "—")}</div></div></div>
               <div class="security-block-grid"><div><span>IP ADDRESS</span><b>{esc(r["last_ip"] or "—")}</b></div><div><span>BLOCKED UNTIL</span><b>{block_time(r["blocked_until"])}</b></div><div><span>FAILED ATTEMPTS</span><b>{int(r["failed_attempts"] or 0)}</b></div></div>
-              <form method="post" action="/admin/security-alerts/unblock/{int(r["id"])}" onsubmit="return confirm('Remove this 24-hour VYBE security block and allow this user to log in again?')"><button class="btn good security-unblock">✓ Remove Block</button></form>
+              <form method="post" action="/admin/security-alerts/unblock/{quote(str(r["device_hash"]), safe="")}" onsubmit="return confirm('Remove this 24-hour VYBE security block and allow this user to log in again?')"><button class="btn good security-unblock">✓ Remove Block</button></form>
             </article>''')
         active = "".join(cards)
     else:
@@ -8311,17 +8311,17 @@ def admin_security_alerts():
     return layout("Security Alerts", body, admin=True)
 
 
-@app.route("/admin/security-alerts/unblock/<int:device_id>", methods=["POST"])
+@app.route("/admin/security-alerts/unblock/<device_hash>", methods=["POST"])
 @admin_required
-def admin_security_unblock(device_id):
+def admin_security_unblock(device_hash):
     con = db()
     try:
-        row = con.execute("SELECT * FROM vybe_security_devices WHERE id=?", (device_id,)).fetchone()
+        row = con.execute("SELECT * FROM vybe_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
         if not row:
             con.close()
             flash("That security block no longer exists.")
             return redirect(url_for("admin_security_alerts"))
-        con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE id=?", (now(), device_id))
+        con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
         con.execute("INSERT INTO vybe_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
                      (now_ist(), "admin_unblock", row["last_name"] or "Unknown", row["last_student_id"] or "", row["last_ip"] or "", row["last_area"] or "", 0, "Security block manually removed by an administrator."))
         con.commit()
