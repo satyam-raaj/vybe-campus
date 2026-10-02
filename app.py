@@ -1347,7 +1347,7 @@ def _security_block_status(con, device_hash):
 
 
 def _security_block_page(until=0):
-    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Access temporarily blocked · VYBE</title><style>body{margin:0;background:#020817;color:#eef8ff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.box{width:min(560px,100%);padding:38px;border:1px solid rgba(111,190,230,.2);border-radius:24px;background:linear-gradient(145deg,rgba(9,30,47,.97),rgba(3,14,25,.98));box-shadow:0 25px 80px rgba(0,0,0,.45);text-align:center;box-sizing:border-box}.mark{width:62px;height:62px;border-radius:18px;margin:0 auto 22px;display:grid;place-items:center;background:rgba(255,112,112,.12);border:1px solid rgba(255,112,112,.28);color:#ff9b9b;font-weight:900;font-size:25px}.eyebrow{font-size:11px;font-weight:850;letter-spacing:.14em;color:#8fc9e8}h1{font-size:31px;line-height:1.1;margin:10px 0 14px}p{color:#aac0cf;line-height:1.65;margin:0}.notice{margin-top:22px;padding:15px 16px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);font-size:13px}strong{color:#fff}</style></head><body><main class="box"><div class="mark">!</div><div class="eyebrow">VYBE SECURITY</div><h1>Access temporarily blocked.</h1><p>There were too many unsuccessful login attempts from this browser.</p><div class="notice"><strong>Limit exceeded.</strong><br>For your security, access to VYBE is blocked for 24 hours. Please try again after the block expires.</div></main></body></html>"""
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Access temporarily blocked · VYBE</title><style>body{margin:0;background:#020817;color:#eef8ff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.box{width:min(560px,100%);padding:38px;border:1px solid rgba(111,190,230,.2);border-radius:24px;background:linear-gradient(145deg,rgba(9,30,47,.97),rgba(3,14,25,.98));box-shadow:0 25px 80px rgba(0,0,0,.45);text-align:center;box-sizing:border-box}.mark{width:62px;height:62px;border-radius:18px;margin:0 auto 22px;display:grid;place-items:center;background:rgba(255,112,112,.12);border:1px solid rgba(255,112,112,.28);color:#ff9b9b;font-weight:900;font-size:25px}.eyebrow{font-size:11px;font-weight:850;letter-spacing:.14em;color:#8fc9e8}h1{font-size:31px;line-height:1.1;margin:10px 0 14px}p{color:#aac0cf;line-height:1.65;margin:0}.notice{margin-top:22px;padding:15px 16px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);font-size:13px}strong{color:#fff}</style></head><body><main class="box"><div class="mark">!</div><div class="eyebrow">VYBE SECURITY</div><h1>Access temporarily blocked.</h1><p>There were too many unsuccessful login attempts from this browser.</p><div class="notice"><strong>Limit exceeded.</strong><br>For your security, access to VYBE is blocked for 24 hours. Please try again after the block expires.</div><a href="/security/clear-block" style="display:inline-block;margin-top:18px;padding:12px 18px;border-radius:12px;background:#eef8ff;color:#06111b;text-decoration:none;font-weight:800">Try VYBE again</a></main></body></html>"""
 
 
 def _security_failed_login(con, name, student_id, area):
@@ -1513,6 +1513,15 @@ def _security_blocked_request_response():
     # path free of a Neon lookup.
     return None
 
+@app.route("/security/clear-block")
+def security_clear_block():
+    """Clear a stale browser lock cookie after an administrator has revoked a block."""
+    response = redirect(url_for("dashboard"))
+    response.delete_cookie(_SECURITY_LOCK_COOKIE, path="/")
+    response.delete_cookie(_SECURITY_DEVICE_COOKIE, path="/")
+    return response
+
+
 def _same_origin_unsafe_request():
     """Layered CSRF protection: same-origin plus a per-session token."""
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -1581,6 +1590,8 @@ def global_online_gate():
         host = (request.host or "").split(":", 1)[0].lower().strip(".")
         if host not in _ALLOWED_HOSTS:
             abort(400, description="Unrecognized VYBE host.")
+    if path == "/security/clear-block":
+        return None
     _security_device_token()
     blocked_response = _security_blocked_request_response()
     if blocked_response:
