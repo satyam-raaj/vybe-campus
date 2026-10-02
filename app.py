@@ -1515,10 +1515,40 @@ def _security_blocked_request_response():
 
 @app.route("/security/clear-block")
 def security_clear_block():
-    """Clear a stale browser lock cookie after an administrator has revoked a block."""
-    response = redirect(url_for("dashboard"))
-    response.delete_cookie(_SECURITY_LOCK_COOKIE, path="/")
-    response.delete_cookie(_SECURITY_DEVICE_COOKIE, path="/")
+    """Recover a browser after an administrator has revoked its security block.
+
+    This endpoint never bypasses an active Neon block. It only clears stale
+    browser cookies when the persistent device record is no longer blocked.
+    """
+    token = request.cookies.get(_SECURITY_DEVICE_COOKIE, "").strip()
+    device_hash = hashlib.sha256(token.encode("utf-8")).hexdigest() if 32 <= len(token) <= 200 else ""
+    if device_hash:
+        try:
+            con = db()
+            row = con.execute(
+                "SELECT blocked_until FROM vybe_security_devices WHERE device_hash=?",
+                (device_hash,),
+            ).fetchone()
+            con.close()
+            if row and float(row["blocked_until"] or 0) > time.time():
+                return _security_block_page(float(row["blocked_until"])), 429, {
+                    "Cache-Control": "no-store",
+                    "X-Robots-Tag": "noindex, nofollow",
+                }
+            _security_cache_set(device_hash, 0)
+        except Exception as exc:
+            app.logger.warning("VYBE security recovery lookup failed: %s: %s", type(exc).__name__, exc)
+            return _security_block_page(), 429, {
+                "Cache-Control": "no-store",
+                "X-Robots-Tag": "noindex, nofollow",
+            }
+
+    # Go to the public VYBE entry page, not the dashboard. If the student
+    # session is valid, / will immediately route them to the dashboard; if not,
+    # it will show the normal VYBE home/login entry page.
+    response = redirect(url_for("home"))
+    response.delete_cookie(_SECURITY_LOCK_COOKIE, path="/", secure=_COOKIE_SECURE)
+    response.delete_cookie(_SECURITY_DEVICE_COOKIE, path="/", secure=_COOKIE_SECURE)
     return response
 
 
