@@ -22,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse, urljoin, quote, urlencode
+from urllib.parse import urlparse, urljoin, quote
 from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
@@ -42,11 +42,18 @@ except ImportError:
 GOOGLE_AUTH_IMPORT_ERROR = ""
 try:
     from google.oauth2 import service_account as _google_service_account
+    from google.oauth2.credentials import Credentials as GoogleOAuthCredentials
     from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google_auth_oauthlib.flow import Flow as GoogleOAuthFlow
+    from cryptography.fernet import Fernet, InvalidToken as FernetInvalidToken
     GOOGLE_AUTH_AVAILABLE = True
 except Exception as _google_auth_exc:
     _google_service_account = None
+    GoogleOAuthCredentials = None
     GoogleAuthRequest = None
+    GoogleOAuthFlow = None
+    Fernet = None
+    FernetInvalidToken = Exception
     GOOGLE_AUTH_AVAILABLE = False
     GOOGLE_AUTH_IMPORT_ERROR = f"{type(_google_auth_exc).__name__}: {_google_auth_exc}"
 
@@ -82,8 +89,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
 if not SECRET_KEY:
-    # Do not crash during Vercel module import. Missing production config is
-    # reported by readiness checks instead of turning every request into 500.
+    if DATABASE_URL:
+        raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
@@ -91,8 +98,11 @@ PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERC
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
-VYBE_DRIVE_SHARED_DRIVE_ID = os.environ.get("VYBE_DRIVE_SHARED_DRIVE_ID", "").strip()
 VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+VYBE_GOOGLE_OAUTH_CLIENT_ID = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_ID", "").strip()
+VYBE_GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+VYBE_GOOGLE_OAUTH_CLIENT_JSON = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_JSON", "").strip()
+VYBE_GOOGLE_OAUTH_REDIRECT_URI = os.environ.get("VYBE_GOOGLE_OAUTH_REDIRECT_URI", "").strip()
 VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "1").strip() == "1"
 VYBE_DRIVE_WEBHOOK_TOKEN = os.environ.get("VYBE_DRIVE_WEBHOOK_TOKEN", "").strip() or hashlib.sha256((SECRET_KEY + "|drive-webhook").encode()).hexdigest()
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
@@ -9178,19 +9188,80 @@ def admin_contact_terms():
 
 
 
+@app.route("/admin/drive/connect")
+@admin_required
+def admin_drive_connect():
+    if not GOOGLE_AUTH_AVAILABLE:
+        flash("Google Drive OAuth libraries are not installed. Please redeploy with the updated requirements.txt.")
+        return redirect(url_for("admin_drive"))
+    try:
+        flow = GoogleOAuthFlow.from_client_config(_drive_oauth_client_config(), scopes=DRIVE_OAUTH_SCOPES)
+        flow.redirect_uri = _drive_oauth_redirect_uri()
+        authorization_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+        )
+        session["drive_oauth_state"] = state
+        return redirect(authorization_url)
+    except Exception as exc:
+        flash(f"Could not start Google Drive authorization: {type(exc).__name__}: {exc}")
+        return redirect(url_for("admin_drive"))
+
+
+@app.route("/admin/drive/oauth/callback")
+@admin_required
+def admin_drive_oauth_callback():
+    expected_state = session.pop("drive_oauth_state", "")
+    returned_state = request.args.get("state", "")
+    if not expected_state or not returned_state or not secrets.compare_digest(expected_state, returned_state):
+        return "Invalid Google Drive authorization state. Please start the connection again from VYBE Admin → Drive Library.", 400
+    if request.args.get("error"):
+        flash("Google Drive authorization was cancelled or denied.")
+        return redirect(url_for("admin_drive"))
+    try:
+        flow = GoogleOAuthFlow.from_client_config(_drive_oauth_client_config(), scopes=DRIVE_OAUTH_SCOPES, state=expected_state)
+        flow.redirect_uri = _drive_oauth_redirect_uri()
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
+        _drive_save_oauth_credentials(creds)
+        # Verify that the authorized account can see the configured VYBE folder.
+        meta = _drive_file_meta(VYBE_DRIVE_ROOT_FOLDER_ID)
+        if meta.get("mimeType") != "application/vnd.google-apps.folder":
+            raise RuntimeError("VYBE_DRIVE_ROOT_FOLDER_ID does not point to a Drive folder.")
+        flash("Google Drive connected successfully. VYBE will now use your normal My Drive storage.")
+        return redirect(url_for("admin_drive"))
+    except Exception as exc:
+        app.logger.exception("Google Drive OAuth callback failed")
+        flash(f"Google Drive connection failed: {type(exc).__name__}: {exc}")
+        return redirect(url_for("admin_drive"))
+
+
+@app.route("/admin/drive/disconnect", methods=["POST"])
+@admin_required
+def admin_drive_disconnect():
+    con=db(); con.execute("DELETE FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)); con.commit(); con.close()
+    flash("Google Drive connection removed from VYBE. Your files remain in Google Drive.")
+    return redirect(url_for("admin_drive"))
+
+
 @app.route("/admin/drive")
 @admin_required
 def admin_drive():
-    configured=bool(VYBE_GOOGLE_SERVICE_ACCOUNT_JSON)
+    con=db(); oauth_row=con.execute("SELECT value FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)).fetchone(); con.close()
+    configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div><p class="small" style="margin-top:16px">Configured: <b>{'YES' if configured else 'NO'}</b></p></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const up=await fetch(init.upload_url,{{method:'PUT',headers:{{'Content-Length':String(f.size)}},body:f}});if(!up.ok)throw new Error('Drive upload failed: HTTP '+up.status);const uploaded=await up.json();status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const up=await fetch(init.upload_url,{{method:'PUT',headers:{{'Content-Length':String(f.size)}},body:f}});if(!up.ok)throw new Error('Drive upload failed: HTTP '+up.status);const uploaded=await up.json();status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
 @admin_required
 def admin_drive_upload_session():
-    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON: return jsonify(error="Google Drive is not configured on VYBE yet."),503
+    try:
+        _drive_credentials()
+    except Exception as e:
+        return jsonify(error=str(e), connect_url=url_for("admin_drive_connect")),503
     data=request.get_json(force=True) or {}; category=str(data.get("category") or "").strip(); name=Path(str(data.get("name") or "uploaded-file")).name[:240]
     if category not in DRIVE_CATEGORY_MAP: return jsonify(error="Choose a valid VYBE Drive section."),400
     try: return jsonify(upload_url=_drive_start_resumable(name,str(data.get("mimeType") or "application/octet-stream"),_drive_category_folder(category,True),int(data.get("size") or 0)))
@@ -9214,14 +9285,14 @@ def admin_drive_sync():
 @app.route("/admin/drive/watch", methods=["POST"])
 @admin_required
 def admin_drive_watch():
-    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON: return jsonify(error="Google Drive is not configured."),503
     try:
+        _drive_credentials()
         con=db(); page=setting(con,"drive_start_page_token","")
         if not page:
-            _,_,d=_drive_api("GET","changes/startPageToken",query={{"supportsAllDrives":"true"}}); page=d.get("startPageToken",""); set_setting(con,"drive_start_page_token",page)
+            _,_,d=_drive_api("GET","changes/startPageToken",query={"supportsAllDrives":"true"}); page=d.get("startPageToken",""); set_setting(con,"drive_start_page_token",page)
         import uuid
         webhook=request.url_root.rstrip("/")+"/api/drive-webhook"
-        _,_,resp=_drive_http("POST","https://www.googleapis.com/drive/v3/changes/watch",body={{"id":str(uuid.uuid4()),"type":"web_hook","address":webhook,"token":VYBE_DRIVE_WEBHOOK_TOKEN,"expiration":int(time.time()*1000)+604000000}})
+        _,_,resp=_drive_http("POST","https://www.googleapis.com/drive/v3/changes/watch",body={"id":str(uuid.uuid4()),"type":"web_hook","address":webhook,"token":VYBE_DRIVE_WEBHOOK_TOKEN,"expiration":int(time.time()*1000)+604000000})
         set_setting(con,"drive_channel_id",resp.get("id","")); set_setting(con,"drive_channel_resource_id",resp.get("resourceId","")); set_setting(con,"drive_channel_expiration",str(resp.get("expiration",0))); con.commit(); con.close(); drive_sync_all(); return jsonify(message="Automatic Drive sync is enabled.")
     except Exception as e: return jsonify(error=str(e)),502
 
@@ -9236,17 +9307,20 @@ def drive_webhook():
 def drive_cron():
     expected=os.environ.get("CRON_SECRET","").strip()
     if expected and request.headers.get("Authorization") != f"Bearer {expected}": return jsonify(error="Unauthorized"),401
-    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON: return jsonify(skipped=True)
+    try:
+        _drive_credentials()
+    except Exception:
+        return jsonify(skipped=True, reason="Google Drive is not connected")
     result=drive_sync_all()
     try:
         con=db(); exp=int(float(setting(con,"drive_channel_expiration","0") or 0)); con.close()
         if exp < int(time.time()*1000)+2*86400000:
             con=db(); page=setting(con,"drive_start_page_token","")
             if not page:
-                _,_,d=_drive_api("GET","changes/startPageToken",query={{"supportsAllDrives":"true"}}); page=d.get("startPageToken",""); set_setting(con,"drive_start_page_token",page)
+                _,_,d=_drive_api("GET","changes/startPageToken",query={"supportsAllDrives":"true"}); page=d.get("startPageToken",""); set_setting(con,"drive_start_page_token",page)
             import uuid
             webhook=request.url_root.rstrip("/")+"/api/drive-webhook"
-            _,_,resp=_drive_http("POST","https://www.googleapis.com/drive/v3/changes/watch",body={{"id":str(uuid.uuid4()),"type":"web_hook","address":webhook,"token":VYBE_DRIVE_WEBHOOK_TOKEN,"expiration":int(time.time()*1000)+604000000}})
+            _,_,resp=_drive_http("POST","https://www.googleapis.com/drive/v3/changes/watch",body={"id":str(uuid.uuid4()),"type":"web_hook","address":webhook,"token":VYBE_DRIVE_WEBHOOK_TOKEN,"expiration":int(time.time()*1000)+604000000})
             set_setting(con,"drive_channel_expiration",str(resp.get("expiration",0))); set_setting(con,"drive_channel_id",resp.get("id","")); set_setting(con,"drive_channel_resource_id",resp.get("resourceId","")); con.commit(); con.close()
     except Exception: pass
     return jsonify(result)
@@ -9628,65 +9702,119 @@ DRIVE_CATEGORY_MAP = {
     "Timetable": ("Timetable", None, "timetable", "Timetable"),
 }
 
-def _drive_credentials():
-    """Build Google Drive service-account credentials from the Vercel env var.
+def _drive_oauth_client_config():
+    """Return the Google OAuth web-client configuration used for My Drive."""
+    if VYBE_GOOGLE_OAUTH_CLIENT_JSON:
+        try:
+            cfg = json.loads(VYBE_GOOGLE_OAUTH_CLIENT_JSON)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("VYBE_GOOGLE_OAUTH_CLIENT_JSON is not valid JSON.") from exc
+        # Google client JSON normally wraps the values under "web" or "installed".
+        if isinstance(cfg, dict) and isinstance(cfg.get("web"), dict):
+            cfg = cfg["web"]
+        elif isinstance(cfg, dict) and isinstance(cfg.get("installed"), dict):
+            cfg = cfg["installed"]
+        if not isinstance(cfg, dict):
+            raise RuntimeError("VYBE_GOOGLE_OAUTH_CLIENT_JSON must contain a Google OAuth client object.")
+        client_id = str(cfg.get("client_id") or "").strip()
+        client_secret = str(cfg.get("client_secret") or "").strip()
+        auth_uri = str(cfg.get("auth_uri") or "https://accounts.google.com/o/oauth2/auth")
+        token_uri = str(cfg.get("token_uri") or "https://oauth2.googleapis.com/token")
+    else:
+        client_id = VYBE_GOOGLE_OAUTH_CLIENT_ID
+        client_secret = VYBE_GOOGLE_OAUTH_CLIENT_SECRET
+        auth_uri = "https://accounts.google.com/o/oauth2/auth"
+        token_uri = "https://oauth2.googleapis.com/token"
+    if not client_id or not client_secret:
+        raise RuntimeError(
+            "Google Drive OAuth is not configured. Add VYBE_GOOGLE_OAUTH_CLIENT_ID and "
+            "VYBE_GOOGLE_OAUTH_CLIENT_SECRET (or VYBE_GOOGLE_OAUTH_CLIENT_JSON) in Vercel."
+        )
+    return {
+        "web": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": auth_uri,
+            "token_uri": token_uri,
+        }
+    }
 
-    The JSON is read at call time so a Vercel deployment always uses the
-    currently configured value. Errors are converted into actionable messages
-    without exposing the private key.
-    """
+DRIVE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive"]
+DRIVE_OAUTH_TOKEN_SETTING = "google_drive_oauth_credentials"
+
+
+def _drive_oauth_redirect_uri():
+    if VYBE_GOOGLE_OAUTH_REDIRECT_URI:
+        return VYBE_GOOGLE_OAUTH_REDIRECT_URI
+    return url_for("admin_drive_oauth_callback", _external=True)
+
+
+def _drive_oauth_fernet():
+    if Fernet is None:
+        raise RuntimeError(
+            "Google Drive OAuth encryption is unavailable. Ensure cryptography is installed and redeploy."
+        )
+    key = base64.urlsafe_b64encode(hashlib.sha256(("vybe-drive-oauth|" + SECRET_KEY).encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _drive_save_oauth_credentials(creds):
+    payload = json.loads(creds.to_json())
+    if not payload.get("refresh_token"):
+        # Preserve an existing refresh token when Google omits it on a subsequent authorization.
+        existing = _drive_load_oauth_credentials(raise_if_missing=False)
+        if existing and existing.refresh_token:
+            payload["refresh_token"] = existing.refresh_token
+    encrypted = _drive_oauth_fernet().encrypt(json.dumps(payload).encode("utf-8")).decode("ascii")
+    con = db()
+    set_setting(con, DRIVE_OAUTH_TOKEN_SETTING, encrypted)
+    con.commit()
+    con.close()
+
+
+def _drive_load_oauth_credentials(*, raise_if_missing=True):
+    con = db()
+    row = con.execute("SELECT value FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)).fetchone()
+    con.close()
+    if not row or not row["value"]:
+        if raise_if_missing:
+            raise RuntimeError(
+                "Google Drive is not connected. In VYBE Admin → Drive Library, click "
+                "Connect Google Drive and authorize the Google account that owns the VYBE folder."
+            )
+        return None
+    try:
+        raw = _drive_oauth_fernet().decrypt(str(row["value"]).encode("ascii"))
+        info = json.loads(raw.decode("utf-8"))
+        creds = GoogleOAuthCredentials.from_authorized_user_info(info, scopes=DRIVE_OAUTH_SCOPES)
+    except (FernetInvalidToken, ValueError, json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError(
+            "The saved Google Drive authorization is invalid. Disconnect/reconnect Google Drive from VYBE Admin → Drive Library."
+        ) from exc
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(GoogleAuthRequest())
+            _drive_save_oauth_credentials(creds)
+        except Exception as exc:
+            raise RuntimeError(
+                "Google Drive authorization expired and could not be refreshed. Reconnect Google Drive from VYBE Admin → Drive Library."
+            ) from exc
+    if not creds.valid or not creds.token:
+        raise RuntimeError(
+            "Google Drive authorization is not active. Reconnect Google Drive from VYBE Admin → Drive Library."
+        )
+    return creds
+
+
+def _drive_credentials():
+    """Return user OAuth credentials for the owner's normal My Drive."""
     if not GOOGLE_AUTH_AVAILABLE:
         detail = GOOGLE_AUTH_IMPORT_ERROR or "unknown import error"
         raise RuntimeError(
-            "Google Drive authentication library could not be imported. "
-            f"google-auth import error: {detail}. "
-            "Ensure google-auth is present in requirements.txt and redeploy."
+            "Google Drive OAuth libraries could not be imported. "
+            f"Import error: {detail}. Ensure google-auth-oauthlib and cryptography are installed."
         )
-
-    raw = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-    if not raw:
-        raise RuntimeError(
-            "Google Drive credentials are missing: "
-            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is empty or unavailable in this deployment."
-        )
-
-    try:
-        info = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. "
-            "Paste the complete service-account JSON as the Vercel environment variable."
-        ) from exc
-
-    if not isinstance(info, dict):
-        raise RuntimeError("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON must contain a JSON object.")
-
-    required = ("type", "project_id", "private_key", "client_email")
-    missing = [key for key in required if not str(info.get(key, "")).strip()]
-    if missing:
-        raise RuntimeError(
-            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is missing required field(s): "
-            + ", ".join(missing)
-            + "."
-        )
-
-    try:
-        creds = _google_service_account.Credentials.from_service_account_info(
-            info,
-            scopes=["https://www.googleapis.com/auth/drive"],
-        )
-        if not creds.valid or not creds.token:
-            creds.refresh(GoogleAuthRequest())
-    except Exception as exc:
-        raise RuntimeError(
-            "Google Drive service-account authentication failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
-
-    if not creds.token:
-        raise RuntimeError("Google Drive authentication succeeded but no access token was returned.")
-
-    return creds
+    return _drive_load_oauth_credentials()
 
 def _drive_access_token():
     return _drive_credentials().token
@@ -9709,48 +9837,18 @@ def _drive_http(method, url, body=None, headers=None, timeout=30):
         except Exception: detail=raw.decode("utf-8",errors="replace")
         raise RuntimeError(f"Google Drive API {e.code}: {detail}") from e
 
-def _drive_query(query=None, *, drive_id=None):
-    """Add the parameters required for Google Shared Drive operations."""
-    q=dict(query or {})
-    q.setdefault("supportsAllDrives", "true")
-    q.setdefault("includeItemsFromAllDrives", "true")
-    if drive_id:
-        q.setdefault("corpora", "drive")
-        q.setdefault("driveId", drive_id)
-    return q
-
 def _drive_api(method, path, query=None, body=None):
     url="https://www.googleapis.com/drive/v3/"+path.lstrip("/")
-    q=_drive_query(query, drive_id=VYBE_DRIVE_SHARED_DRIVE_ID or None)
-    if q:
-        url += "?"+urlencode(q)
+    if query:
+        from urllib.parse import urlencode
+        url += "?"+urlencode(query)
     return _drive_http(method,url,body=body)
-
-def _drive_root_meta():
-    """Return root folder metadata and detect My Drive vs Shared Drive."""
-    _,_,meta=_drive_api(
-        "GET",
-        f"files/{VYBE_DRIVE_ROOT_FOLDER_ID}",
-        query={"fields":"id,name,mimeType,driveId,parents,trashed"},
-    )
-    if meta.get("trashed"):
-        raise RuntimeError("VYBE Drive root folder is in the trash.")
-    if meta.get("mimeType") != "application/vnd.google-apps.folder":
-        raise RuntimeError("VYBE_DRIVE_ROOT_FOLDER_ID does not point to a Google Drive folder.")
-    actual_drive_id=meta.get("driveId") or VYBE_DRIVE_SHARED_DRIVE_ID
-    if not actual_drive_id:
-        raise RuntimeError(
-            "The configured VYBE Drive folder is in My Drive. Google service accounts have no storage quota for My Drive uploads. "
-            "Move/create the VYBE folder inside a Google Shared Drive, give the service account Content manager access, "
-            "and set VYBE_DRIVE_ROOT_FOLDER_ID to that Shared Drive folder."
-        )
-    return meta
 
 def _drive_list_children(parent_id):
     q=f"'{parent_id}' in parents and trashed=false"
     files=[]; token=None
     while True:
-        query={"q":q,"pageSize":1000,"fields":"nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,driveId)"}
+        query={"q":q,"pageSize":1000,"fields":"nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents)"}
         if token: query["pageToken"]=token
         _,_,data=_drive_api("GET","files",query=query)
         files.extend(data.get("files",[])); token=data.get("nextPageToken")
@@ -9758,15 +9856,14 @@ def _drive_list_children(parent_id):
     return files
 
 def _drive_find_or_create_folder(parent_id,name):
-    safe=name.replace("'","\\'")
+    safe=name.replace("'","\'")
     q=f"'{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and name='{safe}'"
-    _,_,data=_drive_api("GET","files",query={"q":q,"pageSize":10,"fields":"files(id,name,mimeType,driveId)"})
+    _,_,data=_drive_api("GET","files",query={"q":q,"pageSize":10,"fields":"files(id,name)"})
     if data.get("files"): return data["files"][0]["id"]
-    _,_,created=_drive_api("POST","files",query={"fields":"id,name,mimeType,driveId"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
+    _,_,created=_drive_api("POST","files",query={"fields":"id,name"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
     return created["id"]
 
 def _drive_category_folder(category,create=True):
-    _drive_root_meta()
     top,sub,_,_=DRIVE_CATEGORY_MAP[category]; parent=VYBE_DRIVE_ROOT_FOLDER_ID
     if create: parent=_drive_find_or_create_folder(parent,top)
     else:
@@ -9794,33 +9891,25 @@ def _drive_make_public(file_id):
         if "already exists" not in str(e).lower(): raise
 
 def _drive_file_meta(file_id):
-    _,_,data=_drive_api("GET",f"files/{file_id}",query={"fields":"id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,driveId,trashed"})
+    _,_,data=_drive_api("GET",f"files/{file_id}",query={"fields":"id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,trashed"})
     return data
 
 def _drive_start_resumable(name,mime_type,folder_id,size=None):
-    # The supportsAllDrives flag is required on the upload-session creation
-    # request. Without it Google can reject a service-account upload with
-    # storageQuotaExceeded even though the service account can browse the folder.
-    params={"uploadType":"resumable","supportsAllDrives":"true"}
-    if VYBE_DRIVE_SHARED_DRIVE_ID:
-        params["driveId"]=VYBE_DRIVE_SHARED_DRIVE_ID
-    upload_url="https://www.googleapis.com/upload/drive/v3/files?"+urlencode(params)
     headers={"X-Upload-Content-Type":mime_type or "application/octet-stream"}
     if size is not None: headers["X-Upload-Content-Length"]=str(int(size))
-    _,resp_headers,_=_drive_http(
-        "POST",upload_url,
-        body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]},
-        headers=headers,
-    )
+    _,resp_headers,_=_drive_http("POST","https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]},headers=headers)
     location=resp_headers.get("Location") or resp_headers.get("location")
     if not location: raise RuntimeError("Google Drive did not return a resumable upload session.")
     return location
 
 def _drive_upload_bytes(name, mime_type, folder_id, data):
-    """Upload an in-memory file to a Google Shared Drive."""
+    """Upload an in-memory file to Drive and return its Drive metadata.
+
+    Normal admin uploads are intentionally stored in Drive first. The database
+    then keeps only the Drive metadata/reference, not the uploaded bytes.
+    """
     if data is None:
         raise ValueError("No file data supplied.")
-    _drive_root_meta()
     session_url = _drive_start_resumable(name, mime_type, folder_id, len(data))
     headers = {
         "Content-Type": mime_type or "application/octet-stream",
@@ -9915,7 +10004,7 @@ def _drive_record_file(con, category, meta, title=None, course="All", semester="
     con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web))
 
 def drive_sync_all():
-    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON: return {"ok":False,"skipped":True,"message":"Drive not configured"}
+    if False: return {"ok":False,"skipped":True,"message":"Drive not configured"}
     total=0; errors=[]; con=db()
     try:
         for category in DRIVE_CATEGORY_MAP:
