@@ -3546,7 +3546,7 @@ def layout(title, body, admin=False):
   bell.addEventListener('click',function(e){e.stopPropagation();const open=!panel.hidden;panel.hidden=open;bell.setAttribute('aria-expanded',open?'false':'true');if(!open)refresh();});
   document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap')){panel.hidden=true;bell.setAttribute('aria-expanded','false')}});
   refresh();
-  setInterval(refresh,2500);
+  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},5000);
 })();
 </script>
 """
@@ -4161,6 +4161,25 @@ def layout(title, body, admin=False):
 @media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid,.publisher-permission-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-student-head{{align-items:flex-start;flex-direction:column}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.publisher-student-card{{padding:14px;border-radius:18px}}.publisher-permission-grid{{gap:8px}}.publisher-permission{{padding:10px}}.settings-detail-grid{{gap:12px}}}}
 
+/* ===== FINAL VYBE MENU PANEL — DARK BLUE, LIGHTWEIGHT, ALL DEVICES ===== */
+#vybeMobileNav.student-mobile-menu{{
+  background:linear-gradient(145deg,#142a43 0%,#0b1b2d 58%,#071321 100%)!important;
+  border:1px solid rgba(116,171,214,.34)!important;
+  box-shadow:0 22px 55px rgba(4,12,22,.42),inset 0 1px rgba(255,255,255,.055)!important;
+  color:#eef7ff!important;
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+  isolation:isolate!important;
+}}
+#vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-head{{background:transparent!important;border-bottom:1px solid rgba(145,190,220,.16)!important;color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-close{{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,195,225,.20)!important;color:#eaf6ff!important}}
+#vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
+#vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
+@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
+@media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
+
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
@@ -4364,44 +4383,13 @@ document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")setMenu(false);
 }});
 
-/* VYBE instant navigation warm-up.
-   Start fetching common same-origin GET destinations as soon as the user
-   hovers or touches them. The browser can then reuse the response when the
-   link is opened, making navigation feel near-instant on repeat use without
-   changing the URL or bypassing normal authentication. */
+/* VYBE navigation: use normal browser navigation.
+   Do not prefetch every hovered/touched link; that created duplicate requests and
+   made mobile navigation feel slower, especially on Vercel. External links are
+   intentionally left untouched so they open directly through their href/target. */
 (function(){{
-  if(window.__vybeLinkWarmup)return;
-  window.__vybeLinkWarmup=true;
-  const warmed=new Set();
-  const skip=(a)=>{{
-    if(!a)return true;
-    const href=a.getAttribute('href')||'';
-    if(!href||href[0]==='#'||href.startsWith('javascript:'))return true;
-    if(a.target&&a.target!==''&&a.target!=='_self')return true;
-    if(a.hasAttribute('download'))return true;
-    if((a.getAttribute('rel')||'').split(/\s+/).includes('external'))return true;
-    try{{
-      const u=new URL(href,location.href);
-      return u.origin!==location.origin || !['http:','https:'].includes(u.protocol);
-    }}catch(_){{return true;}}
-  }};
-  const warm=(a)=>{{
-    if(skip(a))return;
-    const u=new URL(a.href,location.href);
-    const key=u.href;
-    if(warmed.has(key))return;
-    warmed.add(key);
-    // Only warm GET pages; never prefetch a form/action endpoint.
-    fetch(key,{{credentials:'same-origin',cache:'force-cache',priority:'low',headers:{{'X-VYBE-Prefetch':'1'}}}}).catch(()=>{{}});
-  }};
-  document.addEventListener('pointerover',function(e){{
-    const a=e.target.closest&&e.target.closest('a[href]');
-    if(a)warm(a);
-  }},{{passive:true}});
-  document.addEventListener('touchstart',function(e){{
-    const a=e.target.closest&&e.target.closest('a[href]');
-    if(a)warm(a);
-  }},{{passive:true}});
+  if(window.__vybeLinkWarmupDisabled)return;
+  window.__vybeLinkWarmupDisabled=true;
 }})();
 
 document.querySelectorAll(".toggle-password").forEach(function(btn){{
@@ -4481,7 +4469,7 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
     syncing=false;
   }}
   check();
-  setInterval(check,700);
+  setInterval(function(){{ if(document.visibilityState==='visible') check(); }},5000);
 }})();</script></body></html>'''
 
 
@@ -6501,11 +6489,11 @@ def academic_updates():
             final_target=f"/academic-update-file/{r['id']}"; card_target=' target="_blank" rel="noopener"'; action_text="Open document"
         else:
             final_target=f"/academic-update/{r['id']}"; card_target=""; action_text="View notice"
-        # Opening an update from the Academic Updates page also counts as
-        # viewing that specific notification, not every notification.
-        card_action=f"/student-update-seen/academic/{r['id']}"
-        card_target_attr = ' target="_blank"' if card_target else ''
-        cards_list.append(f'''<form id="academic-update-{r['id']}" class="academic-update-open-form" method="post" action="{card_action}"{card_target_attr}><input type="hidden" name="next" value="{esc(final_target)}"><button class="academic-update-card academic-update-large academic-update-clickable academic-update-open-button" type="submit" aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></button></form>''')
+        # Use a real anchor for direct navigation. The previous implementation
+        # put target="_blank" on a <form>, which browsers ignore, so external
+        # sites could be routed through the POST instead of opening directly.
+        card_target_attr = ' target="_blank" rel="noopener noreferrer"' if external_target else (' target="_blank" rel="noopener"' if file_available else '')
+        cards_list.append(f'''<a class="academic-update-card academic-update-large academic-update-clickable" href="{esc(final_target)}"{card_target_attr} aria-label="{action_text}: {esc(r["title"])}"><div class="academic-update-content"><div class="academic-update-line"><span class="academic-update-category">{esc(r["kind"])}</span></div><h2>{esc(r["title"])}</h2><p>{esc(r["description"])}</p></div><div class="academic-update-foot"><span>{esc(r["event_date"] or r["created_at"])}</span><span class="academic-link">{action_text} <b>↗</b></span></div></a>''')
     cards="".join(cards_list)
     body=f'''{ACADEMIC_UPDATES_PAGE_CSS}{ACADEMIC_DIRECT_CARD_CSS}<section class="academic-hero academic-compact section"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>Important academic updates.</h1><p class="academic-lead">Results, date sheets, exam notices and admit cards — all in one place.</p></section><section class="section"><div class="academic-filter-panel"><form class="academic-filter-form" method="get"><input name="q" value="{esc(q)}" placeholder="Search academic updates"><select name="kind"><option value="">All four updates</option>{''.join(f'<option value="{esc(x)}" {selected(x,kind)}>{esc(x)}</option>' for x in allowed_kinds)}</select><button type="submit">Search</button></form></div><div class="academic-update-list">{cards or '<div class="academic-empty">No academic updates have been published yet.</div>'}</div></section>'''
     return layout("Academic Updates",body)
@@ -7586,7 +7574,7 @@ def community_chat():
       function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const id=String(b.dataset.messageId),node=document.getElementById('community-msg-'+id);if(node){{node.style.transition='opacity .12s ease,transform .12s ease';node.style.opacity='0';node.style.transform='translateX(10px)';setTimeout(function(){{if(node&&node.parentNode)node.remove();}},120);}}const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('delete failed');return r.json();}}).then(function(){{}}).catch(function(){{refresh(true);}});}};}}); }}
       function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
       async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;chatWindow.querySelectorAll('.community-message').forEach(function(e){{last=Math.max(last,Number(e.dataset.messageId)||0);}});const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{chatWindow.appendChild(build(m));}}const temp=[...chatWindow.querySelectorAll('[data-message-id^="temp-"]')].find(function(x){{return x.dataset.tempMessage===String(m.message);}});if(temp)temp.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{refresh(false);}},700);}} if(replyCancel)replyCancel.onclick=clearReply;
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{if(document.visibilityState==='visible')refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
       if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='46px';clearReply();const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};chatWindow.appendChild(build(optimistic));const tempNode=chatWindow.querySelector('[data-message-id="'+tempId+'"]');if(tempNode)tempNode.dataset.tempMessage=txt;chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('send failed');return r.json();}}).then(function(){{return refresh(true);}}).catch(function(){{if(tempNode)tempNode.remove();sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
