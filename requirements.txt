@@ -1,4 +1,4 @@
-Flask>=3.0,<4
-psycopg[binary]>=3.2,<4
-google-auth>=2.29,<3
-webauthn>=2.0,<3
+Flask
+psycopg[binary]
+webauthn
+google-auth
