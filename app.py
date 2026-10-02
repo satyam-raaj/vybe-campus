@@ -81,9 +81,10 @@ except OSError:
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
+SECRET_KEY_CONFIGURED = bool(SECRET_KEY)
+# Never crash during module import on Vercel. A missing secret is reported by
+# /readyz and should be fixed in Vercel Environment Variables.
 if not SECRET_KEY:
-    if DATABASE_URL:
-        raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
@@ -1135,10 +1136,10 @@ def readyz():
             os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
             or os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip()
         )
-        return jsonify(ok=True, database="ok", drive_configured=drive_configured)
+        return jsonify(ok=True, database="ok", drive_configured=drive_configured, secret_key_configured=SECRET_KEY_CONFIGURED)
     except Exception as exc:
         app.logger.error("VYBE readiness check failed: %s: %s", type(exc).__name__, exc)
-        return jsonify(ok=False, database="unavailable"), 503
+        return jsonify(ok=False, database="unavailable", secret_key_configured=SECRET_KEY_CONFIGURED), 503
 
 @app.route("/healthz")
 def healthz():
