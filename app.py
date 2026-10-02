@@ -2373,6 +2373,62 @@ main,.main,.wrap{position:relative}
 
 
 
+
+/* ===== FINAL MENU PANEL — MATCH ASK VYBE DARK BLUE GLASS ===== */
+#vybeMobileNav.student-mobile-menu{
+  background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+  background-color:#0b1625!important;
+  color:#f4f7fb!important;
+  border:1px solid rgba(104,142,178,.38)!important;
+  box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
+  backdrop-filter:blur(24px) saturate(135%)!important;
+  -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-head{
+  border-bottom:1px solid rgba(105,139,171,.24)!important;
+  background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-title{
+  color:#fff!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-close{
+  background:rgba(255,255,255,.07)!important;
+  border:1px solid rgba(120,150,180,.34)!important;
+  color:#e4edf5!important;
+}
+#vybeMobileNav.student-mobile-menu > a,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+  background:rgba(255,255,255,.055)!important;
+  border:1px solid rgba(105,139,170,.28)!important;
+  color:#e8eef5!important;
+  box-shadow:none!important;
+}
+#vybeMobileNav.student-mobile-menu > a:hover,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
+#vybeMobileNav.student-mobile-menu > a:focus-visible,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:focus-visible,
+#vybeMobileNav.student-mobile-menu > a:active,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+  background:rgba(47,111,202,.20)!important;
+  border-color:rgba(104,160,216,.48)!important;
+  color:#fff!important;
+}
+@media(max-width:850px){
+  #vybeMobileNav.student-mobile-menu{
+    background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+    border:1px solid rgba(104,142,178,.38)!important;
+    box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
+    backdrop-filter:blur(24px) saturate(135%)!important;
+    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{color:#fff!important}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    background:rgba(255,255,255,.055)!important;
+    border:1px solid rgba(105,139,170,.28)!important;
+    color:#e8eef5!important;
+  }
+}
 /* ===== VYBE COMPACT HEADER / NO FOOTER ===== */
 .student-nav-compact{max-width:1280px!important;min-height:58px!important;padding:7px 18px!important;gap:16px!important}
 .student-nav-compact .student-brand-compact{font-size:20px!important;min-width:76px!important}
@@ -9406,4 +9462,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
