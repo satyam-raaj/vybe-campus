@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: vybe-campus
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 8 --timeout 120 app:app
+    healthCheckPath: /healthz
