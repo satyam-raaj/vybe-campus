@@ -9921,6 +9921,7 @@ def admin_password():
         return redirect(url_for("admin_verify"))
     con = db()
     count = con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
+    blocked_count = con.execute("SELECT COUNT(*) AS c FROM vybe_security_devices WHERE blocked_until>?", (time.time(),)).fetchone()["c"]
     con.close()
     web_status = "ready" if webauthn_configured() else "not configured"
     if count == 0:
@@ -9929,7 +9930,7 @@ def admin_password():
         registration_note = "Current passkey verified. You may register another passkey."
     else:
         registration_note = "Verify your current passkey before registering another passkey."
-    body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1>
+    body = f'''<section class="section"><div class="security-password-head"><div><div class="badge">SECURITY CENTER</div><h1>Protect VYBE.</h1><p class="muted">Manage admin authentication and review student login security from one place.</p></div><a class="security-alert-button" href="/admin/security-alerts"><span>🛡</span><div><strong>Security Alerts &amp; Blocked Users</strong><small>{blocked_count} currently blocked · Review alerts and remove blocks</small></div><b>→</b></a></div>
     <div class="two">
       <div class="card"><h2> Passkeys</h2>
         <p class="muted">Current credentials: {count}. Adding a second or later passkey requires verification of an existing passkey first.</p>
