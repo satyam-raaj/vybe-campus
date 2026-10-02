@@ -12,3 +12,4 @@ qrcode
 Pillow
 
 python-dotenv
+psycopg[binary]
