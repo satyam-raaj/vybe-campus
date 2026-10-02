@@ -27,7 +27,7 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, Response
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -81,9 +81,8 @@ except OSError:
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
-# Never crash the Vercel module import because a configuration variable is
-# missing. Flask must start so /readyz can report the exact configuration
-# problem instead of every request becoming an import-time 500.
+# Never crash during module import on Vercel. A missing production secret is
+# reported by /readyz instead of turning every request into a platform 500.
 if not SECRET_KEY:
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
@@ -1124,6 +1123,32 @@ def webauthn_configured():
 # Offline gate: admin login/admin routes remain available while public/student
 # routes receive the dedicated offline page.
 # ---------------------------------------------------------------------------
+@app.route("/favicon.ico")
+def favicon():
+    # Keep browser favicon requests out of the custom 404 page.
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#07111f"/><text x="32" y="44" text-anchor="middle" font-family="Arial,sans-serif" font-size="38" font-weight="900" fill="white">V</text></svg>"""
+    return Response(svg, mimetype="image/svg+xml", headers={"Cache-Control":"public, max-age=86400"})
+
+@app.route("/readyz")
+def readyz():
+    checks = {
+        "secret_key": bool(os.environ.get("VYBE_SECRET_KEY", "").strip()),
+        "database_url": bool(DATABASE_URL),
+        "webauthn": WEBAUTHN_AVAILABLE,
+        "google_auth": GOOGLE_AUTH_AVAILABLE,
+    }
+    db_ok = False
+    try:
+        con = db()
+        con.execute("SELECT 1").fetchone()
+        con.close()
+        db_ok = True
+    except Exception:
+        db_ok = False
+    checks["database"] = db_ok
+    ok = all((checks["database_url"], checks["secret_key"], checks["database"]))
+    return jsonify(ok=ok, checks=checks), (200 if ok else 503)
+
 @app.route("/healthz")
 def healthz():
     """Small Render health endpoint that does not depend on student/admin state."""
@@ -1135,32 +1160,6 @@ def healthz():
     except Exception as exc:
         app.logger.error("VYBE health check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
         return jsonify(ok=False, service="VYBE", error="database unavailable"), 503
-
-
-@app.route("/readyz")
-def readyz():
-    """Deployment readiness diagnostics; safe to call without authentication."""
-    checks = {
-        "secret_key": bool(os.environ.get("VYBE_SECRET_KEY", "").strip()),
-        "database_url": bool(DATABASE_URL),
-        "psycopg": psycopg is not None if DATABASE_URL else True,
-        "google_auth": GOOGLE_AUTH_AVAILABLE if VYBE_GOOGLE_SERVICE_ACCOUNT_JSON else True,
-        "webauthn": WEBAUTHN_AVAILABLE,
-    }
-    db_ok = False
-    if DATABASE_URL and psycopg is not None:
-        try:
-            con = db()
-            con.execute("SELECT 1").fetchone()
-            con.close()
-            db_ok = True
-        except Exception as exc:
-            app.logger.warning("VYBE readiness database check failed: %s: %s", type(exc).__name__, exc)
-    else:
-        db_ok = not DATABASE_URL
-    checks["database"] = db_ok
-    ready = checks["secret_key"] and checks["database"]
-    return jsonify(ok=ready, checks=checks), (200 if ready else 503)
 
 
 # ---------------------------------------------------------------------------
