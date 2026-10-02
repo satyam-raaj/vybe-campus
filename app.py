@@ -6401,7 +6401,7 @@ def _academic_resource_collection(resource_type, title, subtitle, kicker):
     if semester: where.append("semester=?"); params.append(semester)
     if subject: where.append("subject=?"); params.append(subject)
     if course: where.append("course=?"); params.append(course)
-    rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
+    rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,drive_file_id,drive_web_url,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
     semesters=[r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester<>'' ORDER BY semester",(resource_type,)).fetchall()]
     subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND subject<>'' ORDER BY subject",(resource_type,)).fetchall()]
     courses=[r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE resource_type=? AND course<>'' ORDER BY course",(resource_type,)).fetchall()]
@@ -6415,7 +6415,7 @@ def _academic_resource_collection(resource_type, title, subtitle, kicker):
         for sub, items in subs.items():
             cards=[]
             for r in items:
-                has_file=bool(r["file_name"] or r["file_data"] is not None)
+                has_file=bool(r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"])
                 href=f'/resource/{r["id"]}' if has_file else '#'
                 cards.append(f'''<a class="ah-card" href="{href}"{(' target="_blank" rel="noopener"' if has_file else '')}><span class="tag">{esc(resource_type)}</span><h4>{esc(r["title"])}</h4><p>{esc(r["description"] or "Open the uploaded academic resource.")}</p><div class="ah-card-foot"><span>{esc(r["course"] or "All courses")}</span><span>{"Open ↗" if has_file else "No file"}</span></div></a>''')
             subject_blocks.append(f'<div class="ah-subject"><h3>{esc(sub)}</h3><div class="ah-grid">{"".join(cards)}</div></div>')
@@ -6443,8 +6443,8 @@ def _academic_update_collection(kind, title, subtitle, kicker):
     con=db(); rows=con.execute("SELECT * FROM academic_updates WHERE kind=? ORDER BY id DESC",(kind,)).fetchall(); con.close()
     cards=[]
     for r in rows:
-        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["file_data"] is not None else "View update ↗")
-        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["file_data"] is not None else f'/academic-update/{r["id"]}')
+        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"] else "View update ↗")
+        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"] else f'/academic-update/{r["id"]}')
         cards.append(f'''<a class="ah-update" href="{esc(href)}" target="_blank" rel="noopener noreferrer"><span class="tag">{esc(kind)}</span><h3>{esc(r["title"])}</h3><p>{esc(r["description"])}</p><div class="ah-update-foot">{esc(r["event_date"] or r["created_at"])} · {action}</div></a>''')
     body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></section><section class="ah-section"><div class="ah-update-grid">{"".join(cards) or '<div class="ah-empty">Nothing has been published here yet.</div>'}</div></section></section>'''
     return layout(title,body)
@@ -10201,3 +10201,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
