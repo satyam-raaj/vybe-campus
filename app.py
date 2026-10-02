@@ -22,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse, urljoin, quote
+from urllib.parse import urlparse, urljoin, quote, urlencode
 from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
@@ -82,8 +82,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
 if not SECRET_KEY:
-    if DATABASE_URL:
-        raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
+    # Do not crash during Vercel module import. Missing production config is
+    # reported by readiness checks instead of turning every request into 500.
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
@@ -91,10 +91,9 @@ PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERC
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
+VYBE_DRIVE_SHARED_DRIVE_ID = os.environ.get("VYBE_DRIVE_SHARED_DRIVE_ID", "").strip()
 VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
 VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "1").strip() == "1"
-# Optional Shared Drive ID. If omitted, the app discovers it from the configured root folder.
-VYBE_DRIVE_SHARED_DRIVE_ID = os.environ.get("VYBE_DRIVE_SHARED_DRIVE_ID", "").strip()
 VYBE_DRIVE_WEBHOOK_TOKEN = os.environ.get("VYBE_DRIVE_WEBHOOK_TOKEN", "").strip() or hashlib.sha256((SECRET_KEY + "|drive-webhook").encode()).hexdigest()
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
@@ -9710,18 +9709,48 @@ def _drive_http(method, url, body=None, headers=None, timeout=30):
         except Exception: detail=raw.decode("utf-8",errors="replace")
         raise RuntimeError(f"Google Drive API {e.code}: {detail}") from e
 
+def _drive_query(query=None, *, drive_id=None):
+    """Add the parameters required for Google Shared Drive operations."""
+    q=dict(query or {})
+    q.setdefault("supportsAllDrives", "true")
+    q.setdefault("includeItemsFromAllDrives", "true")
+    if drive_id:
+        q.setdefault("corpora", "drive")
+        q.setdefault("driveId", drive_id)
+    return q
+
 def _drive_api(method, path, query=None, body=None):
     url="https://www.googleapis.com/drive/v3/"+path.lstrip("/")
-    if query:
-        from urllib.parse import urlencode
-        url += "?"+urlencode(query)
+    q=_drive_query(query, drive_id=VYBE_DRIVE_SHARED_DRIVE_ID or None)
+    if q:
+        url += "?"+urlencode(q)
     return _drive_http(method,url,body=body)
+
+def _drive_root_meta():
+    """Return root folder metadata and detect My Drive vs Shared Drive."""
+    _,_,meta=_drive_api(
+        "GET",
+        f"files/{VYBE_DRIVE_ROOT_FOLDER_ID}",
+        query={"fields":"id,name,mimeType,driveId,parents,trashed"},
+    )
+    if meta.get("trashed"):
+        raise RuntimeError("VYBE Drive root folder is in the trash.")
+    if meta.get("mimeType") != "application/vnd.google-apps.folder":
+        raise RuntimeError("VYBE_DRIVE_ROOT_FOLDER_ID does not point to a Google Drive folder.")
+    actual_drive_id=meta.get("driveId") or VYBE_DRIVE_SHARED_DRIVE_ID
+    if not actual_drive_id:
+        raise RuntimeError(
+            "The configured VYBE Drive folder is in My Drive. Google service accounts have no storage quota for My Drive uploads. "
+            "Move/create the VYBE folder inside a Google Shared Drive, give the service account Content manager access, "
+            "and set VYBE_DRIVE_ROOT_FOLDER_ID to that Shared Drive folder."
+        )
+    return meta
 
 def _drive_list_children(parent_id):
     q=f"'{parent_id}' in parents and trashed=false"
     files=[]; token=None
     while True:
-        query={"q":q,"pageSize":1000,"fields":"nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,driveId)","supportsAllDrives":"true","includeItemsFromAllDrives":"true"}
+        query={"q":q,"pageSize":1000,"fields":"nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,driveId)"}
         if token: query["pageToken"]=token
         _,_,data=_drive_api("GET","files",query=query)
         files.extend(data.get("files",[])); token=data.get("nextPageToken")
@@ -9729,14 +9758,15 @@ def _drive_list_children(parent_id):
     return files
 
 def _drive_find_or_create_folder(parent_id,name):
-    safe=name.replace("'","\'")
+    safe=name.replace("'","\\'")
     q=f"'{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and name='{safe}'"
-    _,_,data=_drive_api("GET","files",query={"q":q,"pageSize":10,"fields":"files(id,name,driveId)","supportsAllDrives":"true","includeItemsFromAllDrives":"true"})
+    _,_,data=_drive_api("GET","files",query={"q":q,"pageSize":10,"fields":"files(id,name,mimeType,driveId)"})
     if data.get("files"): return data["files"][0]["id"]
-    _,_,created=_drive_api("POST","files",query={"fields":"id,name,driveId","supportsAllDrives":"true"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
+    _,_,created=_drive_api("POST","files",query={"fields":"id,name,mimeType,driveId"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
     return created["id"]
 
 def _drive_category_folder(category,create=True):
+    _drive_root_meta()
     top,sub,_,_=DRIVE_CATEGORY_MAP[category]; parent=VYBE_DRIVE_ROOT_FOLDER_ID
     if create: parent=_drive_find_or_create_folder(parent,top)
     else:
@@ -9754,43 +9784,43 @@ def _drive_category_folder(category,create=True):
 def _drive_delete_file(file_id):
     if not file_id:
         return
-    _drive_api("DELETE", f"files/{file_id}", query={"supportsAllDrives":"true"})
+    _drive_api("DELETE", f"files/{file_id}")
 
 def _drive_make_public(file_id):
     if not VYBE_DRIVE_PUBLIC_FILES: return
     try:
-        _drive_api("POST",f"files/{file_id}/permissions",query={"sendNotificationEmail":"false","fields":"id,type,role","supportsAllDrives":"true"},body={"type":"anyone","role":"reader"})
+        _drive_api("POST",f"files/{file_id}/permissions",query={"sendNotificationEmail":"false","fields":"id,type,role"},body={"type":"anyone","role":"reader"})
     except Exception as e:
         if "already exists" not in str(e).lower(): raise
 
 def _drive_file_meta(file_id):
-    _,_,data=_drive_api("GET",f"files/{file_id}",query={"fields":"id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,trashed,driveId","supportsAllDrives":"true"})
+    _,_,data=_drive_api("GET",f"files/{file_id}",query={"fields":"id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,driveId,trashed"})
     return data
 
 def _drive_start_resumable(name,mime_type,folder_id,size=None):
-    # A service account has no personal My Drive storage quota.  For a Shared
-    # Drive, the upload request itself MUST opt into shared-drive support.
-    # Looking up a Shared Drive folder is not enough; Drive checks this flag
-    # when creating the file/upload session.
+    # The supportsAllDrives flag is required on the upload-session creation
+    # request. Without it Google can reject a service-account upload with
+    # storageQuotaExceeded even though the service account can browse the folder.
+    params={"uploadType":"resumable","supportsAllDrives":"true"}
+    if VYBE_DRIVE_SHARED_DRIVE_ID:
+        params["driveId"]=VYBE_DRIVE_SHARED_DRIVE_ID
+    upload_url="https://www.googleapis.com/upload/drive/v3/files?"+urlencode(params)
     headers={"X-Upload-Content-Type":mime_type or "application/octet-stream"}
     if size is not None: headers["X-Upload-Content-Length"]=str(int(size))
-    from urllib.parse import urlencode
-    params={"uploadType":"resumable","supportsAllDrives":"true"}
-    url="https://www.googleapis.com/upload/drive/v3/files?"+urlencode(params)
-    body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]}
-    _,resp_headers,_=_drive_http("POST",url,body=body,headers=headers)
+    _,resp_headers,_=_drive_http(
+        "POST",upload_url,
+        body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]},
+        headers=headers,
+    )
     location=resp_headers.get("Location") or resp_headers.get("location")
     if not location: raise RuntimeError("Google Drive did not return a resumable upload session.")
     return location
 
 def _drive_upload_bytes(name, mime_type, folder_id, data):
-    """Upload an in-memory file to Drive and return its Drive metadata.
-
-    Normal admin uploads are intentionally stored in Drive first. The database
-    then keeps only the Drive metadata/reference, not the uploaded bytes.
-    """
+    """Upload an in-memory file to a Google Shared Drive."""
     if data is None:
         raise ValueError("No file data supplied.")
+    _drive_root_meta()
     session_url = _drive_start_resumable(name, mime_type, folder_id, len(data))
     headers = {
         "Content-Type": mime_type or "application/octet-stream",
