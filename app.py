@@ -1322,7 +1322,11 @@ def _security_cache_get(device_hash):
 
 
 def _security_block_status(con, device_hash):
-    row = con.execute("SELECT * FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+    try:
+        row = con.execute("SELECT * FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+    except Exception as exc:
+        app.logger.error("VYBE security block lookup failed: %s: %s", type(exc).__name__, exc)
+        return None
     if not row:
         return None
     until = float(row["blocked_until"] or 0)
@@ -1343,43 +1347,77 @@ def _security_block_page(until=0):
 
 
 def _security_failed_login(con, name, student_id, area):
-    """Track failures per account + VYBE device; never block a shared campus IP."""
+    """Persist failed attempts by account + VYBE device, never by shared IP alone.
+
+    Security failures must never turn into a generic 500 page. If the security
+    tables are temporarily unavailable, log the problem and let the normal
+    login error continue rather than breaking authentication.
+    """
     device_hash = _security_device_hash()
     ip = _security_client_ip()
     current = time.time()
-    existing_device = _security_block_status(con, device_hash)
-    if existing_device:
-        return True, float(existing_device["blocked_until"] or current), int(existing_device["failed_attempts"] or 3)
-
     name = str(name or "Unknown").strip()[:120]
     student_id = str(student_id or "").strip()[:120]
-    area = str(area or "").strip()[:40]
+    area = str(area or "").strip()[:40] or "Student"
     account_key = hashlib.sha256((area.lower() + "|" + student_id.lower()).encode("utf-8")).hexdigest()
-    row = con.execute("SELECT * FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area)).fetchone()
-    if row and float(row["first_failed_at"] or 0) and current - float(row["first_failed_at"]) >= 86400:
-        attempts, first = 0, current
-    elif row:
-        attempts, first = int(row["failed_attempts"] or 0), float(row["first_failed_at"] or current)
-    else:
-        attempts, first = 0, current
-    attempts += 1
+    try:
+        existing_device = _security_block_status(con, device_hash)
+        if existing_device:
+            return True, float(existing_device["blocked_until"] or current), int(existing_device["failed_attempts"] or 3)
 
-    if row:
-        con.execute("UPDATE login_security_attempts SET failed_attempts=?, first_failed_at=?, updated_at=? WHERE account_key=? AND device_hash=? AND area=?", (attempts, first, now(), account_key, device_hash, area))
-    else:
-        con.execute("INSERT INTO login_security_attempts(account_key,device_hash,area,failed_attempts,first_failed_at,updated_at) VALUES(?,?,?,?,?,?)", (account_key, device_hash, area, attempts, first, now()))
-
-    blocked_until = current + 86400 if attempts >= 3 else 0
-    if blocked_until:
-        existing = con.execute("SELECT device_hash FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
-        if existing:
-            con.execute("UPDATE login_security_devices SET failed_attempts=?, first_failed_at=?, blocked_until=?, last_name=?, last_student_id=?, last_area=?, last_ip=?, updated_at=? WHERE device_hash=?", (attempts, first, blocked_until, name, student_id, area, ip, now(), device_hash))
+        row = con.execute(
+            "SELECT * FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?",
+            (account_key, device_hash, area),
+        ).fetchone()
+        if row and float(row["first_failed_at"] or 0) and current - float(row["first_failed_at"]) >= 86400:
+            attempts, first = 0, current
+        elif row:
+            attempts, first = int(row["failed_attempts"] or 0), float(row["first_failed_at"] or current)
         else:
-            con.execute("INSERT INTO login_security_devices(device_hash,failed_attempts,first_failed_at,blocked_until,last_name,last_student_id,last_area,last_ip,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (device_hash, attempts, first, blocked_until, name, student_id, area, ip, now(), now()))
-        con.execute("INSERT INTO login_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)", (now_ist(), "login_block", name, student_id, ip, area, blocked_until, f"3 failed {area.lower()} password attempts on one VYBE device; device blocked for 24 hours."))
-        _security_cache_set(device_hash, blocked_until)
-    con.commit()
-    return bool(blocked_until), blocked_until, attempts
+            attempts, first = 0, current
+        attempts += 1
+
+        if row:
+            con.execute(
+                "UPDATE login_security_attempts SET failed_attempts=?, first_failed_at=?, updated_at=? WHERE account_key=? AND device_hash=? AND area=?",
+                (attempts, first, now(), account_key, device_hash, area),
+            )
+        else:
+            con.execute(
+                "INSERT INTO login_security_attempts(account_key,device_hash,area,failed_attempts,first_failed_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (account_key, device_hash, area, attempts, first, now()),
+            )
+
+        blocked_until = current + 86400 if attempts >= 3 else 0
+        if blocked_until:
+            existing = con.execute(
+                "SELECT device_hash FROM login_security_devices WHERE device_hash=?", (device_hash,)
+            ).fetchone()
+            if existing:
+                con.execute(
+                    "UPDATE login_security_devices SET failed_attempts=?, first_failed_at=?, blocked_until=?, last_name=?, last_student_id=?, last_area=?, last_ip=?, updated_at=? WHERE device_hash=?",
+                    (attempts, first, blocked_until, name, student_id, area, ip, now(), device_hash),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO login_security_devices(device_hash,failed_attempts,first_failed_at,blocked_until,last_name,last_student_id,last_area,last_ip,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (device_hash, attempts, first, blocked_until, name, student_id, area, ip, now(), now()),
+                )
+            con.execute(
+                "INSERT INTO login_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
+                (now_ist(), "login_block", name, student_id, ip, area, blocked_until,
+                 f"3 failed {area.lower()} password attempts on one VYBE device; device blocked for 24 hours."),
+            )
+            _security_cache_set(device_hash, blocked_until)
+        con.commit()
+        return bool(blocked_until), blocked_until, attempts
+    except Exception as exc:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        app.logger.error("VYBE login-security tracking failed: %s: %s", type(exc).__name__, exc)
+        return False, 0, 0
 
 
 def _security_successful_login(con, area, student_id):
@@ -8187,11 +8225,22 @@ def admin_login_passkey_verify():
 @app.route("/admin/security-alerts")
 @admin_required
 def admin_security_alerts():
-    con=db(); alerts=con.execute("SELECT * FROM login_security_alerts ORDER BY id DESC LIMIT 200").fetchall(); blocks=con.execute("SELECT * FROM login_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC",(time.time(),)).fetchall(); con.close()
-    active="".join(f'''<tr><td>{esc(r["last_name"] or "Unknown")}</td><td>{esc(r["last_student_id"] or "—")}</td><td><b>{esc(r["ip_address"])}</b></td><td>{esc(r["last_area"] or "—")}</td><td>{esc(datetime.fromtimestamp(float(r["blocked_until"]), timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M") if r["blocked_until"] else "—")}</td></tr>''' for r in blocks) or '<tr><td colspan="5">No VYBE devices are currently blocked.</td></tr>'
-    rows="".join(f'''<tr><td>{esc(r["created_at"])}</td><td>{esc(r["name"] or "Unknown")}</td><td>{esc(r["student_id"] or "—")}</td><td><b>{esc(r["ip_address"])}</b></td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"])}</td></tr>''' for r in alerts) or '<tr><td colspan="6">No security alerts yet.</td></tr>'
-    body=f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Login security alerts.</h1><p class="muted">VYBE records the source IP and account name when three failed password attempts on one VYBE device trigger a 24-hour block.</p><section class="section"><div class="card tablewrap"><h2>Currently blocked</h2><table><tr><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Blocked until</th></tr>{active}</table></div></section><section class="section"><div class="card tablewrap"><h2>Security alert history</h2><table><tr><th>Time (IST)</th><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section></section>'''
-    return layout("Security Alerts",body,admin=True)
+    con = db()
+    try:
+        alerts = con.execute("SELECT * FROM login_security_alerts ORDER BY id DESC LIMIT 200").fetchall()
+        blocks = con.execute("SELECT * FROM login_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC", (time.time(),)).fetchall()
+    finally:
+        con.close()
+    active = "".join(
+        f'''<tr><td>{esc(r["last_name"] or "Unknown")}</td><td>{esc(r["last_student_id"] or "—")}</td><td><b>{esc(r["last_ip"] or "—")}</b></td><td>{esc(r["last_area"] or "—")}</td><td>{esc(datetime.fromtimestamp(float(r["blocked_until"]), timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M") if r["blocked_until"] else "—")}</td></tr>'''
+        for r in blocks
+    ) or '<tr><td colspan="5">No VYBE devices are currently blocked.</td></tr>'
+    rows = "".join(
+        f'''<tr><td>{esc(r["created_at"])}</td><td>{esc(r["name"] or "Unknown")}</td><td>{esc(r["student_id"] or "—")}</td><td><b>{esc(r["ip_address"] or "—")}</b></td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"] or "—")}</td></tr>'''
+        for r in alerts
+    ) or '<tr><td colspan="6">No security alerts yet.</td></tr>'
+    body = f'''<section class="section"><div class="badge">SECURITY CENTER</div><h1>Login security alerts.</h1><p class="muted">Three failed password attempts on one VYBE browser/device create a 24-hour device lock. The IP is recorded for the administrator but is not used as the primary lock key.</p><section class="section"><div class="card tablewrap"><h2>Currently blocked</h2><table><tr><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Blocked until</th></tr>{active}</table></div></section><section class="section"><div class="card tablewrap"><h2>Security alert history</h2><table><tr><th>Time (IST)</th><th>Name</th><th>Student ID</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section></section>'''
+    return layout("Security Alerts", body, admin=True)
 
 
 @app.route("/admin/login-history")
