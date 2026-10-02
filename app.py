@@ -8336,6 +8336,49 @@ def admin_security_unblock(device_id):
     return redirect(url_for("admin_security_alerts"))
 
 
+@app.route("/admin/panel")
+@admin_required
+def admin_panel():
+    con = db()
+    stats = {
+        "students": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='approved'").fetchone()["c"],
+        "pending": con.execute("SELECT COUNT(*) AS c FROM students WHERE status='pending'").fetchone()["c"],
+        "messages": con.execute("SELECT COUNT(*) AS c FROM community_messages").fetchone()["c"],
+        "timetables": con.execute("SELECT COUNT(*) AS c FROM timetables").fetchone()["c"],
+        "updates": con.execute("SELECT COUNT(*) AS c FROM academic_updates").fetchone()["c"],
+        "resources": con.execute("SELECT COUNT(*) AS c FROM resources").fetchone()["c"],
+        "problems": con.execute("SELECT COUNT(*) AS c FROM issues").fetchone()["c"],
+        "announcements": con.execute("SELECT COUNT(*) AS c FROM announcements").fetchone()["c"],
+        "events": con.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
+    }
+    online = setting(con, "vybe_online", "1") == "1"
+    con.close()
+    cards = [
+        ("01", "Students & Access", "Approve requests, block/unblock students and manage publisher access.", "/admin/students", stats["students"], "STUDENTS", "blue", "♙"),
+        ("02", "Community", "Turn Community Chat on/off and moderate student messages.", "/admin/community-chat", stats["messages"], "MESSAGES", "purple", "◉"),
+        ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green", "◷"),
+        ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue", "⚑"),
+        ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green", "▦"),
+        ("06", "Help Desk", "Review student problems, send official solutions and manage reports.", "/admin/problems", stats["problems"], "REPORTS", "orange", "?"),
+        ("07", "Announcements", "Create campus-wide announcements and remove outdated ones.", "/admin/announcements", stats["announcements"], "LIVE", "orange", "▤"),
+        ("08", "Events", "Create upcoming campus events and delete finished or incorrect ones.", "/admin/events", stats["events"], "EVENTS", "purple", "✦"),
+    ]
+    card_html = ''.join(f'<a class="admin-home-card admin-home-card-{tone}" href="{href}"><div class="admin-home-card-top"><span class="admin-home-number">{num}</span><span class="admin-home-count">{count} {label}</span></div><div class="admin-home-icon" aria-hidden="true">{icon}</div><h2>{title}</h2><p>{desc}</p><span class="admin-home-open">Open page <b>→</b></span></a>' for num,title,desc,href,count,label,tone,icon in cards)
+    body = f"""<section class="section admin-home-page">
+      <div class="admin-home-hero">
+        <div><span class="admin-home-kicker">PRIVATE VYBE ADMIN</span><h1>Control everything<br><em>from one place.</em></h1><p>Choose exactly what you want to manage. Every card opens its own admin page with the controls for that area.</p></div>
+        <div class="admin-home-status {"online" if online else "offline"}"><span></span><div><strong>{"VYBE is online" if online else "VYBE is offline"}</strong><small>Public access status</small></div><a href="/admin/status">Manage</a></div>
+      </div>
+      <div class="admin-home-stats"><div><b>{stats["students"]}</b><span>Students</span></div><div><b>{stats["pending"]}</b><span>Pending</span></div><div><b>{stats["updates"]}</b><span>Academic updates</span></div><div><b>{stats["problems"]}</b><span>Help desk</span></div><div><b>{stats["events"]}</b><span>Events</span></div></div>
+      <div class="admin-home-section-title"><div><span>ADMIN AREAS</span><h2>Choose a section</h2></div><small>Each card opens a separate management page.</small></div>
+      <div class="admin-home-grid">{card_html}</div>
+      <div class="admin-home-bottom"><a href="/admin/settings"><span>⚙</span><div><b>Settings</b><small>General VYBE configuration, Drive links and notifications.</small></div><strong>→</strong></a><a href="/admin/analytics"><span>↗</span><div><b>Analytics</b><small>See usage, students, content and community activity.</small></div><strong>→</strong></a><a href="/admin/assistant"><span>✦</span><div><b>VYBE AI Settings</b><small>Manage assistant knowledge and controls.</small></div><strong>→</strong></a></div>
+    </section>"""
+    return layout("Admin Dashboard", body, admin=True)
+
+
+
+
 @app.route("/admin/analytics")
 @admin_required
 def admin_analytics():
