@@ -27,7 +27,7 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, Response, stream_with_context
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -81,9 +81,9 @@ except OSError:
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
-SECRET_KEY_CONFIGURED = bool(SECRET_KEY)
-# Never crash during module import on Vercel. A missing secret is reported by
-# /readyz and should be fixed in Vercel Environment Variables.
+# Never crash the Vercel module import because a configuration variable is
+# missing. Flask must start so /readyz can report the exact configuration
+# problem instead of every request becoming an import-time 500.
 if not SECRET_KEY:
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
@@ -93,7 +93,6 @@ PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https:/
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
 VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64 = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip()
 VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "1").strip() == "1"
 VYBE_DRIVE_WEBHOOK_TOKEN = os.environ.get("VYBE_DRIVE_WEBHOOK_TOKEN", "").strip() or hashlib.sha256((SECRET_KEY + "|drive-webhook").encode()).hexdigest()
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
@@ -1125,22 +1124,6 @@ def webauthn_configured():
 # Offline gate: admin login/admin routes remain available while public/student
 # routes receive the dedicated offline page.
 # ---------------------------------------------------------------------------
-@app.route("/readyz")
-def readyz():
-    """Deployment readiness endpoint for Vercel/monitoring."""
-    try:
-        con = db()
-        con.execute("SELECT 1").fetchone()
-        con.close()
-        drive_configured = bool(
-            os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-            or os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip()
-        )
-        return jsonify(ok=True, database="ok", drive_configured=drive_configured, secret_key_configured=SECRET_KEY_CONFIGURED)
-    except Exception as exc:
-        app.logger.error("VYBE readiness check failed: %s: %s", type(exc).__name__, exc)
-        return jsonify(ok=False, database="unavailable", secret_key_configured=SECRET_KEY_CONFIGURED), 503
-
 @app.route("/healthz")
 def healthz():
     """Small Render health endpoint that does not depend on student/admin state."""
@@ -1152,6 +1135,32 @@ def healthz():
     except Exception as exc:
         app.logger.error("VYBE health check failed: %s: %s", type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
         return jsonify(ok=False, service="VYBE", error="database unavailable"), 503
+
+
+@app.route("/readyz")
+def readyz():
+    """Deployment readiness diagnostics; safe to call without authentication."""
+    checks = {
+        "secret_key": bool(os.environ.get("VYBE_SECRET_KEY", "").strip()),
+        "database_url": bool(DATABASE_URL),
+        "psycopg": psycopg is not None if DATABASE_URL else True,
+        "google_auth": GOOGLE_AUTH_AVAILABLE if VYBE_GOOGLE_SERVICE_ACCOUNT_JSON else True,
+        "webauthn": WEBAUTHN_AVAILABLE,
+    }
+    db_ok = False
+    if DATABASE_URL and psycopg is not None:
+        try:
+            con = db()
+            con.execute("SELECT 1").fetchone()
+            con.close()
+            db_ok = True
+        except Exception as exc:
+            app.logger.warning("VYBE readiness database check failed: %s: %s", type(exc).__name__, exc)
+    else:
+        db_ok = not DATABASE_URL
+    checks["database"] = db_ok
+    ready = checks["secret_key"] and checks["database"]
+    return jsonify(ok=ready, checks=checks), (200 if ready else 503)
 
 
 # ---------------------------------------------------------------------------
@@ -1273,7 +1282,7 @@ def global_online_gate():
     # making the admin Online/Offline switch propagate quickly.
     global _VYBE_ONLINE_CACHE
     now_m = time.monotonic()
-    if now_m - _VYBE_ONLINE_CACHE["at"] >= 10.0:
+    if now_m - _VYBE_ONLINE_CACHE["at"] >= 1.5:
         try:
             con = db()
             _VYBE_ONLINE_CACHE["value"] = setting(con, "vybe_online", "1") == "1"
@@ -1629,11 +1638,6 @@ def handle_http_exception(error):
     else: title="Something went wrong."; message="VYBE could not complete that request. Please try again."; label=f"{code} · VYBE ERROR"
     app.logger.warning("VYBE HTTP %s: %s",code,getattr(error,"description",str(error)))
     body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">{label}</div><div class="vybe-status-mark">V</div><h1>{title}</h1><p>{message}</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>'''
-    # Error responses must not depend on the database, session layout, or any
-    # other application subsystem. This is especially important on Vercel,
-    # where a failure can happen during a cold start before normal rendering is ready.
-    if code >= 500:
-        return _safe_500_page(), code
     return _vybe_public_shell(f"{code} · VYBE",body),code
 
 @app.errorhandler(Exception)
@@ -1641,7 +1645,7 @@ def handle_unexpected_exception(error):
     if isinstance(error,HTTPException): return handle_http_exception(error)
     app.logger.error("UNHANDLED VYBE EXCEPTION: %s: %s",type(error).__name__,str(error),exc_info=(type(error),error,error.__traceback__))
     body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">500 · SERVER ERROR</div><div class="vybe-status-mark">V</div><h1>Something went wrong.</h1><p>VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>'''
-    return _safe_500_page(),500
+    return _vybe_public_shell("500 · VYBE",body),500
 
 @app.errorhandler(500)
 def handle_internal_server_error(error):
@@ -5661,32 +5665,6 @@ TIMETABLE_PAGE_CSS = """<style>
 .page-timetable .timetable-head{max-width:1180px;margin:0 auto;padding:30px 0 18px}.page-timetable .timetable-head .badge{background:#edf4ff;color:#2f6fca;border-color:#d7e4f7}.page-timetable .timetable-head h1{font-size:clamp(38px,5vw,62px);line-height:1;letter-spacing:-.055em;margin:15px 0 9px;color:#17202b}.page-timetable .timetable-head .muted{max-width:700px;font-size:14px;line-height:1.6}.page-timetable .timetable-list{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.page-timetable .timetable-card{position:relative;display:flex;flex-direction:column;min-width:0;padding:0;border:1px solid #dfe5ea;border-radius:24px;background:#fff;overflow:hidden;text-decoration:none;color:#17202b;box-shadow:0 10px 30px rgba(31,48,66,.065);transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}.page-timetable .timetable-card:hover{transform:translateY(-5px);border-color:#bfd5ec;box-shadow:0 20px 44px rgba(31,48,66,.12)}.page-timetable .timetable-card:focus-visible{outline:3px solid rgba(47,111,202,.22);outline-offset:3px}.page-timetable .timetable-card-head{display:flex;align-items:flex-start;gap:14px;padding:19px 20px 14px}.page-timetable .timetable-icon{width:46px;height:46px;flex:0 0 46px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#e9f2ff,#f2f8ff);border:1px solid #d5e5f7;color:#2f6fca;font-weight:900;font-size:17px}.page-timetable .timetable-title-wrap{min-width:0;flex:1}.page-timetable .timetable-title-wrap h2{margin:6px 0 4px;font-size:20px;line-height:1.2;letter-spacing:-.025em;color:#17202b}.page-timetable .timetable-title-wrap .small{color:#7b8793;font-size:11px}.page-timetable .timetable-card .badge{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:8px;letter-spacing:.1em;background:#edf4ff;color:#2f6fca;border:1px solid #d7e4f7}.page-timetable .timetable-preview{margin:0 14px;border:1px solid #e0e7ed;border-radius:17px;background:#f4f7fa;overflow:hidden;min-height:150px;display:flex;align-items:center;justify-content:center}.page-timetable .timetable-preview img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:#f4f7fa}.page-timetable .timetable-preview .notice{width:100%;margin:0;padding:25px;background:#f7faff;border:0;border-radius:0;box-sizing:border-box}.page-timetable .timetable-preview .notice strong{display:block;overflow-wrap:anywhere;color:#33414e}.page-timetable .timetable-card-clean .timetable-clean-note{margin:0 14px;padding:18px 16px;min-height:64px;display:flex;align-items:center;gap:11px;border:1px solid #e0e7ed;border-radius:17px;background:#f7faff;color:#687482;font-size:12px;font-weight:750}.page-timetable .timetable-clean-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:#eaf2ff;color:#2f6fca;font-size:15px}.page-timetable .timetable-card-clean .timetable-preview{display:none}.page-timetable .timetable-card-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px 18px;margin-top:auto}.page-timetable .timetable-open{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:0 14px;border-radius:12px;background:#17202b;color:#fff;font-size:12px;font-weight:850;box-shadow:0 7px 16px rgba(23,32,43,.12);transition:.18s ease}.page-timetable .timetable-card:hover .timetable-open{background:#2f6fca;transform:translateY(-1px)}.page-timetable .timetable-open-arrow{font-size:16px;line-height:1}.page-timetable .timetable-hint{font-size:10px;color:#89939f}.page-timetable .empty{max-width:1180px;margin:0 auto}@media(max-width:900px){.page-timetable .timetable-list{grid-template-columns:1fr}.page-timetable .timetable-preview img{max-height:none}}@media(max-width:620px){.page-timetable .timetable-head{padding:25px 0 15px}.page-timetable .timetable-head h1{font-size:39px}.page-timetable .timetable-card{border-radius:20px}.page-timetable .timetable-card-head{padding:16px 15px 12px}.page-timetable .timetable-title-wrap h2{font-size:18px}.page-timetable .timetable-preview{margin:0 10px;border-radius:15px}.page-timetable .timetable-card-foot{padding:12px 13px 14px;flex-direction:column;align-items:stretch}.page-timetable .timetable-open{width:100%;box-sizing:border-box}.page-timetable .timetable-hint{text-align:center}}
 </style>"""
 
-@app.route("/drive-file/<file_id>")
-@student_required
-def drive_file(file_id):
-    """Authenticated, streaming Drive file proxy for student-facing documents."""
-    con = db()
-    try:
-        allowed = False
-        name = request.args.get("name", "").strip()[:240]
-        mime = request.args.get("mime", "").strip()[:160]
-        for table in ("resources", "academic_updates", "timetables"):
-            row = con.execute(f"SELECT original_name,mime_type,drive_file_id FROM {table} WHERE drive_file_id=?", (file_id,)).fetchone()
-            if row:
-                allowed = True
-                name = name or row["original_name"] or ""
-                mime = mime or row["mime_type"] or ""
-                break
-    finally:
-        con.close()
-    if not allowed:
-        abort(404)
-    try:
-        return _drive_file_response(file_id, name, mime)
-    except Exception as exc:
-        app.logger.error("Drive file %s could not be streamed: %s", file_id, exc, exc_info=(type(exc), exc, exc.__traceback__))
-        abort(502, description="The document could not be retrieved from Google Drive right now.")
-
 @app.route("/timetable")
 @student_required
 def timetable():
@@ -5705,10 +5683,7 @@ def timetable():
 def timetable_file(tid):
     con=db(); row=con.execute("SELECT file_name,original_name,file_data,drive_web_url FROM timetables WHERE id=?",(tid,)).fetchone(); con.close()
     if not row: abort(404)
-    if row["drive_web_url"]:
-        fid = str(row["drive_web_url"]).strip()
-        if fid.startswith("drive:"): return redirect(url_for("drive_file", file_id=fid[6:], name=row["original_name"] or row["file_name"]))
-        return redirect(row["drive_web_url"])
+    if row["drive_web_url"]: return redirect(row["drive_web_url"])
     if row["file_data"] is not None:
         return _send_uploaded_content(row["file_data"], row["original_name"] or row["file_name"])
     path=UPLOAD_DIR/row["file_name"]
@@ -6585,10 +6560,7 @@ def academic_update_file(uid):
     con=db(); row=con.execute("SELECT kind,file_name,original_name,mime_type,file_data,drive_web_url FROM academic_updates WHERE id=?",(uid,)).fetchone(); con.close()
     if not row or row["kind"] not in ("Result","Date Sheet","Exam Notice","Admit Card") or (not row["file_name"] and row["file_data"] is None and not row["drive_web_url"]): abort(404)
     if row["drive_web_url"]:
-        target = str(row["drive_web_url"]).strip()
-        if target.startswith("drive:"):
-            return redirect(url_for("drive_file", file_id=target[6:], name=row["original_name"] or row["file_name"], mime=row["mime_type"] or ""))
-        return redirect(target)
+        return redirect(row["drive_web_url"])
     if row["file_data"] is not None:
         name=row["original_name"] or row["file_name"] or "academic-document"
         return _send_uploaded_content(row["file_data"], name, row["mime_type"])
@@ -6608,11 +6580,7 @@ def academic_apps():
 def resource(rid):
     con = db(); r = con.execute("SELECT file_name, original_name, mime_type, file_data, drive_web_url FROM resources WHERE id=?", (rid,)).fetchone(); con.close()
     if not r or (not r["file_name"] and r["file_data"] is None and not r["drive_web_url"]): abort(404)
-    if r["drive_web_url"]:
-        target = str(r["drive_web_url"]).strip()
-        if target.startswith("drive:"):
-            return redirect(url_for("drive_file", file_id=target[6:], name=r["original_name"] or r["file_name"], mime=r["mime_type"] or ""))
-        return redirect(target)
+    if r["drive_web_url"]: return redirect(r["drive_web_url"])
     # Prefer the database copy so a student can open material even when the
     # web process is on a different instance or the local upload directory
     # was reset during a deployment.
@@ -9239,10 +9207,10 @@ def admin_contact_terms():
 @app.route("/admin/drive")
 @admin_required
 def admin_drive():
-    configured=bool(os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip())
+    configured=bool(VYBE_GOOGLE_SERVICE_ACCOUNT_JSON)
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveTest()">Test Drive connection</button><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div><p class="small" style="margin-top:16px">Configured: <b>{'YES' if configured else 'NO'}</b></p></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveTest=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Testing Google Drive connection…';try{{const d=await j('/admin/drive/test',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Drive connection is working.';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const up=await fetch(init.upload_url,{{method:'PUT',headers:{{'Content-Length':String(f.size)}},body:f}});if(!up.ok)throw new Error('Drive upload failed: HTTP '+up.status);const uploaded=await up.json();status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div><p class="small" style="margin-top:16px">Configured: <b>{'YES' if configured else 'NO'}</b></p></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const up=await fetch(init.upload_url,{{method:'PUT',headers:{{'Content-Length':String(f.size)}},body:f}});if(!up.ok)throw new Error('Drive upload failed: HTTP '+up.status);const uploaded=await up.json();status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
@@ -9262,22 +9230,6 @@ def admin_drive_register():
     try:
         _drive_make_public(fid); meta=_drive_file_meta(fid); con=db(); _drive_record_file(con,category,meta,title=str(data.get("title") or "").strip()[:150] or None,course=str(data.get("course") or "All")[:100],semester=str(data.get("semester") or "All")[:100],subject=str(data.get("subject") or "General")[:100],description=str(data.get("description") or "")[:1000]); con.commit(); con.close(); return jsonify(message="File uploaded to Drive and published in VYBE.")
     except Exception as e: return jsonify(error=str(e)),502
-
-@app.route("/admin/drive/test", methods=["POST"])
-@admin_required
-def admin_drive_test():
-    """Validate credentials and root-folder access without changing Drive contents."""
-    try:
-        creds = _drive_credentials()
-        _, _, meta = _drive_api("GET", f"files/{VYBE_DRIVE_ROOT_FOLDER_ID}", query={"fields": "id,name,mimeType,trashed"})
-        if meta.get("trashed"):
-            raise RuntimeError("The configured Drive root folder is in Trash.")
-        if meta.get("mimeType") != "application/vnd.google-apps.folder":
-            raise RuntimeError("VYBE_DRIVE_ROOT_FOLDER_ID does not point to a Google Drive folder.")
-        return jsonify(ok=True, message=f"Drive connection is working. Root folder: {meta.get('name') or meta.get('id')}.")
-    except Exception as exc:
-        app.logger.warning("Drive connection test failed: %s", exc, exc_info=(type(exc), exc, exc.__traceback__))
-        return jsonify(ok=False, error=str(exc)), 502
 
 @app.route("/admin/drive/sync", methods=["POST"])
 @admin_required
@@ -9719,16 +9671,9 @@ def _drive_credentials():
 
     raw = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
     if not raw:
-        encoded = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip()
-        if encoded:
-            try:
-                raw = base64.b64decode(encoded, validate=True).decode("utf-8")
-            except Exception as exc:
-                raise RuntimeError("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64 is not valid base64-encoded UTF-8 JSON.") from exc
-    if not raw:
         raise RuntimeError(
-            "Google Drive credentials are missing. Set VYBE_GOOGLE_SERVICE_ACCOUNT_JSON "
-            "or VYBE_GOOGLE_SERVICE_ACCOUNT_JSON_B64 in Vercel."
+            "Google Drive credentials are missing: "
+            "VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is empty or unavailable in this deployment."
         )
 
     try:
@@ -9831,74 +9776,17 @@ def _drive_category_folder(category,create=True):
             parent=found[0]["id"]
     return parent
 
-
-def _drive_stream_file(file_id):
-    """Stream a Drive file through VYBE so students do not need public Drive permissions."""
-    if not file_id:
-        raise ValueError("Missing Drive file ID.")
-    token = _drive_access_token()
-    url = "https://www.googleapis.com/drive/v3/files/" + quote(str(file_id), safe="") + "?alt=media"
-    req = URLRequest(url, headers={"Authorization": f"Bearer {token}", "Accept": "*/*"}, method="GET")
-    try:
-        upstream = urlopen(req, timeout=30)
-    except HTTPError as exc:
-        raw = exc.read(8000)
-        try:
-            detail = json.loads(raw.decode("utf-8", errors="replace"))
-        except Exception:
-            detail = raw.decode("utf-8", errors="replace")
-        raise RuntimeError(f"Google Drive download API {exc.code}: {detail}") from exc
-
-    def chunks():
-        try:
-            while True:
-                chunk = upstream.read(1024 * 256)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            try:
-                upstream.close()
-            except Exception:
-                pass
-
-    return chunks(), dict(upstream.headers)
-
-def _drive_file_response(file_id, download_name=None, mime_type=None):
-    """Return a streaming response backed by Google Drive."""
-    chunks, headers = _drive_stream_file(file_id)
-    guessed = mime_type or headers.get("Content-Type") or mimetypes.guess_type(download_name or "")[0] or "application/octet-stream"
-    response = Response(stream_with_context(chunks()), mimetype=guessed)
-    if download_name:
-        safe_name = Path(download_name).name or "download"
-        response.headers["Content-Disposition"] = f'inline; filename="{safe_name.replace(chr(34), "")}"'
-    if headers.get("Content-Length"):
-        response.headers["Content-Length"] = headers["Content-Length"]
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
 def _drive_delete_file(file_id):
     if not file_id:
         return
     _drive_api("DELETE", f"files/{file_id}")
 
 def _drive_make_public(file_id):
-    # Public sharing is optional now: VYBE streams Drive files through an
-    # authenticated endpoint, so a Workspace policy can block "anyone" sharing
-    # without breaking uploads.
-    if not VYBE_DRIVE_PUBLIC_FILES:
-        return False
+    if not VYBE_DRIVE_PUBLIC_FILES: return
     try:
-        _drive_api(
-            "POST",
-            f"files/{file_id}/permissions",
-            query={"sendNotificationEmail": "false", "fields": "id,type,role"},
-            body={"type": "anyone", "role": "reader"},
-        )
-        return True
-    except Exception as exc:
-        app.logger.warning("Drive public sharing skipped for %s: %s", file_id, exc)
-        return False
+        _drive_api("POST",f"files/{file_id}/permissions",query={"sendNotificationEmail":"false","fields":"id,type,role"},body={"type":"anyone","role":"reader"})
+    except Exception as e:
+        if "already exists" not in str(e).lower(): raise
 
 def _drive_file_meta(file_id):
     _,_,data=_drive_api("GET",f"files/{file_id}",query={"fields":"id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,trashed"})
@@ -9960,7 +9848,7 @@ def _drive_metadata_values(meta):
     return (
         meta.get("id"),
         (meta.get("parents") or [None])[0],
-        ("drive:" + str(meta.get("id")) if meta.get("id") else (meta.get("webContentLink") or meta.get("webViewLink"))),
+        meta.get("webContentLink") or meta.get("webViewLink"),
     )
 
 def _drive_store_resource(con, *, title, resource_type, course, semester, subject,
@@ -9997,13 +9885,13 @@ def _drive_store_timetable(con, *, title, original_name, mime_type, data, assist
     fid, folder_id, web = _drive_metadata_values(meta)
     con.execute(
         "INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (title, f"drive:{fid}", original_name, mime_type, None, now(), fid, folder_id, web, assistant_text)
+        (title, None, original_name, mime_type, None, now(), fid, folder_id, web, assistant_text)
     )
     return meta
 
 def _drive_record_file(con, category, meta, title=None, course="All", semester="All", subject="General", description="", assistant_text=""):
     _,_,kind,mapped=DRIVE_CATEGORY_MAP[category]
-    fid=meta.get("id"); name=meta.get("name") or title or "Drive file"; web=("drive:" + str(fid)) if fid else (meta.get("webContentLink") or meta.get("webViewLink"))
+    fid=meta.get("id"); name=meta.get("name") or title or "Drive file"; web=meta.get("webContentLink") or meta.get("webViewLink")
     if kind=="resource":
         if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone(): return
         con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,mapped,course,semester,subject,description,None,name,meta.get("mimeType"),None,assistant_text,now(),fid,(meta.get("parents") or [None])[0],web)); return
