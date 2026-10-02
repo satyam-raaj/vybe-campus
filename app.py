@@ -114,6 +114,8 @@ STATUSES = ["Open", "In progress", "Resolved"]
 
 RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
+SECURITY_LOCK_SALT = "vybe-login-lock-v1"
+security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
 
 app = Flask(__name__)
 _PRODUCTION = bool(DATABASE_URL)
@@ -629,7 +631,7 @@ def init_db():
                 last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '', last_area TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""",
-            """CREATE TABLE IF NOT EXISTS login_security_alerts (
+            """CREATE TABLE IF NOT EXISTS vybe_security_alerts (
                 id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
                 name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
                 area TEXT NOT NULL DEFAULT '', blocked_until DOUBLE PRECISION, message TEXT NOT NULL DEFAULT '', read_at TEXT
@@ -789,7 +791,7 @@ def init_db():
                 blocked_until REAL NOT NULL DEFAULT 0, last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
                 last_area TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""",
-            """CREATE TABLE IF NOT EXISTS login_security_alerts (
+            """CREATE TABLE IF NOT EXISTS vybe_security_alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
                 name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
                 area TEXT NOT NULL DEFAULT '', blocked_until REAL, message TEXT NOT NULL DEFAULT '', read_at TEXT
@@ -1279,6 +1281,8 @@ _SECURITY_DEVICE_CACHE = {}
 _SECURITY_CACHE_TTL = 30.0
 _SECURITY_DEVICE_COOKIE = "__Host-vybe_device" if _COOKIE_SECURE else "vybe_device"
 _SECURITY_DEVICE_MAX_AGE = 60 * 60 * 24 * 365
+_SECURITY_LOCK_COOKIE = "__Host-vybe_lock" if _COOKIE_SECURE else "vybe_lock"
+_SECURITY_LOCK_MAX_AGE = 60 * 60 * 24
 
 
 def _security_device_token():
@@ -1323,7 +1327,7 @@ def _security_cache_get(device_hash):
 
 def _security_block_status(con, device_hash):
     try:
-        row = con.execute("SELECT * FROM login_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
+        row = con.execute("SELECT * FROM vybe_security_devices WHERE device_hash=?", (device_hash,)).fetchone()
     except Exception as exc:
         app.logger.error("VYBE security block lookup failed: %s: %s", type(exc).__name__, exc)
         return None
@@ -1333,7 +1337,7 @@ def _security_block_status(con, device_hash):
     if until > time.time():
         return row
     try:
-        con.execute("UPDATE login_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
+        con.execute("UPDATE vybe_security_devices SET failed_attempts=0, first_failed_at=0, blocked_until=0, updated_at=? WHERE device_hash=?", (now(), device_hash))
         con.commit()
     except Exception:
         try: con.rollback()
@@ -1366,7 +1370,7 @@ def _security_failed_login(con, name, student_id, area):
             return True, float(existing_device["blocked_until"] or current), int(existing_device["failed_attempts"] or 3)
 
         row = con.execute(
-            "SELECT * FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?",
+            "SELECT * FROM vybe_security_attempts WHERE account_key=? AND device_hash=? AND area=?",
             (account_key, device_hash, area),
         ).fetchone()
         if row and float(row["first_failed_at"] or 0) and current - float(row["first_failed_at"]) >= 86400:
@@ -1379,36 +1383,37 @@ def _security_failed_login(con, name, student_id, area):
 
         if row:
             con.execute(
-                "UPDATE login_security_attempts SET failed_attempts=?, first_failed_at=?, updated_at=? WHERE account_key=? AND device_hash=? AND area=?",
+                "UPDATE vybe_security_attempts SET failed_attempts=?, first_failed_at=?, updated_at=? WHERE account_key=? AND device_hash=? AND area=?",
                 (attempts, first, now(), account_key, device_hash, area),
             )
         else:
             con.execute(
-                "INSERT INTO login_security_attempts(account_key,device_hash,area,failed_attempts,first_failed_at,updated_at) VALUES(?,?,?,?,?,?)",
+                "INSERT INTO vybe_security_attempts(account_key,device_hash,area,failed_attempts,first_failed_at,updated_at) VALUES(?,?,?,?,?,?)",
                 (account_key, device_hash, area, attempts, first, now()),
             )
 
         blocked_until = current + 86400 if attempts >= 3 else 0
         if blocked_until:
             existing = con.execute(
-                "SELECT device_hash FROM login_security_devices WHERE device_hash=?", (device_hash,)
+                "SELECT device_hash FROM vybe_security_devices WHERE device_hash=?", (device_hash,)
             ).fetchone()
             if existing:
                 con.execute(
-                    "UPDATE login_security_devices SET failed_attempts=?, first_failed_at=?, blocked_until=?, last_name=?, last_student_id=?, last_area=?, last_ip=?, updated_at=? WHERE device_hash=?",
+                    "UPDATE vybe_security_devices SET failed_attempts=?, first_failed_at=?, blocked_until=?, last_name=?, last_student_id=?, last_area=?, last_ip=?, updated_at=? WHERE device_hash=?",
                     (attempts, first, blocked_until, name, student_id, area, ip, now(), device_hash),
                 )
             else:
                 con.execute(
-                    "INSERT INTO login_security_devices(device_hash,failed_attempts,first_failed_at,blocked_until,last_name,last_student_id,last_area,last_ip,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO vybe_security_devices(device_hash,failed_attempts,first_failed_at,blocked_until,last_name,last_student_id,last_area,last_ip,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (device_hash, attempts, first, blocked_until, name, student_id, area, ip, now(), now()),
                 )
             con.execute(
-                "INSERT INTO login_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO vybe_security_alerts(created_at,alert_type,name,student_id,ip_address,area,blocked_until,message) VALUES(?,?,?,?,?,?,?,?)",
                 (now_ist(), "login_block", name, student_id, ip, area, blocked_until,
                  f"3 failed {area.lower()} password attempts on one VYBE device; device blocked for 24 hours."),
             )
             _security_cache_set(device_hash, blocked_until)
+            g.vybe_security_lock_until = blocked_until
         con.commit()
         return bool(blocked_until), blocked_until, attempts
     except Exception as exc:
@@ -1425,7 +1430,7 @@ def _security_successful_login(con, area, student_id):
     try:
         device_hash = _security_device_hash()
         account_key = hashlib.sha256((str(area).lower() + "|" + str(student_id).lower()).encode("utf-8")).hexdigest()
-        con.execute("DELETE FROM login_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area))
+        con.execute("DELETE FROM vybe_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area))
         con.commit()
     except Exception:
         try: con.rollback()
@@ -1433,7 +1438,23 @@ def _security_successful_login(con, area, student_id):
 
 
 def _security_blocked_request_response():
-    """Fast path: use a short in-process cache; Neon is consulted only on cache miss."""
+    """Fast block check using a signed 24-hour lock cookie.
+
+    The signed cookie is deliberately checked before Neon so normal page loads
+    do not open a database connection just to determine whether a browser is
+    blocked. The persistent Neon device record remains the source of truth when
+    a login attempt is processed.
+    """
+    raw_lock = request.cookies.get(_SECURITY_LOCK_COOKIE, "").strip()
+    if raw_lock:
+        try:
+            payload = security_lock_serializer.loads(raw_lock, max_age=_SECURITY_LOCK_MAX_AGE)
+            until = float(payload.get("until", 0)) if isinstance(payload, dict) else 0
+            if until > time.time():
+                return _security_block_page(until)
+        except (BadSignature, SignatureExpired, ValueError, TypeError):
+            pass
+
     token = request.cookies.get(_SECURITY_DEVICE_COOKIE, "").strip()
     if len(token) < 32 or len(token) > 200:
         return None
@@ -1443,15 +1464,9 @@ def _security_blocked_request_response():
         if cached > time.time():
             return _security_block_page(cached)
         return None
-    con = db()
-    try:
-        row = _security_block_status(con, device_hash)
-        until = float(row["blocked_until"] or 0) if row else 0
-        _security_cache_set(device_hash, until)
-        return _security_block_page(until) if until > time.time() else None
-    finally:
-        try: con.close()
-        except Exception: pass
+    # Do not query Neon on every normal request. Only a device that has an
+    # explicit lock cookie/cache miss needs the persistent lookup.
+    return None
 
 def _same_origin_unsafe_request():
     """Layered CSRF protection: same-origin plus a per-session token."""
@@ -1493,6 +1508,19 @@ def set_security_device_cookie(response):
             _SECURITY_DEVICE_COOKIE,
             g.vybe_device_token,
             max_age=_SECURITY_DEVICE_MAX_AGE,
+            secure=_COOKIE_SECURE,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
+    lock_until = getattr(g, "vybe_security_lock_until", 0)
+    if lock_until and float(lock_until) > time.time():
+        signed = security_lock_serializer.dumps({"until": float(lock_until)})
+        response.set_cookie(
+            _SECURITY_LOCK_COOKIE,
+            signed,
+            max_age=_SECURITY_LOCK_MAX_AGE,
+            expires=datetime.fromtimestamp(float(lock_until), timezone.utc),
             secure=_COOKIE_SECURE,
             httponly=True,
             samesite="Lax",
@@ -8227,8 +8255,8 @@ def admin_login_passkey_verify():
 def admin_security_alerts():
     con = db()
     try:
-        alerts = con.execute("SELECT * FROM login_security_alerts ORDER BY id DESC LIMIT 200").fetchall()
-        blocks = con.execute("SELECT * FROM login_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC", (time.time(),)).fetchall()
+        alerts = con.execute("SELECT * FROM vybe_security_alerts ORDER BY id DESC LIMIT 200").fetchall()
+        blocks = con.execute("SELECT * FROM vybe_security_devices WHERE blocked_until>? ORDER BY blocked_until DESC", (time.time(),)).fetchall()
     finally:
         con.close()
     active = "".join(
@@ -10447,38 +10475,85 @@ def init_drive_db():
     finally: con.close()
 
 def _ensure_login_security_schema():
+    """Create the persistent login-security tables used by VYBE.
+
+    This is deliberately idempotent so an existing production Neon database can
+    be upgraded without deleting or rewriting existing student/admin data.
+    """
     con = db()
     try:
         if con.is_pg:
-            con.execute("""CREATE TABLE IF NOT EXISTS login_security_devices (
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_devices (
                 device_hash TEXT PRIMARY KEY,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0,
                 blocked_until DOUBLE PRECISION NOT NULL DEFAULT 0,
-                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
-                last_area TEXT NOT NULL DEFAULT '', last_ip TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                last_name TEXT NOT NULL DEFAULT '',
+                last_student_id TEXT NOT NULL DEFAULT '',
+                last_area TEXT NOT NULL DEFAULT '',
+                last_ip TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )""")
-            con.execute("""CREATE TABLE IF NOT EXISTS login_security_attempts (
-                account_key TEXT NOT NULL, device_hash TEXT NOT NULL, area TEXT NOT NULL,
-                failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0,
-                updated_at TEXT NOT NULL, PRIMARY KEY(account_key, device_hash, area)
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_attempts (
+                account_key TEXT NOT NULL,
+                device_hash TEXT NOT NULL,
+                area TEXT NOT NULL,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(account_key, device_hash, area)
             )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_alerts (
+                id BIGSERIAL PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                student_id TEXT NOT NULL DEFAULT '',
+                ip_address TEXT NOT NULL DEFAULT '',
+                area TEXT NOT NULL DEFAULT '',
+                blocked_until DOUBLE PRECISION,
+                message TEXT NOT NULL DEFAULT '',
+                read_at TEXT
+            )""")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_vybe_security_alerts_created ON vybe_security_alerts(created_at)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_vybe_security_devices_blocked ON vybe_security_devices(blocked_until)")
         else:
-            con.execute("""CREATE TABLE IF NOT EXISTS login_security_devices (
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_devices (
                 device_hash TEXT PRIMARY KEY,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 first_failed_at REAL NOT NULL DEFAULT 0,
                 blocked_until REAL NOT NULL DEFAULT 0,
-                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
-                last_area TEXT NOT NULL DEFAULT '', last_ip TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                last_name TEXT NOT NULL DEFAULT '',
+                last_student_id TEXT NOT NULL DEFAULT '',
+                last_area TEXT NOT NULL DEFAULT '',
+                last_ip TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )""")
-            con.execute("""CREATE TABLE IF NOT EXISTS login_security_attempts (
-                account_key TEXT NOT NULL, device_hash TEXT NOT NULL, area TEXT NOT NULL,
-                failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at REAL NOT NULL DEFAULT 0,
-                updated_at TEXT NOT NULL, PRIMARY KEY(account_key, device_hash, area)
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_attempts (
+                account_key TEXT NOT NULL,
+                device_hash TEXT NOT NULL,
+                area TEXT NOT NULL,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                first_failed_at REAL NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(account_key, device_hash, area)
             )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS vybe_security_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                student_id TEXT NOT NULL DEFAULT '',
+                ip_address TEXT NOT NULL DEFAULT '',
+                area TEXT NOT NULL DEFAULT '',
+                blocked_until REAL,
+                message TEXT NOT NULL DEFAULT '',
+                read_at TEXT
+            )""")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_vybe_security_alerts_created ON vybe_security_alerts(created_at)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_vybe_security_devices_blocked ON vybe_security_devices(blocked_until)")
         con.commit()
     finally:
         con.close()
