@@ -27,7 +27,7 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, Response
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -81,9 +81,9 @@ except OSError:
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 SQLITE_PATH = os.environ.get("VYBE_DB", str(APP_DIR / "vybe.db"))
 SECRET_KEY = os.environ.get("VYBE_SECRET_KEY", "").strip()
-# Never crash during module import on Vercel. A missing production secret is
-# reported by /readyz instead of turning every request into a platform 500.
 if not SECRET_KEY:
+    if DATABASE_URL:
+        raise RuntimeError("VYBE_SECRET_KEY must be set in production.")
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
@@ -91,8 +91,9 @@ PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERC
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
+VYBE_DRIVE_SHARED_DRIVE_ID = os.environ.get("VYBE_DRIVE_SHARED_DRIVE_ID", "").strip()
 VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "1").strip() == "1"
+VYBE_DRIVE_PUBLIC_FILES = os.environ.get("VYBE_DRIVE_PUBLIC_FILES", "0").strip() == "1"
 VYBE_DRIVE_WEBHOOK_TOKEN = os.environ.get("VYBE_DRIVE_WEBHOOK_TOKEN", "").strip() or hashlib.sha256((SECRET_KEY + "|drive-webhook").encode()).hexdigest()
 VYBE_AI_API_KEY = (os.environ.get("VYBE_AI_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
 VYBE_AI_MODEL = os.environ.get("VYBE_AI_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
@@ -1123,32 +1124,6 @@ def webauthn_configured():
 # Offline gate: admin login/admin routes remain available while public/student
 # routes receive the dedicated offline page.
 # ---------------------------------------------------------------------------
-@app.route("/favicon.ico")
-def favicon():
-    # Keep browser favicon requests out of the custom 404 page.
-    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#07111f"/><text x="32" y="44" text-anchor="middle" font-family="Arial,sans-serif" font-size="38" font-weight="900" fill="white">V</text></svg>"""
-    return Response(svg, mimetype="image/svg+xml", headers={"Cache-Control":"public, max-age=86400"})
-
-@app.route("/readyz")
-def readyz():
-    checks = {
-        "secret_key": bool(os.environ.get("VYBE_SECRET_KEY", "").strip()),
-        "database_url": bool(DATABASE_URL),
-        "webauthn": WEBAUTHN_AVAILABLE,
-        "google_auth": GOOGLE_AUTH_AVAILABLE,
-    }
-    db_ok = False
-    try:
-        con = db()
-        con.execute("SELECT 1").fetchone()
-        con.close()
-        db_ok = True
-    except Exception:
-        db_ok = False
-    checks["database"] = db_ok
-    ok = all((checks["database_url"], checks["secret_key"], checks["database"]))
-    return jsonify(ok=ok, checks=checks), (200 if ok else 503)
-
 @app.route("/healthz")
 def healthz():
     """Small Render health endpoint that does not depend on student/admin state."""
@@ -9203,6 +9178,23 @@ def admin_contact_terms():
 
 
 
+@app.route("/api/drive/status")
+def api_drive_status():
+    """Return safe Drive configuration diagnostics without exposing credentials."""
+    if not VYBE_GOOGLE_SERVICE_ACCOUNT_JSON:
+        return jsonify(ok=False, configured=False, error="VYBE_GOOGLE_SERVICE_ACCOUNT_JSON is not configured."), 503
+    try:
+        meta=_drive_file_meta(VYBE_DRIVE_ROOT_FOLDER_ID)
+        drive_id=meta.get("driveId") or ""
+        is_shared=bool(drive_id)
+        if not is_shared:
+            return jsonify(ok=False, configured=True, storage_type="my_drive", error="The root folder is in My Drive. Service accounts cannot upload there. Use a Shared Drive folder.", root_folder_id=VYBE_DRIVE_ROOT_FOLDER_ID), 409
+        if VYBE_DRIVE_SHARED_DRIVE_ID and drive_id != VYBE_DRIVE_SHARED_DRIVE_ID:
+            return jsonify(ok=False, configured=True, storage_type="shared_drive", error="VYBE_DRIVE_SHARED_DRIVE_ID does not match the root folder's Shared Drive.", root_drive_id=drive_id), 409
+        return jsonify(ok=True, configured=True, storage_type="shared_drive", drive_id=drive_id, root_folder_id=VYBE_DRIVE_ROOT_FOLDER_ID, root_folder_name=meta.get("name"))
+    except Exception as exc:
+        return jsonify(ok=False, configured=True, error=f"{type(exc).__name__}: {exc}"), 502
+
 @app.route("/admin/drive")
 @admin_required
 def admin_drive():
@@ -9735,11 +9727,35 @@ def _drive_http(method, url, body=None, headers=None, timeout=30):
         raise RuntimeError(f"Google Drive API {e.code}: {detail}") from e
 
 def _drive_api(method, path, query=None, body=None):
+    """Call Drive API with Shared Drive support enabled.
+
+    Service accounts cannot upload into their own My Drive because they have no
+    storage quota. VYBE therefore supports Shared Drives as the service-account
+    storage target. `supportsAllDrives=true` is required for file operations
+    against Shared Drive items.
+    """
     url="https://www.googleapis.com/drive/v3/"+path.lstrip("/")
-    if query:
+    params=dict(query or {})
+    params.setdefault("supportsAllDrives", "true")
+    if path.lstrip("/").split("/", 1)[0] == "files":
+        params.setdefault("includeItemsFromAllDrives", "true")
+    if params:
         from urllib.parse import urlencode
-        url += "?"+urlencode(query)
-    return _drive_http(method,url,body=body)
+        url += "?"+urlencode(params)
+    try:
+        return _drive_http(method,url,body=body)
+    except RuntimeError as exc:
+        msg=str(exc)
+        if "storageQuotaExceeded" in msg or "Service Accounts do not have storage quota" in msg:
+            raise RuntimeError(
+                "Google Drive upload was rejected because the configured root folder is in My Drive. "
+                "A service account cannot upload to My Drive because it has no storage quota. "
+                "Create a Google Shared Drive, add the service-account email as a Content manager (or Manager), "
+                "create/use a folder inside that Shared Drive, and set VYBE_DRIVE_ROOT_FOLDER_ID to that folder ID. "
+                "Optionally set VYBE_DRIVE_SHARED_DRIVE_ID to the Shared Drive ID. "
+                "Do not use the My Drive folder ID for VYBE_DRIVE_ROOT_FOLDER_ID."
+            ) from exc
+        raise
 
 def _drive_list_children(parent_id):
     q=f"'{parent_id}' in parents and trashed=false"
@@ -9794,7 +9810,22 @@ def _drive_file_meta(file_id):
 def _drive_start_resumable(name,mime_type,folder_id,size=None):
     headers={"X-Upload-Content-Type":mime_type or "application/octet-stream"}
     if size is not None: headers["X-Upload-Content-Length"]=str(int(size))
-    _,resp_headers,_=_drive_http("POST","https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]},headers=headers)
+    from urllib.parse import urlencode
+    params={"uploadType":"resumable","supportsAllDrives":"true"}
+    if VYBE_DRIVE_SHARED_DRIVE_ID:
+        params["supportsAllDrives"]="true"
+    url="https://www.googleapis.com/upload/drive/v3/files?"+urlencode(params)
+    try:
+        _,resp_headers,_=_drive_http("POST",url,body={"name":name,"mimeType":mime_type or "application/octet-stream","parents":[folder_id]},headers=headers)
+    except RuntimeError as exc:
+        msg=str(exc)
+        if "storageQuotaExceeded" in msg or "Service Accounts do not have storage quota" in msg:
+            raise RuntimeError(
+                "Google Drive upload was rejected because VYBE_DRIVE_ROOT_FOLDER_ID points to My Drive. "
+                "Service accounts have no My Drive storage quota. Move the VYBE storage folder into a Shared Drive, "
+                "give the service account access to that Shared Drive, and update VYBE_DRIVE_ROOT_FOLDER_ID."
+            ) from exc
+        raise
     location=resp_headers.get("Location") or resp_headers.get("location")
     if not location: raise RuntimeError("Google Drive did not return a resumable upload session.")
     return location
