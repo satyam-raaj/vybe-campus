@@ -1480,11 +1480,37 @@ def _security_blocked_request_response():
     device_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     cached = _security_cache_get(device_hash)
     if cached is not None:
-        if cached > time.time():
+        if cached <= time.time():
+            _security_cache_set(device_hash, 0)
+            return None
+        # A warm Vercel instance may still have an old in-memory block after
+        # an admin removes it on another instance. Re-check the persistent
+        # record before serving the block page so an admin unblock is immediate
+        # across Vercel instances. Only devices already known as blocked take
+        # this database path; normal visitors still stay on the zero-DB hot path.
+        try:
+            con = db()
+            try:
+                row = con.execute(
+                    "SELECT blocked_until FROM vybe_security_devices WHERE device_hash=?",
+                    (device_hash,),
+                ).fetchone()
+            finally:
+                con.close()
+            server_until = float(row["blocked_until"] or 0) if row else 0
+            if server_until > time.time():
+                _security_cache_set(device_hash, server_until)
+                return _security_block_page(server_until)
+            _security_cache_set(device_hash, 0)
+            return None
+        except Exception as exc:
+            # If Neon is temporarily unavailable, preserve the existing block
+            # rather than accidentally bypassing a security lock. The admin can
+            # still remove it once the database is reachable.
+            app.logger.warning("VYBE blocked-device verification failed: %s: %s", type(exc).__name__, exc)
             return _security_block_page(cached)
-        return None
-    # Do not query Neon on every normal request. Only a device that has an
-    # explicit lock cookie/cache miss needs the persistent lookup.
+    # No lock cookie and no active blocked-device cache: keep the normal request
+    # path free of a Neon lookup.
     return None
 
 def _same_origin_unsafe_request():
