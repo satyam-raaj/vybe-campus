@@ -8097,29 +8097,16 @@ def admin_students():
                     raw_students = con.execute(
                         "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
                     ).fetchall()
-        try:
-            access_rows = con.execute(
-                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
-            ).fetchall()
-        except Exception:
-            access_rows = []
+        # Use the exact same resolver that protects the student publisher route.
+        # The admin page must never infer access from a separate settings scan.
         publisher_by_student = {}
-        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
-        for ar in access_rows:
-            key = str(ar["key"] or "").strip()
-            value = str(ar["value"] or "").strip()
+        for row in raw_students:
             try:
-                if key.startswith("content_manager_"):
-                    sid_key = key[len("content_manager_"):].strip()
-                    if value.lower() in {"1", "true", "yes", "on"}:
-                        publisher_by_student[sid_key] = True
-                elif key.startswith("publisher_permissions_"):
-                    sid_key = key[len("publisher_permissions_"):].strip()
-                    data = json.loads(value or "[]")
-                    if isinstance(data, list) and any(str(x) in allowed_publisher_keys for x in data):
-                        publisher_by_student[sid_key] = True
+                publisher_by_student[str(int(row["id"]))] = bool(
+                    publisher_is_active(int(row["id"]), con=con)
+                )
             except Exception:
-                continue
+                publisher_by_student[str(int(row["id"]))] = False
         for row in raw_students:
             students.append({
                 "id": int(row["id"]),
@@ -8470,42 +8457,20 @@ def admin_publisher_access():
             flash(f"Publisher controls updated for {student['name']}." if selected else f"Publisher access revoked for {student['name']} because no publishing controls were selected.")
             return redirect(url_for("admin_publisher_access", student_id=selected_sid))
 
-        # Query active publisher students directly from the relationship between
-        # students and their content-manager setting. This avoids stale/incomplete
-        # in-memory lists and guarantees the selector reflects Students & Access.
-        # Read publisher access settings once and build the active publisher set in Python.
-        # This works consistently on both PostgreSQL and SQLite and also recognizes
-        # older records where permissions were saved before content_manager_* existed.
-        publisher_ids=set()
-        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
-        try:
-            access_rows=con.execute(
-                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
-            ).fetchall()
-        except Exception:
-            access_rows=[]
-        for r in access_rows:
-            key=str(r["key"] or "").strip()
-            value=str(r["value"] or "").strip()
-            try:
-                if key.startswith("content_manager_") and value.lower() in {"1","true","yes","on"}:
-                    publisher_ids.add(int(key[len("content_manager_"):].strip()))
-                elif key.startswith("publisher_permissions_"):
-                    data=json.loads(value or "[]")
-                    if isinstance(data,list) and any(str(x) in allowed_publisher_keys for x in data):
-                        publisher_ids.add(int(key[len("publisher_permissions_"):].strip()))
-            except (TypeError,ValueError,OverflowError,json.JSONDecodeError):
-                continue
+        # Use the exact same source of truth as the student publisher guard.
+        # Previously this page rebuilt access from a broad settings scan, which
+        # could disagree with publisher_is_active() and leave the selector empty.
         approved=[]
-        if publisher_ids:
-            placeholders=",".join("?" for _ in publisher_ids)
+        raw_approved=con.execute(
+            "SELECT id,name,student_id,status FROM students "
+            "WHERE status='approved' ORDER BY name,id LIMIT 300"
+        ).fetchall()
+        for row in raw_approved:
             try:
-                approved=con.execute(
-                    f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name,id LIMIT 300",
-                    tuple(sorted(publisher_ids)),
-                ).fetchall()
+                if publisher_is_active(int(row["id"]), con=con):
+                    approved.append(row)
             except Exception:
-                approved=[]
+                continue
 
         selected_student = None
         selected = set()
