@@ -8404,11 +8404,12 @@ def admin_content_access(sid, action):
         con.close(); flash("Student not found."); return redirect(url_for("admin_publisher_access"))
     if action == "grant":
         if student["status"] != "approved":
-            con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_publisher_access"))
+            con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_students"))
+        # Persist both sides of the grant. The student dashboard and publisher
+        # guard require an explicit permission list, so the access flag alone
+        # is not sufficient for a newly granted publisher.
         set_setting(con, f"content_manager_{sid}", "1")
-        current = publisher_permissions(sid, con=con)
-        if not current:
-            set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
+        set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
         flash(f"Publisher access granted to {student['name']}.")
     else:
         set_setting(con, f"content_manager_{sid}", "0")
