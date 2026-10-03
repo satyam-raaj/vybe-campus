@@ -127,7 +127,7 @@ if VERCEL_HOST:
     _ALLOWED_HOSTS.add(VERCEL_HOST)
 app.config.update(
     SECRET_KEY=SECRET_KEY,
-    MAX_CONTENT_LENGTH=4 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=32 * 1024 * 1024,
     SESSION_COOKIE_NAME=_COOKIE_NAME,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -1057,6 +1057,47 @@ def _student_status_cached(sid):
     with _AUTHZ_CACHE_LOCK:
         _AUTHZ_CACHE[("student", key)] = (now_m + _AUTHZ_CACHE_TTL, status)
     return status
+
+_HEADER_CACHE_TTL = 8.0
+def _student_header_updates_cached(sid):
+    key=("header_updates",int(sid))
+    now_m=time.monotonic()
+    with _AUTHZ_CACHE_LOCK:
+        item=_AUTHZ_CACHE.get(key)
+        if item and item[0] > now_m:
+            return item[1]
+    con=db()
+    try:
+        rows=_admin_update_feed(con,int(sid),20)
+    finally:
+        con.close()
+    with _AUTHZ_CACHE_LOCK:
+        _AUTHZ_CACHE[key]=(now_m+_HEADER_CACHE_TTL,rows)
+    return rows
+
+_AI_SETTINGS_CACHE_TTL = 30.0
+def _student_ai_settings_cached():
+    key=("ai_settings",0)
+    now_m=time.monotonic()
+    with _AUTHZ_CACHE_LOCK:
+        item=_AUTHZ_CACHE.get(key)
+        if item and item[0] > now_m:
+            return item[1]
+    con=db()
+    try:
+        enabled=setting(con,"vybe_assistant_enabled","1")=="1"
+        raw=setting(con,"vybe_ai_shortcuts","[]") or "[]"
+    finally:
+        con.close()
+    try:
+        selected=json.loads(raw)
+        if not isinstance(selected,list): selected=[]
+    except Exception:
+        selected=[]
+    value=(enabled,selected)
+    with _AUTHZ_CACHE_LOCK:
+        _AUTHZ_CACHE[key]=(now_m+_AI_SETTINGS_CACHE_TTL,value)
+    return value
 
 def _passkey_count_cached():
     now_m = time.monotonic()
@@ -3877,7 +3918,7 @@ def layout(title, body, admin=False):
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
         try:
-            _header_con=db(); _header_updates=_admin_update_feed(_header_con,session["student_db_id"],1000); _header_con.close()
+            _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
         _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
@@ -3902,15 +3943,7 @@ def layout(title, body, admin=False):
     assistant_widget = ""
     if student:
         try:
-            _ai_con = db()
-            _ai_enabled = setting(_ai_con, "vybe_assistant_enabled", "1") == "1"
-            _ai_raw = setting(_ai_con, "vybe_ai_shortcuts", "[]") or "[]"
-            _ai_con.close()
-            try:
-                _ai_selected = json.loads(_ai_raw)
-                if not isinstance(_ai_selected, list): _ai_selected = []
-            except Exception:
-                _ai_selected = []
+            _ai_enabled, _ai_selected = _student_ai_settings_cached()
         except Exception:
             _ai_enabled = True
             _ai_selected = ["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]
@@ -5182,6 +5215,16 @@ def account_password():
     con.close()
     body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div class="password-wrap"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="password-toggle toggle-password" data-target="currentPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">New password</div><div class="password-wrap"><input id="changePassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="changePassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="changeConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Update password →</button></form></div></div>'''
     return layout("Change Password", body)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    # Admin logout is deliberately separate from the student session.
+    session.pop("admin_authenticated", None)
+    session.pop("passkey_verified", None)
+    session.pop("admin_login_area", None)
+    session.pop("admin_login_name", None)
+    return redirect(url_for("home"))
 
 
 @app.route("/logout")
@@ -8937,6 +8980,19 @@ def admin_publisher_access():
     return layout("Publisher Access", body, admin=True)
 
 
+VYBE_DIRECT_DRIVE_JS = r'''<script>
+window.vybeDriveUpload = async function(file,status,category){
+  const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';
+  async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}
+  const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:category,name:file.name,mimeType:file.type||'application/octet-stream',size:file.size})});
+  const direct=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable&&status)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%';};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'));}catch(_){reject(new Error('Drive returned an invalid upload response.'));}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'));};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=0;x.responseType='json';x.send(file);});
+  try{return await direct();}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);if(status)status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata;}if(!done||!done.id)throw new Error('Google Drive did not return the uploaded file.');return done;}
+};
+</script>'''
+
+VYBE_TIMETABLE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminTimetableDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file.files[0],status=document.getElementById(\'adminTimetableDriveStatus\');if(!file)return;b.disabled=true;try{const meta=await window.vybeDriveUpload(file,status,\'Timetable\');const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-timetable\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({file_id:meta.id,title:f.elements.title.value,assistant_text:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish timetable.\');status.textContent=\'✓ Timetable uploaded and published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
+VYBE_ACADEMIC_UPDATE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminAcademicDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file?f.elements.file.files[0]:document.getElementById(\'adminAcademicDriveFile\').files[0],status=document.getElementById(\'adminAcademicDriveStatus\'),kind=f.elements.kind.value,title=f.elements.title.value,external=f.elements.external_url.value.trim();if(!kind||!title||!f.elements.description.value.trim()){status.textContent=\'Choose an update type and enter the title and description.\';return}if((kind===\'Result\'||kind===\'Admit Card\')&&!external){status.textContent=\'A direct website link is required for \'+kind+\'.\';return}b.disabled=true;try{let meta=null;if(file){const category=kind===\'Result\'?\'Results\':kind===\'Date Sheet\'?\'Date Sheets\':kind===\'Admit Card\'?\'Admit Cards\':\'Exam Forms & Notices\';meta=await window.vybeDriveUpload(file,status,category)}const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-update\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({kind,title,description:f.elements.description.value,event_date:f.elements.event_date.value,external_url:external,file_id:meta?meta.id:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish update.\');status.textContent=\'✓ Update published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
+
 @app.route("/admin/timetable", methods=["GET","POST"])
 @admin_required
 def admin_timetable():
@@ -8965,7 +9021,7 @@ def admin_timetable():
         return redirect(url_for("admin_timetable"))
     rows=con.execute("SELECT * FROM timetables ORDER BY id DESC").fetchall(); con.close()
     html_rows="".join(f'''<tr><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["original_name"])}</span></td><td>{esc(r["created_at"])}</td><td><a class="btn dark" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">View</a> <form style="display:inline" method="post" action="/admin/timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this timetable?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
-    body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form id="adminTimetableForm" class="form" method="post" enctype="multipart/form-data"><input name="title" maxlength="160" placeholder="Timetable title" required><input id="adminTimetableFile" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp" required><input id="adminTimetableText" type="hidden" name="assistant_text"><div id="adminTimetableStatus" class="small">PDF text is extracted automatically. Images are read in your browser before upload.</div><button class="btn accent">Post timetable →</button></form>{_timetable_ocr_script("adminTimetableForm","adminTimetableFile","adminTimetableText","adminTimetableStatus")}</div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form id="adminTimetableDriveForm" class="form" onsubmit="return false"><input name="title" maxlength="160" placeholder="Timetable title" required><input id="adminTimetableDriveFile" type="file" name="file" required><div id="adminTimetableDriveStatus" class="small">Any file type can be uploaded. The file is sent directly to Google Drive.</div><button class="btn accent" type="submit">Post timetable →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_TIMETABLE_FORM_JS}</div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
     return layout("Timetable",body,admin=True)
 
 
@@ -9015,7 +9071,7 @@ def admin_academic_updates():
             return redirect(url_for("admin_academic_updates"))
     rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
     table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
-    body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form class="form" method="post" enctype="multipart/form-data"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="Direct official website link (required for Result and Admit Card)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
+    body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form id="adminAcademicDriveForm" class="form" onsubmit="return false"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" type="url" placeholder="Direct official website link (required for Result and Admit Card)"><input id="adminAcademicDriveFile" type="file"><div id="adminAcademicDriveStatus" class="small">Add a file, a website link, or both. Files go directly to Google Drive.</div><button class="btn accent" type="submit">Publish update →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_ACADEMIC_UPDATE_FORM_JS}</div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
     return layout("Academic Updates",body,admin=True)
 
 ACADEMIC_HUB_ADMIN_CSS = """
@@ -9024,6 +9080,11 @@ ACADEMIC_HUB_ADMIN_CSS = """
 @media(max-width:850px){.admin-ah-page{padding:35px 16px 78px!important}.admin-ah-tabs,.admin-ah-grid{grid-template-columns:1fr}.admin-ah-two{grid-template-columns:1fr}.admin-ah-row{grid-template-columns:1fr}.admin-ah-row-actions{justify-content:flex-start}.admin-ah-row-actions .btn{flex:1;min-width:120px;text-align:center}}
 </style>
 """
+
+
+AH_DIRECT_UPLOAD_JS = r'''
+<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=0;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status);await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description')})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
+'''
 
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
@@ -9077,7 +9138,7 @@ def admin_academic_hub():
         active=" active" if k==section else ""
         tabs.append(f'<a class="admin-ah-tab{active}" href="/admin/academic-hub?section={k}"><b>{v}</b><span>{descriptions[k]}</span></a>')
     rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><form method="post" action="/admin/academic-hub/resource/{r["id"]}/delete" onsubmit="return confirm('Delete this resource?')"><button class="btn danger">Delete</button></form></div></div>''' for r in rows)
-    body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Manage Study Notes, Study Material and PYQ Papers separately. Every upload is organized by semester and subject. Upload one file with a custom title or upload multiple files together.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="single"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Supported document/image files are indexed for Ask VYBE when readable.</div></div><button class="btn accent" type="submit">Upload single file →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Choose multiple files at once. Each file becomes its own resource; the filename becomes its title.</p><form class="admin-ah-form" method="post" enctype="multipart/form-data"><input type="hidden" name="section" value="{esc(section)}"><input type="hidden" name="mode" value="bulk"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Select multiple files from the same subject and semester.</div></div><button class="btn dark" type="submit">Upload all selected files →</button></form><div class="admin-ah-note" style="margin-top:12px">For different subjects or semesters, upload another batch with the correct subject and semester.</div></div></div><div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
+    body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Upload any file type directly to Google Drive. Single files and large bulk batches use resumable Drive uploads, so Vercel request-size limits do not interrupt the transfer.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form id="ahSingleUpload" class="admin-ah-form" onsubmit="return false"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Any file format supported by Google Drive.</div></div><div id="ahSingleStatus" class="admin-ah-help"></div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Select as many files as you need. VYBE uploads them sequentially with a visible progress message.</p><form id="ahBulkUpload" class="admin-ah-form" onsubmit="return false"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Large batches are sent directly to Google Drive one file at a time.</div></div><div id="ahBulkStatus" class="admin-ah-help"></div><button class="btn dark" type="submit">Upload all directly to Drive →</button></form><div class="admin-ah-note" style="margin-top:12px">Keep files for the same subject and semester in one batch.</div></div></div>{AH_DIRECT_UPLOAD_JS.replace("__AH_SECTION__", section)}<div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
     return layout("Academic Hub",body,admin=True)
 
 
@@ -9826,6 +9887,73 @@ def admin_drive_register():
     try:
         _drive_make_public(fid); meta=_drive_file_meta(fid); con=db(); _drive_record_file(con,category,meta,title=str(data.get("title") or "").strip()[:150] or None,course=str(data.get("course") or "All")[:100],semester=str(data.get("semester") or "All")[:100],subject=str(data.get("subject") or "General")[:100],description=str(data.get("description") or "")[:1000]); con.commit(); con.close(); return jsonify(message="File uploaded to Drive and published in VYBE.")
     except Exception as e: return jsonify(error=str(e)),502
+
+@app.route("/admin/drive/register-resource", methods=["POST"])
+@admin_required
+def admin_drive_register_resource():
+    data=request.get_json(force=True) or {}
+    category=str(data.get("category") or "").strip()
+    fid=str(data.get("file_id") or "").strip()
+    if category not in {"Notes","Study Material","Previous Year Questions","Syllabus","Assignments"} or not fid:
+        return jsonify(error="Missing Drive file or resource category."),400
+    try:
+        _drive_make_public(fid)
+        meta=_drive_file_meta(fid)
+        mapped={"Notes":"Notes","Study Material":"Study material","Previous Year Questions":"Previous Year Questions","Syllabus":"Syllabus","Assignments":"Assignments"}[category]
+        con=db()
+        if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone():
+            con.close(); return jsonify(message="File is already published in VYBE.",metadata=meta)
+        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(str(data.get("title") or Path(meta.get("name") or "Drive file").stem)[:150],mapped,str(data.get("course") or "All")[:100],str(data.get("semester") or "All")[:100],str(data.get("subject") or "General")[:100],str(data.get("description") or "")[:1000],None,meta.get("name"),meta.get("mimeType"),None,str(data.get("assistant_text") or "")[:50000],now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink")))
+        con.commit(); con.close()
+        return jsonify(message="File uploaded to Drive and published in VYBE.",metadata=meta)
+    except Exception as e:
+        try: con.close()
+        except Exception: pass
+        return jsonify(error=str(e)),502
+
+@app.route("/admin/drive/register-update", methods=["POST"])
+@admin_required
+def admin_drive_register_update():
+    data=request.get_json(force=True) or {}
+    kind=str(data.get("kind") or "").strip()
+    title=str(data.get("title") or "").strip()[:180]
+    external_url=str(data.get("external_url") or "").strip()[:500]
+    fid=str(data.get("file_id") or "").strip()
+    if kind not in {"Result","Date Sheet","Exam Notice","Admit Card"} or not title:
+        return jsonify(error="Choose a valid update type and title."),400
+    if external_url:
+        parsed=urlparse(external_url)
+        if parsed.scheme not in ("http","https") or not parsed.netloc:
+            return jsonify(error="Please enter a valid http or https website link."),400
+    if kind in {"Result","Admit Card"} and not external_url:
+        return jsonify(error=f"A direct website link is required for {kind}."),400
+    try:
+        meta={}
+        if fid:
+            _drive_make_public(fid); meta=_drive_file_meta(fid)
+        con=db()
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(kind,kind,title,str(data.get("description") or "")[:4000],str(data.get("course") or "")[:100],str(data.get("semester") or "")[:100],str(data.get("subject") or "")[:120],str(data.get("event_date") or "")[:80],external_url,None,meta.get("name") if meta else None,meta.get("mimeType") if meta else None,None,now(),meta.get("id") if meta else None,(meta.get("parents") or [None])[0] if meta else None,(meta.get("webContentLink") or meta.get("webViewLink")) if meta else None))
+        con.commit(); con.close()
+        return jsonify(message="Academic update published successfully.",metadata=meta)
+    except Exception as e:
+        try: con.close()
+        except Exception: pass
+        return jsonify(error=str(e)),502
+
+@app.route("/admin/drive/register-timetable", methods=["POST"])
+@admin_required
+def admin_drive_register_timetable():
+    data=request.get_json(force=True) or {}
+    fid=str(data.get("file_id") or "").strip(); title=str(data.get("title") or "").strip()[:160]
+    if not fid or not title: return jsonify(error="Missing timetable title or Drive file."),400
+    try:
+        _drive_make_public(fid); meta=_drive_file_meta(fid); con=db()
+        con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,None,meta.get("name"),meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink"),str(data.get("assistant_text") or "")[:50000]))
+        con.commit(); con.close(); return jsonify(message="Timetable uploaded to Drive and published in VYBE.",metadata=meta)
+    except Exception as e:
+        try: con.close()
+        except Exception: pass
+        return jsonify(error=str(e)),502
 
 @app.route("/admin/drive/sync", methods=["POST"])
 @admin_required
