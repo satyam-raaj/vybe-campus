@@ -1055,19 +1055,25 @@ PUBLISHER_PERMISSION_CATALOG = [
     ("academic_resources", "Academic Hub Resources", "Add notes, study material, syllabus and previous-year resources."),
 ]
 
-def publisher_permissions(student_id):
-    con = db()
-    row = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{student_id}",)).fetchone()
-    legacy = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{student_id}",)).fetchone()
-    con.close()
-    if row and row["value"]:
-        try:
-            data = json.loads(row["value"])
-            if isinstance(data, list):
-                return {str(x) for x in data}
-        except Exception:
-            pass
-    return {"announcements", "events", "timetable"} if legacy and legacy["value"] == "1" else set()
+def publisher_permissions(student_id, con=None):
+    """Return publisher permissions, reusing a caller's DB connection when available."""
+    own_con = con is None
+    if own_con:
+        con = db()
+    try:
+        row = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{student_id}",)).fetchone()
+        legacy = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{student_id}",)).fetchone()
+        if row and row["value"]:
+            try:
+                data = json.loads(row["value"])
+                if isinstance(data, list):
+                    return {str(x) for x in data}
+            except Exception:
+                pass
+        return {"announcements", "events", "timetable"} if legacy and legacy["value"] == "1" else set()
+    finally:
+        if own_con:
+            con.close()
 
 
 def content_manager_required(fn):
@@ -1076,9 +1082,12 @@ def content_manager_required(fn):
     def wrapper(*args, **kwargs):
         sid = session.get("student_db_id")
         con = db()
-        row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
-        con.close()
-        if not row or row["value"] != "1" or not publisher_permissions(sid):
+        try:
+            row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
+            permitted = bool(row and row["value"] == "1" and publisher_permissions(sid, con=con))
+        finally:
+            con.close()
+        if not permitted:
             flash("You do not have publisher access.")
             return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
@@ -4464,6 +4473,23 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
 }}
 @media(prefers-reduced-motion:reduce){{*,*::before,*::after{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}
 
+/* FINAL MOBILE FIT: keep dashboard updates contained and lightweight. */
+.compact-home-updates{{display:grid!important;grid-template-columns:1fr 1fr!important;gap:12px!important;align-items:start!important;width:100%!important;max-width:100%!important}}
+.compact-home-updates .home-update-panel{{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;overflow:hidden!important}}
+.compact-home-updates .home-update-list{{display:grid!important;gap:4px!important;min-width:0!important}}
+.compact-home-updates .home-update{{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;overflow:hidden!important}}
+.compact-home-updates .home-update > span:nth-child(2){{min-width:0!important;overflow:hidden!important}}
+.compact-home-updates .home-update strong,.compact-home-updates .home-update small{{max-width:100%!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}}
+@media(max-width:850px){{
+  .compact-home-updates{{grid-template-columns:1fr!important;gap:10px!important}}
+  .compact-home-updates .home-update-panel{{padding:10px!important;border-radius:16px!important}}
+  .compact-home-updates .home-panel-title{{margin:0 1px 6px!important;font-size:12px!important}}
+  .compact-home-updates .home-update{{display:grid!important;grid-template-columns:30px minmax(0,1fr) 12px!important;gap:8px!important;padding:8px 6px!important;border-radius:11px!important;align-items:center!important}}
+  .compact-home-updates .home-update-icon{{width:30px!important;height:30px!important;flex:0 0 30px!important;border-radius:9px!important}}
+  .compact-home-updates .home-update strong{{font-size:11px!important;line-height:1.25!important}}
+  .compact-home-updates .home-update small{{font-size:9px!important;line-height:1.25!important}}
+  .compact-home-updates .home-update>b{{font-size:16px!important}}
+}}
 
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
@@ -6070,7 +6096,7 @@ def dashboard():
 {f'<a class="home-action home-action-publisher" href="/publisher"><span class="home-action-icon" aria-hidden="true">✎</span><span><strong>Publisher</strong><small>Upload and publish the content your admin has allowed.</small></span><b>Publish</b></a>' if publisher_enabled else ''}
 </div>
 <div class="home-updates-head"><div><div class="home-section-label">WHAT'S HAPPENING</div><p>Live campus information from VYBE.</p></div><div class="home-live-status"><span></span> VYBE LIVE</div></div>
-<div class="home-updates-grid"><div class="home-update-panel"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all</a></div>{ann_html}</div><div class="home-update-panel"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all</a></div>{event_html}</div></div>
+<div class="home-updates-grid compact-home-updates"><section class="home-update-panel" aria-label="Announcements"><div class="home-panel-title"><span>Announcements</span><a href="/announcements">View all</a></div><div class="home-update-list">{ann_html}</div></section><section class="home-update-panel" aria-label="Upcoming Events"><div class="home-panel-title"><span>Upcoming Events</span><a href="/events">View all</a></div><div class="home-update-list">{event_html}</div></section></div>
 </section>'''
     return layout("Dashboard", body)
 
@@ -7991,7 +8017,7 @@ def admin_status():
 @admin_required
 def admin_students():
     con = db()
-    students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC").fetchall()
+    students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC LIMIT 300").fetchall()
     # Load publisher access in one query instead of opening a DB connection per student.
     access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
     con.close()
@@ -8282,7 +8308,7 @@ def admin_content_access(sid, action):
         if student["status"] != "approved":
             con.close(); flash("Only approved students can receive publisher access."); return redirect(url_for("admin_publisher_access"))
         set_setting(con, f"content_manager_{sid}", "1")
-        current = publisher_permissions(sid)
+        current = publisher_permissions(sid, con=con)
         if not current:
             set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
         flash(f"Publisher access granted to {student['name']}.")
@@ -8309,7 +8335,7 @@ def admin_publisher_access():
         action = request.form.get("action", "permissions")
         if action == "grant":
             set_setting(con, f"content_manager_{sid}", "1")
-            current = publisher_permissions(sid)
+            current = publisher_permissions(sid, con=con)
             if not current:
                 set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
             con.commit(); con.close(); flash(f"Publisher access enabled for {student['name']}."); return redirect(url_for("admin_publisher_access"))
@@ -8325,13 +8351,26 @@ def admin_publisher_access():
         flash(f"Publishing permissions updated for {student['name']}.")
         return redirect(url_for("admin_publisher_access"))
 
-    approved = con.execute("SELECT id,name,student_id,status FROM students WHERE status='approved' ORDER BY LOWER(name), id").fetchall()
+    approved = con.execute("SELECT id,name,student_id,status FROM students WHERE status='approved' ORDER BY LOWER(name), id LIMIT 300").fetchall()
+    setting_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'").fetchall()
+    con.close()
+    setting_map = {str(r["key"]): r["value"] for r in setting_rows}
     rows=[]
+    allowed={k for k,_,_ in PUBLISHER_PERMISSION_CATALOG}
     for srow in approved:
         sid=int(srow["id"])
-        access_row=con.execute("SELECT value FROM settings WHERE key=?",(f"content_manager_{sid}",)).fetchone()
-        active=bool(access_row and access_row["value"]=="1")
-        selected=publisher_permissions(sid) if active else set()
+        active=setting_map.get(f"content_manager_{sid}") == "1"
+        selected=set()
+        if active:
+            raw=setting_map.get(f"publisher_permissions_{sid}", "")
+            try:
+                parsed=json.loads(raw) if raw else []
+                if isinstance(parsed,list):
+                    selected={str(x) for x in parsed if str(x) in allowed}
+            except Exception:
+                selected=set()
+            if not selected:
+                selected={"announcements", "events", "timetable"}
         checks=[]
         for key,label,desc in PUBLISHER_PERMISSION_CATALOG:
             checked=" checked" if key in selected else ""
