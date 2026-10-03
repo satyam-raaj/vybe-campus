@@ -5857,82 +5857,93 @@ def dashboard():
 @app.route("/academics")
 @student_required
 def academics():
-    """Clean academic search page. The library stays hidden until the student searches."""
-    legacy_type={"Notes":"/academic-hub/notes","Study material":"/academic-hub/study-material","Previous Year Questions":"/academic-hub/pyq","Syllabus":"/academic-hub/syllabus","Assignments":"/academic-hub/assignments"}.get(request.args.get("resource_type","" ).strip())
-    if legacy_type and not request.args.get("q"):
+    """Academic Hub landing page with lightweight shortcut cards."""
+    legacy_type={
+        "Notes":"/academic-hub/notes",
+        "Study material":"/academic-hub/study-material",
+        "Previous Year Questions":"/academic-hub/pyq",
+        "Syllabus":"/academic-hub/syllabus",
+        "Assignments":"/academic-hub/assignments",
+    }.get(request.args.get("resource_type", "").strip())
+    if legacy_type:
         return redirect(legacy_type)
-    con=db(); q=" ".join(request.args.get("q","").strip().split())[:120]; rows=[]
-    if q:
-        like=f"%{q}%"
-        rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,drive_file_id,drive_web_url FROM resources WHERE title LIKE ? OR resource_type LIKE ? OR course LIKE ? OR semester LIKE ? OR subject LIKE ? OR original_name LIKE ? ORDER BY id DESC LIMIT 100",(like,like,like,like,like,like)).fetchall()
-    con.close(); items=[]
-    for r in rows:
-        if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]): continue
-        meta=" · ".join(x for x in (r["resource_type"],r["semester"],r["subject"]) if x)
-        items.append(f'<a class="ah-result" href="/resource/{r["id"]}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"] or r["original_name"] or "Resource")}</span><span class="ah-result-meta">{esc(meta or r["original_name"] or "Academic resource")}</span></span><span class="ah-result-open">Open ↗</span></a>')
-    results=''.join(items) if q and items else ('<div class="ah-empty">No matching files found.</div>' if q else '<div class="ah-empty">Search by semester, subject, or file name to find a resource.</div>')
-    count=f'<div class="ah-count">Showing {len(items)} result(s)</div>' if q and items else ''
-    body=f"""{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-search-wrap"><div class="academic-kicker">ACADEMIC HUB</div><h1>Academic resources</h1><p>Search the VYBE library when you need something.</p><form class="ah-search" method="get" autocomplete="off"><input type="search" name="q" value="{esc(q)}" placeholder="Search semester, subject or file name…" aria-label="Search academic resources"><button type="submit">Search</button></form></div><div class="ah-results">{count}{results}</div></section>"""
-    return layout("Academics",body)
+    shortcuts=[
+        ("Notes","Revision notes by semester and subject.","/academic-hub/notes","▤"),
+        ("Study Material","Books, PDFs and reference material.","/academic-hub/study-material","▦"),
+        ("Previous Year Questions","Previous papers by semester and subject.","/academic-hub/pyq","◫"),
+        ("Syllabus","Syllabus files for each semester and subject.","/academic-hub/syllabus","✓"),
+        ("Assignments","Assignments organized by semester and subject.","/academic-hub/assignments","✎"),
+    ]
+    cards="".join(f"<a class='ah-key' href='{href}'><span class='ah-key-icon'>{icon}</span><span><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b>→</b></a>" for title,desc,href,icon in shortcuts)
+    body=f"""<section class="ah-hub-home"><div class="ah-hub-head"><div class="academic-kicker">ACADEMIC HUB</div><h1>What do you need?</h1><p>Choose a section first, then select your semester and subject to see only the material you want.</p></div><div class="ah-key-grid">{cards}</div></section>"""
+    return layout("Academic Hub",body)
 
 ACADEMIC_COLLECTION_CSS = """
 <style>
-.ah-collection{max-width:820px;margin:0 auto;padding:46px 18px 80px;color:#17202b}.ah-search-wrap{text-align:center;padding:30px 0 18px}.ah-search-wrap h1{margin:0 0 9px;font-size:clamp(34px,6vw,52px);letter-spacing:-.05em}.ah-search-wrap p{margin:0 0 22px;color:#74808b;font-size:13px}.ah-search{display:flex;gap:8px;max-width:650px;margin:0 auto}.ah-search input{height:50px;flex:1;min-width:0;box-sizing:border-box;padding:0 16px;border:1px solid #d8e0e6;border-radius:14px;background:#fff;color:#17202b;outline:none;box-shadow:0 5px 18px rgba(31,48,66,.04)}.ah-search input:focus{border-color:#8eb6dc;box-shadow:0 0 0 4px rgba(47,111,202,.08)}.ah-search button{height:50px;padding:0 19px;border:0;border-radius:14px;background:#2f6fca;color:#fff;font-weight:800;cursor:pointer}.ah-results{margin-top:24px}.ah-result{display:flex;align-items:center;gap:14px;padding:14px 15px;margin-bottom:8px;border:1px solid #e0e6eb;border-radius:14px;background:#fff;color:#17202b;text-decoration:none}.ah-result:hover{border-color:#b8d0e7}.ah-result-main{min-width:0;flex:1}.ah-result-title{display:block;font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ah-result-meta{display:block;margin-top:4px;color:#7a8792;font-size:11px}.ah-result-open{font-size:11px;font-weight:800;color:#2f6fca;white-space:nowrap}.ah-empty{text-align:center;padding:28px 12px;color:#7a8792;font-size:12px}.ah-count{text-align:center;color:#87929c;font-size:11px;margin-bottom:10px}@media(max-width:600px){.ah-collection{padding:30px 12px 70px}.ah-search{gap:7px}.ah-search input{height:48px;font-size:14px}.ah-search button{height:48px;padding:0 15px}.ah-result{padding:13px 12px}.ah-result-open{font-size:10px}}
+.ah-collection{max-width:920px;margin:0 auto;padding:34px 16px 80px;color:#17202b}.ah-filter-head{text-align:center;padding:22px 0 18px}.ah-filter-head h1{margin:7px 0 7px;font-size:clamp(30px,5vw,46px);letter-spacing:-.045em}.ah-filter-head p{margin:0 auto;color:#74808b;font-size:13px;max-width:620px;line-height:1.5}.ah-filter{margin:18px auto 0;max-width:820px;padding:14px;border:1px solid #dce3e8;border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(31,48,66,.05)}.ah-filter-grid{display:grid;grid-template-columns:1fr 1fr 1.25fr auto;gap:9px;align-items:end}.ah-filter label{display:grid;gap:5px;font-size:10px;font-weight:800;color:#697682;text-transform:uppercase;letter-spacing:.06em}.ah-filter select,.ah-filter input{width:100%;height:46px;box-sizing:border-box;border:1px solid #d8e0e6;border-radius:11px;background:#fff;color:#17202b;padding:0 12px;outline:none;font-size:13px}.ah-filter select:focus,.ah-filter input:focus{border-color:#8eb6dc;box-shadow:0 0 0 3px rgba(47,111,202,.08)}.ah-filter button{height:46px;padding:0 17px;border:0;border-radius:11px;background:#2f6fca;color:#fff;font-weight:800;cursor:pointer;white-space:nowrap}.ah-filter-reset{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 12px;border-radius:11px;border:1px solid #d8e0e6;color:#596773;text-decoration:none;font-size:12px;font-weight:700}.ah-filter-actions{display:flex;gap:7px}.ah-results{margin-top:20px}.ah-result{display:flex;align-items:center;gap:14px;padding:14px 15px;margin-bottom:8px;border:1px solid #e0e6eb;border-radius:14px;background:#fff;color:#17202b;text-decoration:none}.ah-result:hover{border-color:#b8d0e7}.ah-result-main{min-width:0;flex:1}.ah-result-title{display:block;font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ah-result-meta{display:block;margin-top:4px;color:#7a8792;font-size:11px}.ah-result-open{font-size:11px;font-weight:800;color:#2f6fca;white-space:nowrap}.ah-empty{text-align:center;padding:28px 12px;color:#7a8792;font-size:12px}.ah-count{text-align:center;color:#87929c;font-size:11px;margin-bottom:10px}.ah-hub-home{max-width:900px;margin:0 auto;padding:42px 18px 80px}.ah-hub-head{text-align:center;padding:10px 0 22px}.ah-hub-head h1{margin:8px 0;font-size:clamp(38px,6vw,56px);letter-spacing:-.055em}.ah-hub-head p{margin:0 auto;max-width:620px;color:#7a8792;font-size:14px;line-height:1.5}.ah-key-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ah-key{display:flex;align-items:center;gap:13px;min-height:78px;padding:14px 15px;border:1px solid #dfe6eb;border-radius:17px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 5px 18px rgba(31,48,66,.035);transition:border-color .15s ease,transform .15s ease}.ah-key:hover{border-color:#b8d0e7;transform:translateY(-1px)}.ah-key-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:12px;background:#eef5fb;color:#2f6fca;font-weight:900}.ah-key span:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}.ah-key strong{font-size:14px}.ah-key small{font-size:11px;color:#7a8792;line-height:1.35}.ah-key b{font-size:21px;color:#7c92a8;font-weight:500}@media(max-width:760px){.ah-filter-grid{grid-template-columns:1fr 1fr}.ah-filter-search{grid-column:1/-1}.ah-filter-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr auto;gap:8px}.ah-filter-actions button{width:100%}.ah-key-grid{grid-template-columns:1fr}.ah-hub-home{padding:28px 12px 70px}.ah-collection{padding:26px 12px 70px}.ah-filter-head{padding:12px 0 14px}.ah-filter-head h1{font-size:32px}.ah-result{padding:13px 12px}.ah-result-open{font-size:10px}}
 </style>
 """
 
 def _academic_resource_collection(resource_type, title, subtitle, kicker):
-    """Lightweight student resource search: nothing loads until the student searches."""
+    """Show a clean filter first; load resource rows only after a semester is selected."""
     con=db()
+    semester=" ".join(request.args.get("semester","").strip().split())[:100]
+    subject=" ".join(request.args.get("subject","").strip().split())[:120]
     q=" ".join(request.args.get("q","").strip().split())[:120]
+    semesters=con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester IS NOT NULL AND TRIM(semester)<>'' ORDER BY semester",(resource_type,)).fetchall()
+    if semester:
+        subjects=con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND semester=? AND subject IS NOT NULL AND TRIM(subject)<>'' ORDER BY subject",(resource_type,semester)).fetchall()
+    else:
+        subjects=[]
     rows=[]
-    if q:
-        like=f"%{q}%"
-        rows=con.execute(
-            "SELECT id,title,course,semester,subject,original_name,drive_file_id,drive_web_url "
-            "FROM resources WHERE resource_type=? AND "
-            "(title LIKE ? OR subject LIKE ? OR semester LIKE ? OR original_name LIKE ? OR course LIKE ?) "
-            "ORDER BY id DESC LIMIT 80",
-            (resource_type,like,like,like,like,like)
-        ).fetchall()
+    if semester:
+        clauses=["resource_type=?","semester=?"]
+        params=[resource_type,semester]
+        if subject:
+            clauses.append("subject=?"); params.append(subject)
+        if q:
+            like=f"%{q}%"; clauses.append("(title LIKE ? OR subject LIKE ? OR original_name LIKE ? OR course LIKE ?)"); params.extend([like,like,like,like])
+        rows=con.execute("SELECT id,title,course,semester,subject,original_name,drive_file_id,drive_web_url FROM resources WHERE " + " AND ".join(clauses) + " ORDER BY id DESC LIMIT 80",tuple(params)).fetchall()
     con.close()
-    if q:
+    sem_opts=''.join(f'<option value="{esc(r["semester"])}"{" selected" if r["semester"]==semester else ""}>{esc(r["semester"])}</option>' for r in semesters)
+    sub_opts=''.join(f'<option value="{esc(r["subject"])}"{" selected" if r["subject"]==subject else ""}>{esc(r["subject"])}</option>' for r in subjects)
+    if semester:
         items=[]
         for r in rows:
             if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]): continue
             meta=" · ".join(x for x in (r["semester"],r["subject"],r["course"]) if x)
             items.append(f'<a class="ah-result" href="/resource/{r["id"]}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"] or r["original_name"] or "Resource")}</span><span class="ah-result-meta">{esc(meta or r["original_name"] or "Academic resource")}</span></span><span class="ah-result-open">Open ↗</span></a>')
-        results="".join(items) or '<div class="ah-empty">No matching files found.</div>'
-        count=f'<div class="ah-count">Showing up to {len(items)} matching file(s)</div>' if items else ""
+        results="".join(items) or '<div class="ah-empty">No material matches those filters.</div>'
+        count=f'<div class="ah-count">{len(items)} matching file(s)</div>' if items else ''
     else:
-        results='<div class="ah-empty">Search by semester, subject, or file name to find what you need.</div>'; count=""
-    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-search-wrap"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-search" method="get" autocomplete="off"><input type="search" name="q" value="{esc(q)}" placeholder="Search by semester, subject or file name…" aria-label="Search {esc(title)}"><button type="submit">Search</button></form></div><div class="ah-results">{count}{results}</div></section>'''
+        results='<div class="ah-empty">Choose a semester and subject above to view the material.</div>'; count=''
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></div><form class="ah-filter" method="get" autocomplete="off"><div class="ah-filter-grid"><label>Semester<select name="semester" required><option value="">Choose semester</option>{sem_opts}</select></label><label>Subject<select name="subject" {"" if semester else "disabled"}><option value="">All subjects</option>{sub_opts}</select></label><label class="ah-filter-search">Search (optional)<input type="search" name="q" value="{esc(q)}" placeholder="File name or keyword"></label><div class="ah-filter-actions"><button type="submit">Show material</button><a class="ah-filter-reset" href="{request.path}">Clear</a></div></div></form><div class="ah-results">{count}{results}</div></section>'''
     return layout(title,body)
 
 @app.route("/academic-hub/notes")
 @student_required
 def academic_hub_notes():
-    return _academic_resource_collection("Notes","Study Notes","Revision notes organized by semester and subject.","STUDY NOTES")
+    return _academic_resource_collection("Notes","Study Notes","Choose your semester and subject to see only the notes you need.","STUDY NOTES")
 
 @app.route("/academic-hub/study-material")
 @student_required
 def academic_hub_study_material():
-    return _academic_resource_collection("Study material","Study Material","Semester-wise reference files, readings and study material.","STUDY MATERIAL")
+    return _academic_resource_collection("Study material","Study Material","Choose your semester and subject to see only the material you need.","STUDY MATERIAL")
 
 @app.route("/academic-hub/pyq")
 @student_required
 def academic_hub_pyq():
-    return _academic_resource_collection("Previous Year Questions","PYQ Papers","Previous-year question papers grouped by semester and subject.","PYQ PAPERS")
+    return _academic_resource_collection("Previous Year Questions","PYQ Papers","Choose your semester and subject to see only the papers you need.","PYQ PAPERS")
 
 @app.route("/academic-hub/syllabus")
 @student_required
 def academic_hub_syllabus():
-    return _academic_resource_collection("Syllabus","Syllabus","Find syllabus files by semester or subject.","SYLLABUS")
+    return _academic_resource_collection("Syllabus","Syllabus","Choose your semester and subject to see the relevant syllabus.","SYLLABUS")
 
 @app.route("/academic-hub/assignments")
 @student_required
 def academic_hub_assignments():
-    return _academic_resource_collection("Assignments","Assignments","Find assignment files by semester or subject.","ASSIGNMENTS")
+    return _academic_resource_collection("Assignments","Assignments","Choose your semester and subject to see the relevant assignments.","ASSIGNMENTS")
 
 def _academic_update_collection(kind, title, subtitle, kicker):
     con=db(); q=" ".join(request.args.get("q","").strip().split())[:120]; rows=[]
