@@ -3632,7 +3632,17 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         header = f'<div class="navin">{brand}<button class="nav-toggle" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button></div>'
         bottom_nav = ""
-    flashes = "".join(f'<div class="flash">{esc(m)}</div>' for m in session.pop("_flashes", []))
+    _flash_items = session.pop("_flashes", [])
+    _flash_html = []
+    for _item in _flash_items:
+        # Flask stores flashed messages as (category, message). Render only the
+        # human message so internal tuple data can never leak into the UI.
+        if isinstance(_item, (tuple, list)) and len(_item) >= 2:
+            _message = _item[1]
+        else:
+            _message = _item
+        _flash_html.append(f'<div class="flash">{esc(_message)}</div>')
+    flashes = "".join(_flash_html)
     assistant_widget = ""
     if student:
         try:
@@ -4455,9 +4465,9 @@ body{background-attachment:scroll!important}
 .settings-tile:hover{{transform:translateY(-3px);border-color:#c5d8e9;box-shadow:0 18px 36px rgba(31,48,66,.11)}}
 .settings-icon{{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:#edf4ff;font-size:21px}}
 .settings-tile div{{min-width:0;flex:1}}.settings-tile b{{display:block;font-size:17px}}.settings-tile small{{display:block;margin-top:5px;color:#718090;font-size:12px;line-height:1.45}}.settings-tile>strong{{font-size:22px;color:#8a97a3}}.settings-state{{font-size:10px;font-weight:900;letter-spacing:.08em;padding:7px 9px;border-radius:999px;background:#edf4ff;color:#2f6fca;white-space:nowrap}}.settings-state.off{{background:#fff1f1;color:#c45b61}}.settings-footer-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}}.settings-mini{{text-decoration:none;color:#17202b;display:block}}.settings-mini small{{display:block;color:#718090;margin:6px 0 12px}}.settings-mini span{{font-size:12px;color:#2f6fca;font-weight:800}}
-.settings-detail-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;margin-top:20px}}.settings-editor,.settings-preview{{border-radius:24px!important}}.settings-editor-icon{{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:#edf8e6;font-size:23px;margin-bottom:12px}}.settings-check{{display:flex!important;gap:12px;align-items:flex-start;padding:13px;border:1px solid #e1e7ec;border-radius:15px;background:#f8fafb}}.settings-check input{{width:18px!important;flex:0 0 18px;margin-top:2px}}.settings-check b,.settings-check small{{display:block}}.settings-check small{{margin-top:4px;color:#718090}}.preview-row{{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e7ebef;font-size:13px}}.preview-row b{{color:#2f6fca}}.publisher-access-note{{min-width:150px;text-align:center;padding:18px!important}}.publisher-access-note strong{{display:block;font-size:34px}}.publisher-access-note small{{color:#718090}}.publisher-permission-legend{{margin-top:18px}}.publisher-permission-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}}.publisher-permission{{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e0e6eb;border-radius:14px;background:#f8fafc}}.publisher-permission input{{margin-top:3px}}.publisher-permission span{{min-width:0}}.publisher-permission strong{{display:block;font-size:12px}}.publisher-permission small{{display:block;color:#718090;font-size:10px;line-height:1.4;margin-top:3px}}.publisher-student-list{{display:grid;gap:15px;margin-top:18px}}.publisher-student-card{{padding:19px;border:1px solid #dfe5ea;border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(31,48,66,.06)}}.publisher-student-head{{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:14px}}.publisher-student-head strong{{display:block;font-size:16px}}.publisher-student-head small{{display:block;color:#718090;margin-top:4px}}.publisher-on{{background:#edf8e6!important;color:#57952a!important}}.publisher-page .publisher-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}}.publisher-page .publisher-permission-summary{{min-width:210px;padding:16px!important}}.publisher-page .publisher-permission-summary strong{{display:block}}.publisher-page .publisher-permission-summary small{{display:block;color:#718090;margin-top:5px;line-height:1.45}}.publisher-page .publisher-grid .card{{border-radius:22px}}
-@media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid,.publisher-permission-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-student-head{{align-items:flex-start;flex-direction:column}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
-@media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.publisher-student-card{{padding:14px;border-radius:18px}}.publisher-permission-grid{{gap:8px}}.publisher-permission{{padding:10px}}.settings-detail-grid{{gap:12px}}}}
+.settings-detail-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;margin-top:20px}}.settings-editor,.settings-preview{{border-radius:24px!important}}.settings-editor-icon{{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:#edf8e6;font-size:23px;margin-bottom:12px}}.settings-check{{display:flex!important;gap:12px;align-items:flex-start;padding:13px;border:1px solid #e1e7ec;border-radius:15px;background:#f8fafb}}.settings-check input{{width:18px!important;flex:0 0 18px;margin-top:2px}}.settings-check b,.settings-check small{{display:block}}.settings-check small{{margin-top:4px;color:#718090}}.preview-row{{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e7ebef;font-size:13px}}.preview-row b{{color:#2f6fca}}.publisher-access-note{{min-width:150px;text-align:center;padding:18px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;line-height:1.2!important}}.publisher-access-note strong{{display:block;font-size:34px}}.publisher-access-note small{{color:#718090}}publisher-on{{background:#edf8e6!important;color:#57952a!important}}.publisher-page .publisher-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}}.publisher-page .publisher-permission-summary{{min-width:210px;padding:16px!important}}.publisher-page .publisher-permission-summary strong{{display:block}}.publisher-page .publisher-permission-summary small{{display:block;color:#718090;margin-top:5px;line-height:1.45}}.publisher-page .publisher-grid .card{{border-radius:22px}}
+@media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
+@media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.settings-detail-grid{{gap:12px}}}}
 
 /* ===== FINAL VYBE MENU PANEL — DARK BLUE, LIGHTWEIGHT, ALL DEVICES ===== */
 #vybeMobileNav.student-mobile-menu{{
@@ -4531,7 +4541,7 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
   .compact-home-updates .home-update>b{{font-size:16px!important}}
 }}
 
-</style></head><body>
+</style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
 <script>(function(){{
@@ -7830,17 +7840,39 @@ def admin_security_alerts():
         active = '<div class="security-empty"><div>✓</div><strong>No active blocks</strong><span>VYBE has no devices currently restricted.</span></div>'
 
     rows = "".join(
-        f'''<tr><td>{esc(r["created_at"])}</td><td><strong>{esc(r["name"] or "Unknown")}</strong><br><span class="small">{esc(r["student_id"] or "—")}</span></td><td>{esc(r["ip_address"] or "—")}</td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"] or "—")}</td></tr>'''
+        f'''<tr><td>{esc(r["created_at"])}</td><td><strong>{esc(r["name"] or "Unknown")}</strong><br><span class="small">{esc(r["student_id"] or "—")}</span></td><td>{esc(r["ip_address"] or "—")}</td><td>{esc(r["area"] or "—")}</td><td>{esc(r["message"] or "—")}</td><td><form method="post" action="/admin/security-alerts/delete/{int(r["id"])}" onsubmit="return confirm('Delete this security history entry?')"><button class="btn danger security-history-delete" type="submit">Delete</button></form></td></tr>'''
         for r in alerts
-    ) or '<tr><td colspan="5">No security alerts yet.</td></tr>'
+    ) or '<tr><td colspan="6">No security alerts yet.</td></tr>'
 
     body = f'''<section class="section security-center-page">
       <div class="security-center-head"><div><a href="/admin/password" class="admin-back">← Password Access</a><div class="badge" style="margin-top:14px">VYBE SECURITY</div><h1>Security alerts.</h1><p class="muted">Review temporary login blocks created after three failed password attempts. The IP is recorded for investigation, but it is not the primary block key.</p></div><div class="security-summary"><strong>{len(blocks)}</strong><span>currently blocked</span></div></div>
       <section class="security-panel"><div class="security-panel-head"><div><span class="security-kicker">ACTION REQUIRED</span><h2>Currently blocked</h2><p>Remove a block when you have confirmed the student is genuine. Removing it resets the failed-attempt counter and allows immediate login.</p></div><a class="btn dark" href="/admin/password">← Password Access</a></div><div class="security-block-list">{active}</div></section>
-      <section class="security-panel"><div class="security-panel-head"><div><span class="security-kicker">AUDIT TRAIL</span><h2>Security alert history</h2><p>Unblock actions are recorded here instead of deleting the original security event.</p></div></div><div class="tablewrap"><table><tr><th>Time</th><th>User</th><th>IP address</th><th>Area</th><th>Event</th></tr>{rows}</table></div></section>
+      <section class="security-panel"><div class="security-panel-head"><div><span class="security-kicker">AUDIT TRAIL</span><h2>Security alert history</h2><p>Unblock actions are recorded here instead of deleting the original security event.</p></div></div><div class="tablewrap"><table><tr><th>Time</th><th>User</th><th>IP address</th><th>Area</th><th>Event</th><th>Action</th></tr>{rows}</table></div></section>
     </section>
-    <style>.security-center-page{{max-width:1080px;margin:0 auto}}.security-center-head{{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:22px}}.security-center-head h1{{margin:8px 0}}.security-summary{{min-width:145px;padding:20px;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(255,255,255,.035);text-align:center}}.security-summary strong{{display:block;font-size:30px}}.security-summary span{{display:block;color:#9fb3c0;font-size:12px;margin-top:3px}}.security-panel{{margin-top:18px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.025)}}.security-panel-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:16px}}.security-panel-head h2{{margin:5px 0}}.security-panel-head p{{max-width:680px;margin:0;color:#9fb3c0}}.security-kicker{{font-size:10px;letter-spacing:.14em;font-weight:850;color:#7dc4e8}}.security-block-list{{display:grid;gap:12px}}.security-block-card{{padding:17px;border:1px solid rgba(255,112,112,.16);border-radius:17px;background:linear-gradient(145deg,rgba(255,82,82,.055),rgba(255,255,255,.025))}}.security-block-main{{display:flex;gap:12px;align-items:center}}.security-avatar{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(255,100,100,.12);color:#ff9c9c;font-weight:900}}.security-user{{font-weight:850;font-size:16px}}.security-meta{{color:#9fb3c0;font-size:12px;margin-top:3px}}.security-block-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}}.security-block-grid div{{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.035)}}.security-block-grid span{{display:block;font-size:9px;letter-spacing:.12em;color:#8299a8;margin-bottom:5px}}.security-block-grid b{{font-size:12px;word-break:break-word}}.security-empty{{padding:34px;text-align:center;color:#9fb3c0}}.security-empty div{{font-size:26px;color:#76d59a;margin-bottom:7px}}.security-empty strong{{display:block;color:#eef8ff}}.security-empty span{{display:block;font-size:12px;margin-top:4px}}@media(max-width:700px){{.security-center-head,.security-panel-head{{display:block}}.security-summary{{margin-top:16px}}.security-panel-head .btn{{display:inline-flex;margin-top:12px}}.security-block-grid{{grid-template-columns:1fr}}}}</style>'''
+    <style>.security-center-page{{max-width:1080px;margin:0 auto}}.security-center-head{{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:22px}}.security-center-head h1{{margin:8px 0}}.security-summary{{min-width:145px;padding:20px;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(255,255,255,.035);text-align:center}}.security-summary strong{{display:block;font-size:30px}}.security-summary span{{display:block;color:#9fb3c0;font-size:12px;margin-top:3px}}.security-panel{{margin-top:18px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.025)}}.security-panel-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:16px}}.security-panel-head h2{{margin:5px 0}}.security-panel-head p{{max-width:680px;margin:0;color:#9fb3c0}}.security-kicker{{font-size:10px;letter-spacing:.14em;font-weight:850;color:#7dc4e8}}.security-block-list{{display:grid;gap:12px}}.security-block-card{{padding:17px;border:1px solid rgba(255,112,112,.16);border-radius:17px;background:linear-gradient(145deg,rgba(255,82,82,.055),rgba(255,255,255,.025))}}.security-block-main{{display:flex;gap:12px;align-items:center}}.security-avatar{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(255,100,100,.12);color:#ff9c9c;font-weight:900}}.security-user{{font-weight:850;font-size:16px}}.security-meta{{color:#9fb3c0;font-size:12px;margin-top:3px}}.security-block-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}}.security-block-grid div{{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.035)}}.security-block-grid span{{display:block;font-size:9px;letter-spacing:.12em;color:#8299a8;margin-bottom:5px}}.security-block-grid b{{font-size:12px;word-break:break-word}}.security-empty{{padding:34px;text-align:center;color:#9fb3c0}}.security-empty div{{font-size:26px;color:#76d59a;margin-bottom:7px}}.security-empty strong{{display:block;color:#eef8ff}}.security-empty span{{display:block;font-size:12px;margin-top:4px}}.security-history-delete{{min-height:34px!important;padding:0 11px!important;font-size:10px!important}}.security-center-page .tablewrap td:last-child{{white-space:nowrap}}@media(max-width:700px){{.security-center-head,.security-panel-head{{display:block}}.security-summary{{margin-top:16px}}.security-panel-head .btn{{display:inline-flex;margin-top:12px}}.security-block-grid{{grid-template-columns:1fr}}}}</style>'''
     return layout("Security Alerts", body, admin=True)
+
+
+@app.route("/admin/security-alerts/delete/<int:alert_id>", methods=["POST"])
+@admin_required
+def admin_security_alert_delete(alert_id):
+    con = db()
+    try:
+        row = con.execute("SELECT id FROM vybe_security_alerts WHERE id=?", (alert_id,)).fetchone()
+        if not row:
+            con.close()
+            flash("That security history entry no longer exists.")
+            return redirect(url_for("admin_security_alerts"))
+        con.execute("DELETE FROM vybe_security_alerts WHERE id=?", (alert_id,))
+        con.commit()
+        con.close()
+        flash("Security history entry deleted.")
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        con.close()
+        flash("We could not delete that security history entry. Please try again.")
+    return redirect(url_for("admin_security_alerts"))
 
 
 @app.route("/admin/security-alerts/unblock/<device_hash>", methods=["POST"])
@@ -8422,9 +8454,21 @@ def admin_publisher_access():
             selected_sid = 0
 
         if request.method == "POST":
-            student = con.execute("SELECT id,name,status FROM students WHERE id=?", (selected_sid,)).fetchone() if selected_sid else None
-            if not student or str(student["status"]).lower() != "approved":
-                flash("Select a valid approved publisher first.")
+            student = None
+            if selected_sid:
+                # The publisher-control screen must accept only students who were
+                # already granted publisher access from Students & Access.
+                try:
+                    student = con.execute(
+                        "SELECT s.id,s.name,s.status FROM students s "
+                        "JOIN settings pm ON pm.key=('content_manager_' || CAST(s.id AS TEXT)) "
+                        "WHERE s.id=? AND s.status='approved' AND pm.value='1'",
+                        (selected_sid,),
+                    ).fetchone()
+                except Exception:
+                    student = None
+            if not student:
+                flash("Select a student who already has publisher access.")
                 return redirect(url_for("admin_publisher_access"))
             action = request.form.get("action", "save").strip()
             if action == "revoke":
@@ -8440,26 +8484,35 @@ def admin_publisher_access():
                 flash(f"Publisher controls updated for {student['name']}.")
             return redirect(url_for("admin_publisher_access"))
 
+        # Query active publisher students directly from the relationship between
+        # students and their content-manager setting. This avoids stale/incomplete
+        # in-memory lists and guarantees the selector reflects Students & Access.
         try:
-            access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
-        except Exception:
-            access_rows = []
-        publisher_ids = []
-        for r in access_rows:
-            key = str(r["key"])
-            if key.startswith("content_manager_") and str(r["value"] or "") == "1":
-                try:
-                    publisher_ids.append(int(key[len("content_manager_"):]))
-                except (TypeError, ValueError):
-                    continue
-        if publisher_ids:
-            placeholders = ",".join("?" for _ in publisher_ids)
             approved = con.execute(
-                f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name, id LIMIT 300",
-                publisher_ids,
+                "SELECT s.id,s.name,s.student_id,s.status FROM students s "
+                "JOIN settings pm ON pm.key=('content_manager_' || CAST(s.id AS TEXT)) "
+                "WHERE s.status='approved' AND pm.value='1' ORDER BY s.name,s.id LIMIT 300"
             ).fetchall()
-        else:
+        except Exception:
             approved = []
+            try:
+                access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
+                publisher_ids = []
+                for r in access_rows:
+                    key = str(r["key"])
+                    if key.startswith("content_manager_") and str(r["value"] or "") == "1":
+                        try:
+                            publisher_ids.append(int(key[len("content_manager_"):]))
+                        except (TypeError,ValueError):
+                            pass
+                if publisher_ids:
+                    placeholders=",".join("?" for _ in publisher_ids)
+                    approved=con.execute(
+                        f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name,id LIMIT 300",
+                        publisher_ids,
+                    ).fetchall()
+            except Exception:
+                approved=[]
 
         selected_student = None
         selected = set()
@@ -9751,13 +9804,84 @@ def drive_cron():
     except Exception: pass
     return jsonify(result)
 
+ADMIN_DESKTOP_POLISH_CSS = r"""
+<style>
+/* ===== ADMIN DESKTOP POLISH ===== */
+@media (min-width:851px){
+  body:has(.admin-header) .wrap{
+    width:min(1360px,calc(100vw - 56px))!important;
+    max-width:none!important;
+    margin:0 auto!important;
+    padding:34px 0 70px!important;
+    box-sizing:border-box!important;
+  }
+  body:has(.admin-header) .section{margin:0 0 22px!important}
+  body:has(.admin-header) .admin-page-head{
+    display:flex!important;align-items:flex-end!important;justify-content:space-between!important;
+    gap:28px!important;margin:0 0 22px!important;
+  }
+  body:has(.admin-header) .admin-page-head > div:first-child{min-width:0!important}
+  body:has(.admin-header) .admin-page-head h1{margin:8px 0 8px!important;line-height:1.02!important}
+  body:has(.admin-header) .admin-page-head p{max-width:760px!important;margin:0!important;line-height:1.55!important}
+  body:has(.admin-header) .card{box-sizing:border-box!important}
+  body:has(.admin-header) .tablewrap{overflow-x:auto!important}
+
+  /* Settings */
+  body:has(.settings-hub) .settings-grid{
+    display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:16px!important;margin-top:24px!important;
+  }
+  body:has(.settings-hub) .settings-tile{
+    display:flex!important;align-items:center!important;gap:15px!important;
+    min-height:112px!important;padding:20px!important;
+    border:1px solid #dfe5ea!important;border-radius:20px!important;
+    background:#fff!important;box-shadow:0 8px 22px rgba(31,48,66,.06)!important;
+    text-decoration:none!important;color:#17202b!important;
+    box-sizing:border-box!important;
+  }
+  body:has(.settings-hub) .settings-tile:hover{
+    border-color:#bcd5ea!important;box-shadow:0 12px 28px rgba(31,48,66,.09)!important;
+  }
+  body:has(.settings-hub) .settings-icon{
+    width:48px!important;height:48px!important;flex:0 0 48px!important;
+    display:grid!important;place-items:center!important;border-radius:14px!important;
+    background:#eef5ff!important;font-size:20px!important;
+  }
+  body:has(.settings-hub) .settings-tile>div{min-width:0!important;flex:1!important}
+  body:has(.settings-hub) .settings-tile b{display:block!important;font-size:16px!important;line-height:1.25!important;color:#17202b!important}
+  body:has(.settings-hub) .settings-tile small{display:block!important;margin-top:6px!important;color:#6f7d8a!important;font-size:11px!important;line-height:1.45!important}
+  body:has(.settings-hub) .settings-tile>strong{font-size:19px!important;color:#8193a4!important;flex:0 0 auto!important}
+  body:has(.settings-hub) .settings-state{
+    flex:0 0 auto!important;font-size:9px!important;font-weight:900!important;
+    letter-spacing:.08em!important;padding:6px 8px!important;border-radius:999px!important;
+    background:#edf5ff!important;color:#2f6fca!important;white-space:nowrap!important;
+  }
+  body:has(.settings-hub) .settings-state.off{background:#fff1f1!important;color:#c45b61!important}
+  body:has(.settings-hub) .settings-footer-grid{
+    display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:16px!important;margin-top:16px!important;
+  }
+  body:has(.settings-hub) .settings-mini{
+    min-height:100px!important;padding:20px!important;text-decoration:none!important;
+  }
+
+  /* Publisher / settings detail pages */
+  body:has(.settings-detail) .settings-editor,
+  body:has(.settings-detail) .settings-preview{
+    background:#fff!important;border:1px solid #dfe5ea!important;
+    box-shadow:0 8px 22px rgba(31,48,66,.055)!important;
+  }
+  body:has(.settings-detail) .settings-detail-grid{grid-template-columns:1.2fr .8fr!important;gap:18px!important}
+}
+</style>
+"""
+
 @app.route("/admin/settings")
 @admin_required
 def admin_settings():
     con=db()
     online=setting(con,"vybe_online","1")=="1"
     wa=setting(con,"whatsapp_link","")
-    pk=con.execute("SELECT COUNT(*) AS c FROM passkeys").fetchone()["c"]
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
