@@ -3619,6 +3619,155 @@ body{background-attachment:scroll!important}
   .page-home .home-live-glow{display:none!important}
   .page-home .home-live-orbit{animation:none!important}
 }
+
+/* ===== MOBILE LAYOUT + SCROLL POLISH =====
+   Keep the existing visual language, but prevent wide content, paint-heavy
+   effects, and table overflow from making phones feel slow or cramped. */
+.card,.btn,.home-action,.home-update-panel,.home-update,.admin-home-card,.admin-home-status{
+  animation:none!important;
+}
+.nav,.mobile-nav,.student-bottom-nav,.chat-composer,.community-launch,.flash,.badge,.pill{
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+@media(max-width:850px){
+  body{overflow-x:hidden!important;background-attachment:scroll!important}
+  .card,.btn,.home-action,.home-update-panel,.home-update,.admin-home-card,.admin-home-status{
+    transition:none!important;
+  }
+  .page-home .home-updates-grid{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:12px!important;
+    width:100%!important;
+    max-width:100%!important;
+    overflow:visible!important;
+  }
+  .page-home .home-update-panel{
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+    overflow:hidden!important;
+    padding:12px!important;
+    border-radius:18px!important;
+  }
+  .page-home .home-panel-title{
+    min-width:0!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+    margin:0 0 8px!important;
+  }
+  .page-home .home-panel-title span{
+    min-width:0!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
+  .page-home .home-update{
+    display:grid!important;
+    grid-template-columns:34px minmax(0,1fr) 14px!important;
+    align-items:center!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+    padding:10px 8px!important;
+    gap:9px!important;
+  }
+  .page-home .home-update>span:nth-child(2){
+    min-width:0!important;
+    max-width:100%!important;
+    overflow:hidden!important;
+  }
+  .page-home .home-update strong,.page-home .home-update small{
+    display:block!important;
+    max-width:100%!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
+  .page-home .home-update>b{font-size:18px!important}
+
+  /* Admin Students: desktop table becomes readable stacked student cards. */
+  .admin-students-page .tablewrap{
+    overflow:visible!important;
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+    padding:0!important;
+  }
+  .admin-students-page table,
+  .admin-students-page tbody,
+  .admin-students-page tr,
+  .admin-students-page td{
+    display:block!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box!important;
+  }
+  .admin-students-page thead{display:none!important}
+  .admin-students-page tbody{display:grid!important;gap:12px!important}
+  .admin-students-page tr{
+    margin:0!important;
+    padding:13px 14px!important;
+    border:1px solid #dfe5ea!important;
+    border-radius:18px!important;
+    background:#fff!important;
+    box-shadow:0 3px 10px rgba(20,30,20,.045)!important;
+  }
+  .admin-students-page td{
+    display:flex!important;
+    align-items:flex-start!important;
+    justify-content:space-between!important;
+    gap:12px!important;
+    padding:9px 0!important;
+    border-bottom:1px solid #edf0f2!important;
+    overflow-wrap:anywhere!important;
+  }
+  .admin-students-page td:before{
+    flex:0 0 84px!important;
+    color:#7a8793!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    text-transform:uppercase!important;
+    letter-spacing:.05em!important;
+  }
+  .admin-students-page td:nth-child(1):before{content:"Student"}
+  .admin-students-page td:nth-child(2):before{content:"Student ID"}
+  .admin-students-page td:nth-child(3):before{content:"Status"}
+  .admin-students-page td:nth-child(4):before{content:"Registered"}
+  .admin-students-page td:nth-child(5):before{content:"Actions"}
+  .admin-students-page td:last-child{
+    display:block!important;
+    border-bottom:0!important;
+    padding-bottom:2px!important;
+  }
+  .admin-students-page td:last-child:before{
+    display:block!important;
+    margin-bottom:8px!important;
+  }
+  .admin-students-page .student-presence{
+    min-width:0!important;
+    max-width:calc(100% - 96px)!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  .admin-students-page td:last-child .actions{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:7px!important;
+    margin:0!important;
+  }
+  .admin-students-page td:last-child .actions form{margin:0!important}
+  .admin-students-page td:last-child .actions .btn{
+    width:100%!important;
+    min-height:42px!important;
+    box-sizing:border-box!important;
+  }
+  .admin-students-page td:last-child>div[style]{margin-top:8px!important}
+}
 """
     admin_problem_alert_runtime = r"""
 <script>
@@ -5772,12 +5921,13 @@ def profile():
     given=con.execute("SELECT s.id,i.title AS issue_title,s.text AS solution_text,s.created_at,COALESCE(i.status,'') AS issue_status FROM solutions s LEFT JOIN issues i ON i.id=s.issue_id WHERE s.student_id=? ORDER BY s.id DESC LIMIT 50",(sid,)).fetchall()
     con.close()
     initials="".join(x[0] for x in st["name"].split()[:2]).upper() or "V"
-    card_label=esc(st["id_card_original_name"]) if st["id_card_original_name"] else "No ID card uploaded yet."
+    # Keep the profile ID-card plate generic; never expose the uploaded filename.
+    card_label="Student ID" if st["id_card_original_name"] else ""
     accepted_html="".join(f'''<div class="profile-solution-item"><div class="solution-top"><strong>{esc(x["issue_title"] or "Campus problem")}</strong><span>ACCEPTED</span></div><p>{esc(x["solution_text"] or "")}</p><small>Solution from {esc(x["solver_name"] or "Student")} · {esc(x["accepted_at"] or "")}</small></div>''' for x in accepted)
     given_html="".join(f'''<div class="profile-solution-item"><div class="solution-top"><strong>{esc(x["issue_title"] or "Campus problem")}</strong><span>YOUR ANSWER</span></div><p>{esc(x["solution_text"] or "")}</p><small>{esc(x["created_at"] or "")}</small></div>''' for x in given)
 
     body=f'''<section class="section"><div class="profile-hero"><div class="profile-main"><div class="profile-avatar">{esc(initials)}</div><div><div class="badge">VYBE PROFILE</div><h1 class="profile-name">{esc(st["name"])}</h1><p class="profile-sub">Student · Student ID stays private</p></div></div></div></section>
-<section class="section"><div class="id-card-panel"><div class="id-card-heading"><div><div class="mini-label">PRIVATE DOCUMENT</div><h2>Student ID card</h2><p>Keep your ID card here for quick access. Only you can access it.</p></div><div class="id-card-icon" aria-hidden="true">▣</div></div><div class="id-card-current"><div class="id-file-icon">▣</div><div class="id-file-info"><strong>{card_label}</strong><span>{"Uploaded privately · Tap View to open" if st["id_card_original_name"] else "No card uploaded"}</span></div>{('<a class="profile-action profile-outline" href="/profile/id-card" target="_blank" rel="noopener">View</a>' if st["id_card_original_name"] else '')}</div><form id="studentIdCardForm" class="id-upload-form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="id_card"><label class="upload-file"><input id="studentIdCardInput" type="file" name="id_card" accept="application/pdf,image/jpeg,image/png,image/webp" required><span id="studentIdCardName">Choose ID card</span></label><button id="studentIdCardButton" class="profile-action profile-primary" type="submit">{"Replace ID card" if st["id_card_original_name"] else "Upload ID card"}</button></form><div id="studentIdCardStatus" class="id-upload-status" aria-live="polite"></div>{('<form method="post" class="id-delete-form"><input type="hidden" name="action" value="delete_id_card"><button class="profile-delete" type="submit">Delete ID card</button></form>' if st["id_card_original_name"] else '')}</div></section>
+<section class="section"><div class="id-card-panel"><div class="id-card-heading"><div><div class="mini-label">PRIVATE DOCUMENT</div><h2>Student ID card</h2><p>Keep your ID card here for quick access. Only you can access it.</p></div><div class="id-card-icon" aria-hidden="true">▣</div></div><div class="id-card-current"><div class="id-file-icon">▣</div><div class="id-file-info"><strong>{card_label}</strong><span>{"Uploaded privately" if st["id_card_original_name"] else "No ID card uploaded"}</span></div>{('<a class="profile-action profile-outline" href="/profile/id-card" target="_blank" rel="noopener">View</a>' if st["id_card_original_name"] else '')}</div><form id="studentIdCardForm" class="id-upload-form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="id_card"><label class="upload-file"><input id="studentIdCardInput" type="file" name="id_card" accept="application/pdf,image/jpeg,image/png,image/webp" required><span id="studentIdCardName">Choose ID card</span></label><button id="studentIdCardButton" class="profile-action profile-primary" type="submit">{"Replace ID card" if st["id_card_original_name"] else "Upload ID card"}</button></form><div id="studentIdCardStatus" class="id-upload-status" aria-live="polite"></div>{('<form method="post" class="id-delete-form"><input type="hidden" name="action" value="delete_id_card"><button class="profile-delete" type="submit">Delete ID card</button></form>' if st["id_card_original_name"] else '')}</div></section>
 <section class="section"><div class="profile-stat-grid"><button class="profile-stat-button blue" type="button" data-profile-panel="given"><span class="stat-icon">↗</span><span><strong>{st["helpful_answers"]}</strong><small>Helpful answers</small></span><b>View</b></button><button class="profile-stat-button green" type="button" data-profile-panel="accepted"><span class="stat-icon">✓</span><span><strong>{st["accepted_solutions"]}</strong><small>Accepted solutions</small></span><b>View</b></button></div></section>
 <section class="section profile-panel" id="profile-panel-given"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR ACTIVITY</div><h2>Solutions you gave</h2><p>Answers and solutions you posted for campus problems.</p></div><button type="button" class="panel-close" data-close-panel="given">Close</button></div><div class="profile-solutions">{given_html or '<div class="profile-empty">You have not given any solutions yet.</div>'}</div></div></section>
 <section class="section profile-panel" id="profile-panel-accepted"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR SAVED HELP</div><h2>Solutions you received</h2><p>Solutions you accepted from other students.</p></div><button type="button" class="panel-close" data-close-panel="accepted">Close</button></div><div class="profile-solutions">{accepted_html or '<div class="profile-empty">You have not accepted any solutions yet.</div>'}</div></div></section>
@@ -7840,7 +7990,16 @@ def admin_status():
 @app.route("/admin/students")
 @admin_required
 def admin_students():
-    con = db(); students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC").fetchall(); con.close()
+    con = db()
+    students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC").fetchall()
+    # Load publisher access in one query instead of opening a DB connection per student.
+    access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
+    con.close()
+    publisher_by_student = {
+        str(r["key"])[len("content_manager_"):]: (r["value"] == "1")
+        for r in access_rows
+        if str(r["key"]).startswith("content_manager_")
+    }
     rows = ""
     for s in students:
         if s["status"] == "pending": action = f'<form method="post" action="/admin/student/{s["id"]}/approve"><button class="btn good">Approve</button></form>'
@@ -7855,15 +8014,14 @@ def admin_students():
         student_sid = esc(s["student_id"])
         student_status = esc(s["status"])
         created_at = esc(s["created_at"])
-        access_con = db(); access_row = access_con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid_num}",)).fetchone(); access_con.close()
-        publisher = bool(access_row and access_row["value"] == "1")
+        publisher = bool(publisher_by_student.get(str(sid_num), False))
         if s["status"] == "approved":
             access_action = (f'<form method="post" action="/admin/content-access/{sid_num}/revoke"><button class="btn" onclick="return confirm(\'Remove publisher access from this student?\')">Revoke publisher</button></form>' if publisher else f'<form method="post" action="/admin/content-access/{sid_num}/grant"><button class="btn accent">Give publisher access</button></form>')
         else:
             access_action = '<span class="small muted">Approve first</span>'
         access_label = '<span class="pill">Publisher</span>' if publisher else '<span class="small muted">Student</span>'
         rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}{access_action}<form method="post" action="/admin/student/{sid_num}/delete" onsubmit="return confirm(&quot;Delete this student and all dependent records?&quot;)"><button class="btn danger">Delete</button></form></div><div style="margin-top:6px">{access_label}</div></td></tr>'
-    body = f'''<section class="section" id="pending"><h1>Students.</h1><p class="muted">Approve or block students, or give a trusted student limited Publisher access. Publisher access allows creating announcements and upcoming events only; deleting them remains admin-only.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
+    body = f'''<section class="section admin-students-page" id="pending"><h1>Students.</h1><p class="muted">Approve or block students, or give a trusted student limited Publisher access. Publisher access allows creating announcements and upcoming events only; deleting them remains admin-only.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
     return layout("Students", body, admin=True)
 
 @app.route("/admin/student/<int:sid>/<action>", methods=["POST"])
