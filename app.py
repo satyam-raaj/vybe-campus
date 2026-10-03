@@ -1698,7 +1698,7 @@ CSS = r"""
 @media(max-width:850px){.community-chat-page-section{padding:8px 8px 18px!important}.community-chat-page-section .community-page-top{padding:0 3px!important;margin-bottom:9px!important}.community-chat-page-section .community-page-top h1{font-size:29px!important}.community-chat-page-section .community-page-top p{font-size:11px!important}.community-chat-page-card{border-radius:20px!important;height:calc(100dvh - 230px)!important;max-height:700px!important;display:flex!important;flex-direction:column!important}.community-chat-page-card .community-chat-tools{height:48px;padding:0 11px!important}.community-chat-page-card .community-select-help{font-size:10px!important}.community-chat-window{height:auto!important;min-height:0!important;flex:1!important;padding:16px 10px 18px!important;gap:9px!important}.community-message{max-width:88%!important;padding:9px 11px!important;border-radius:15px!important}.community-message-text{font-size:13px!important}.community-message-actions{opacity:1!important;margin-top:6px!important}.community-message-action{padding:5px 8px!important;font-size:10px!important}.community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:9px 9px calc(9px + env(safe-area-inset-bottom))!important;gap:7px!important}.community-chat-form textarea{height:44px!important;min-height:44px!important;border-radius:15px!important}.community-send-button{width:44px;height:44px;border-radius:14px!important}.community-reply-bar{padding:8px 11px!important}}
 
 :root{--bg:#01040a;--bg2:#020914;--panel:rgba(3,14,27,.86);--line:rgba(28,91,145,.24);--line2:rgba(37,116,181,.48);--text:#eef6ff;--muted:#8fa6bd;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#268fd0;--accent2:#073f6b;--shadow:0 28px 90px rgba(0,0,0,.68)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+*{box-sizing:border-box}html{scroll-behavior:auto}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
 .notice-card:after{content:"";position:absolute;inset:auto -40px -70px auto;width:170px;height:170px;background:rgba(255,255,255,.045);filter:blur(25px);border-radius:50%}
 .event-date{font-size:30px;font-weight:850;letter-spacing:-.06em}
@@ -1921,8 +1921,6 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .password-wrap.password-error input{border-color:#ef4b5f!important;background:rgba(74,10,22,.38)!important;box-shadow:0 0 0 3px rgba(239,75,95,.13),0 8px 28px rgba(120,0,25,.16)!important}
 .password-wrap.password-error .password-toggle{border-color:rgba(239,75,95,.42)!important;color:#ff8290!important;background:rgba(70,10,20,.72)!important}
 .password-error-note{color:#ff8290;font-size:12px;margin-top:6px}
-
-.student-notification-wrap{position:relative;display:inline-flex}.student-notification-bell{position:relative;cursor:pointer}.student-notification-badge{position:absolute;right:-3px;top:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;display:grid;place-items:center;background:#ef4b5f;color:#fff;font-size:9px;font-weight:800;line-height:1;border:2px solid #020817}.student-notification-panel{position:absolute;right:0;top:50px;width:320px;max-width:calc(100vw - 24px);z-index:9000;background:rgba(3,12,22,.98);border:1px solid rgba(75,155,224,.30);border-radius:16px;box-shadow:0 22px 70px rgba(0,0,0,.55);overflow:hidden;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.student-notification-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 13px;border-bottom:1px solid rgba(75,155,224,.16)}.student-notification-panel-head strong{font-size:13px}.student-notification-panel-head button{border:0;background:none;color:#78c9f5;font-size:11px;font-weight:700;cursor:pointer}.student-notification-list{max-height:330px;overflow:auto}.student-notification-item{display:block;width:100%;padding:12px 13px;text-align:left;border:0;border-bottom:1px solid rgba(75,155,224,.10);background:transparent;color:inherit;cursor:pointer}.student-notification-item:hover{background:rgba(34,174,242,.08)}.student-notification-item strong{display:block;font-size:12px;color:#8fd8ff;margin-bottom:4px}.student-notification-item span{display:block;font-size:11px;color:#9bb1c5;line-height:1.4}.student-notification-empty{padding:18px 13px;color:#8197aa;font-size:12px;text-align:center}@media(max-width:850px){.student-notification-panel{position:fixed;right:10px;top:58px;width:310px}.student-notification-badge{right:-4px;top:-4px}}
 
 /* =========================================================
    FINAL MOBILE-ONLY STUDENT NAVIGATION
@@ -2304,7 +2302,6 @@ body{
     radial-gradient(circle at 92% 16%, rgba(111,190,76,.12), transparent 28%),
     radial-gradient(circle at 50% 100%, rgba(73,151,211,.10), transparent 34%),
     linear-gradient(135deg,#f4f8fb 0%,#f7faf8 48%,#f1f8f3 100%)!important;
-  background-attachment:fixed!important;
   color:var(--vybe-ui-text)!important;
 }
 .nav{background:rgba(255,255,255,.90)!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important}
@@ -2362,10 +2359,10 @@ main,.main,.wrap{position:relative}
 /* ===== VYBE HOME / SIMPLE NAV / LIVE FOOTER ===== */
 .home-live-hero{position:relative;display:grid;grid-template-columns:minmax(0,1.35fr) 300px;align-items:center;min-height:390px;padding:48px 52px;margin:8px 0 34px;overflow:hidden;border:1px solid #dce8f0;border-radius:30px;background:linear-gradient(135deg,#ffffff 0%,#f1f8ff 58%,#f2faef 100%);box-shadow:0 24px 70px rgba(42,75,105,.10)}
 .home-live-copy{position:relative;z-index:2}.home-live-copy h1{font-size:clamp(42px,6vw,76px);line-height:.96;letter-spacing:-.065em;margin:16px 0 12px;color:#101827}.home-live-copy p{max-width:620px;color:#667484;font-size:17px;line-height:1.6;margin:0}.home-hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.home-hero-actions .btn{min-height:46px}
-.home-live-glow{position:absolute;border-radius:50%;filter:blur(3px);pointer-events:none}.home-live-glow-one{width:280px;height:280px;right:140px;top:-100px;background:rgba(48,115,202,.13);animation:homeFloat 7s ease-in-out infinite}.home-live-glow-two{width:230px;height:230px;right:-50px;bottom:-80px;background:rgba(82,164,62,.12);animation:homeFloat 8s ease-in-out infinite reverse}.home-live-orbit{position:relative;width:250px;height:250px;margin:auto;border-radius:50%;border:1px solid rgba(47,111,202,.18);background:radial-gradient(circle,#fff 0 20%,rgba(255,255,255,.72) 21% 42%,rgba(47,111,202,.06) 43% 100%);box-shadow:0 20px 55px rgba(47,111,202,.12);animation:homePulse 5s ease-in-out infinite}.home-live-orbit:before,.home-live-orbit:after{content:"";position:absolute;inset:26px;border:1px solid rgba(76,139,203,.13);border-radius:50%}.home-live-orbit:after{inset:52px;border-color:rgba(81,159,73,.16)}.orbit-core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:76px;height:76px;border-radius:22px;background:#101827;color:#fff;font-size:31px;font-weight:900;box-shadow:0 16px 35px rgba(16,24,39,.20)}.orbit-dot{position:absolute;width:12px;height:12px;border-radius:50%;z-index:2}.orbit-dot-a{top:29px;right:61px;background:#3279ce;box-shadow:0 0 0 7px rgba(50,121,206,.10)}.orbit-dot-b{bottom:45px;left:38px;background:#62a74d;box-shadow:0 0 0 7px rgba(98,167,77,.10)}
-@keyframes homeFloat{50%{transform:translate3d(12px,18px,0) scale(1.05)}}@keyframes homePulse{50%{transform:scale(1.025);box-shadow:0 25px 65px rgba(47,111,202,.16)}}
+.home-live-glow{position:absolute;border-radius:50%;filter:blur(3px);pointer-events:none}.home-live-glow-one{width:280px;height:280px;right:140px;top:-100px;background:rgba(48,115,202,.13);}.home-live-glow-two{width:230px;height:230px;right:-50px;bottom:-80px;background:rgba(82,164,62,.12);}.home-live-orbit{position:relative;width:250px;height:250px;margin:auto;border-radius:50%;border:1px solid rgba(47,111,202,.18);background:radial-gradient(circle,#fff 0 20%,rgba(255,255,255,.72) 21% 42%,rgba(47,111,202,.06) 43% 100%);box-shadow:0 20px 55px rgba(47,111,202,.12);}.home-live-orbit:before,.home-live-orbit:after{content:"";position:absolute;inset:26px;border:1px solid rgba(76,139,203,.13);border-radius:50%}.home-live-orbit:after{inset:52px;border-color:rgba(81,159,73,.16)}.orbit-core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:76px;height:76px;border-radius:22px;background:#101827;color:#fff;font-size:31px;font-weight:900;box-shadow:0 16px 35px rgba(16,24,39,.20)}.orbit-dot{position:absolute;width:12px;height:12px;border-radius:50%;z-index:2}.orbit-dot-a{top:29px;right:61px;background:#3279ce;box-shadow:0 0 0 7px rgba(50,121,206,.10)}.orbit-dot-b{bottom:45px;left:38px;background:#62a74d;box-shadow:0 0 0 7px rgba(98,167,77,.10)}
+
 .home-action-grid.live-home-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.live-home-grid .home-action{min-height:154px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:13px;padding:18px;border-radius:21px;background:#fff;border:1px solid #dfe7ed;box-shadow:0 10px 28px rgba(39,62,82,.055);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.live-home-grid .home-action:hover{transform:translateY(-4px);border-color:#bdd6e8;box-shadow:0 18px 38px rgba(39,83,119,.10)}.live-home-grid .home-action b{font-size:11px;color:#4c82bb;text-transform:uppercase;letter-spacing:.06em}.live-home-grid .home-action-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#eef5ff;color:#2f6fca;font-size:13px;font-weight:850}.live-home-grid .home-action:nth-child(2n) .home-action-icon{background:#f0f8ec;color:#5b8f35}.live-home-grid .home-action:nth-child(3n) .home-action-icon{background:#f3f5f7;color:#43515f}.live-home-grid .home-action-primary{background:linear-gradient(145deg,#f4f9ff,#fff)!important;border-color:#cfe0ef!important}.live-home-grid .home-action span:nth-child(2){min-width:0}.live-home-grid .home-action strong{display:block;font-size:15px;color:#172130;margin-bottom:4px}.live-home-grid .home-action small{display:block;color:#748292;line-height:1.4}
-.home-updates-head{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:40px 0 14px}.home-updates-head p{margin:4px 0 0;color:#7a8794}.home-live-status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #d7e8d0;border-radius:999px;background:#f4faef;color:#56833a;font-size:11px;font-weight:800;letter-spacing:.05em}.home-live-status span{width:7px;height:7px;border-radius:50%;background:#57a53f;box-shadow:0 0 0 5px rgba(87,165,63,.10);animation:statusBlink 1.8s ease-in-out infinite}@keyframes statusBlink{50%{opacity:.35;transform:scale(.8)}}
+.home-updates-head{display:flex;justify-content:space-between;align-items:end;gap:18px;margin:40px 0 14px}.home-updates-head p{margin:4px 0 0;color:#7a8794}.home-live-status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #d7e8d0;border-radius:999px;background:#f4faef;color:#56833a;font-size:11px;font-weight:800;letter-spacing:.05em}.home-live-status span{width:7px;height:7px;border-radius:50%;background:#57a53f;box-shadow:0 0 0 5px rgba(87,165,63,.10);}
 .vybe-footer{margin-top:40px!important;background:#f8fafb!important;border-top:1px solid #dfe7ed!important;text-align:left!important;color:#66717e!important}.footer-inner{max-width:1400px;margin:auto;padding:26px 20px;display:flex;align-items:center;gap:28px;justify-content:space-between}.footer-brand{display:flex;flex-direction:column;gap:4px}.footer-brand strong{font-size:18px;color:#182230}.footer-brand span,.footer-copy{font-size:12px;color:#7b8792}.footer-links{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}.footer-links a{padding:9px 12px;border:1px solid #dce4ea;border-radius:10px;background:#fff;color:#42505d;font-size:12px;font-weight:700;transition:.2s ease}.footer-links a:hover{border-color:#b9d3e8;background:#eef6ff;color:#2f6fca}.footer-copy{text-align:right}
 @media(max-width:1000px){.home-live-hero{grid-template-columns:1fr 220px;padding:38px}.home-live-orbit{width:200px;height:200px}.home-action-grid.live-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:850px){.home-live-hero{display:block;min-height:0;padding:30px 22px;border-radius:24px}.home-live-copy h1{font-size:43px}.home-live-copy p{font-size:15px}.home-live-orbit{width:145px;height:145px;margin:28px 0 0 auto}.orbit-core{width:52px;height:52px;border-radius:16px;font-size:22px}.home-live-orbit:before{inset:18px}.home-live-orbit:after{inset:35px}.orbit-dot-a{top:18px;right:35px}.orbit-dot-b{bottom:27px;left:22px}.home-action-grid.live-home-grid{grid-template-columns:1fr;gap:10px}.live-home-grid .home-action{min-height:94px;grid-template-columns:auto 1fr auto}.home-updates-head{align-items:start}.footer-inner{padding:22px 14px 100px;display:grid;gap:15px}.footer-links{justify-content:flex-start}.footer-copy{text-align:left}.footer-links a{flex:1 1 auto;text-align:center}.home-hero-actions .btn{flex:1 1 180px}.student-control-row{overflow-x:auto;scrollbar-width:none}.student-control-row::-webkit-scrollbar{display:none}.student-control{flex:0 0 auto!important}.student-search{min-width:180px!important}}
@@ -3295,6 +3292,37 @@ def _mark_all_page_items_seen(con,student_id,item_type,table):
     except Exception: pass
 
 
+@app.route("/student/header-notifications/read", methods=["POST"])
+@student_required
+def student_header_notifications_read():
+    """Mark only the updates currently shown by the bell as seen."""
+    sid=int(session["student_db_id"])
+    con=db()
+    try:
+        items=_admin_update_feed(con,sid,20)
+        for x in items:
+            if con.is_pg:
+                con.execute(
+                    "INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",
+                    (sid,x["type"],int(x["id"]),now()),
+                )
+            else:
+                con.execute(
+                    "INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)",
+                    (sid,x["type"],int(x["id"]),now()),
+                )
+        con.commit()
+        with _AUTHZ_CACHE_LOCK:
+            _AUTHZ_CACHE.pop(("header_updates",sid),None)
+        return jsonify(ok=True,seen=len(items))
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        return jsonify(ok=False),200
+    finally:
+        con.close()
+
+
 @app.route("/student-update-seen/<item_type>/<int:item_id>", methods=["POST"])
 @student_required
 def student_update_seen(item_type,item_id):
@@ -3475,13 +3503,20 @@ def layout(title, body, admin=False):
         _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
         for x in _header_updates:
-            seen_action=f'/student-update-seen/{quote(str(x["type"]), safe="")}/{x["id"]}'
-            # Opening an unread item is a POST state change, preventing a third-party
-            # page from marking notifications as read with a normal link request.
-            _alert_items.append(f'<form class="vybe-header-alert-item-form" method="post" action="{esc(seen_action)}"><input type="hidden" name="next" value="{esc(x["url"])}"><button class="vybe-header-alert-item is-new" type="submit" aria-label="Open {esc(x["title"])}"><span class="vybe-alert-type">{esc(x["label"][:1])}</span><span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["label"])} · {esc(x["created_at"])}</small></span><span class="vybe-alert-open">NEW</span><span class="vybe-alert-arrow">›</span></button></form>')
-        _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">You are all caught up.</div>'
+            # Bell entries are informational only. They deliberately contain no
+            # link/button target, so the bell never acts as a shortcut menu.
+            detail = x.get("detail", "")
+            _alert_items.append(
+                f'<div class="vybe-header-alert-item is-new">'
+                f'<span class="vybe-alert-type">{esc(x["label"][:1])}</span>'
+                f'<span class="vybe-alert-copy"><strong>{esc(x["title"])}</strong>'
+                f'<small>{esc(x["label"])} · {esc(x["created_at"])}</small>'
+                f'{("<p>" + esc(detail) + "</p>") if detail else ""}</span>'
+                f'<span class="vybe-alert-open">NEW</span></div>'
+            )
+        _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">No new updates.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Only items you have not opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
+        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
@@ -3528,13 +3563,43 @@ def layout(title, body, admin=False):
     # Wrapping it in <style> here would prematurely close the outer style tag and
     # cause the following mobile CSS to be rendered as visible text in the page.
     performance_css = """
-@media(max-width:900px){
-  *,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}
-  .nav,.card,.flash,.badge,.pill,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+/* ===== VYBE PERFORMANCE LAYER =====
+   Keep the visual design, but remove paint-heavy effects from normal pages.
+   In particular, fixed gradient backgrounds + backdrop filters + continuous
+   animations can make mobile scrolling hitch on mid-range devices. */
+html{scroll-behavior:auto!important}
+body{background-attachment:scroll!important}
+.nav,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab,
+.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+
+/* The student dashboard is visited frequently and should scroll like a native
+   lightweight page. Static gradients are cheaper than animated/blurred layers. */
+.page-home .home-live-glow,
+.page-home .home-live-orbit,
+.page-home .home-live-status span{animation:none!important}
+.page-home .home-live-glow{filter:none!important;opacity:.55!important}
+.page-home .home-live-orbit{box-shadow:0 10px 24px rgba(47,111,202,.08)!important}
+.page-home .home-action,
+.page-home .home-update-panel{box-shadow:0 5px 16px rgba(20,30,20,.045)!important}
+.page-home .home-action:hover{transform:none!important;box-shadow:0 5px 16px rgba(20,30,20,.045)!important}
+
+/* Avoid expensive hover/entrance work on common student components. */
+.student-feature,.student-mini,.student-link,.home-action,.home-update-panel{box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
+.student-feature:hover,.student-mini:hover,.student-link:hover,.home-action:hover{transform:none!important;box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
+
+@media(max-width:850px){
+  body{background:#f4f8fb!important}
+  .page-home .home-live-glow{display:none!important}
+  .page-home .home-live-orbit{box-shadow:none!important;background:#f8fbff!important}
+  .page-home .home-action,
+  .page-home .home-update-panel{box-shadow:0 2px 8px rgba(20,30,20,.045)!important}
+  .student-bottom-nav{box-shadow:0 -3px 12px rgba(20,30,20,.06)!important}
+  .vybe-assistant-fab{box-shadow:0 7px 18px rgba(16,24,39,.12)!important}
 }
-@media(min-width:901px){
-  .card{animation:none!important}
-  .nav,.card,.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+
+@media(min-width:851px){
+  .page-home .home-live-glow{display:none!important}
+  .page-home .home-live-orbit{animation:none!important}
 }
 """
     admin_problem_alert_runtime = r"""
@@ -3563,7 +3628,7 @@ def layout(title, body, admin=False):
   bell.addEventListener('click',function(e){e.stopPropagation();const open=!panel.hidden;panel.hidden=open;bell.setAttribute('aria-expanded',open?'false':'true');if(!open)refresh();});
   document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap')){panel.hidden=true;bell.setAttribute('aria-expanded','false')}});
   refresh();
-  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},15000);
+  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},60000);
 })();
 </script>
 """
@@ -3573,7 +3638,7 @@ def layout(title, body, admin=False):
 @media(max-width:760px){.ai-settings-head{display:block}.ai-live-status{margin-top:16px;width:max-content}.ai-control-card{display:block}.ai-toggle-button{margin-top:18px;width:100%;justify-content:center}.ai-shortcuts-head{display:block}.ai-selected-count{display:inline-block;margin-top:10px}.ai-shortcut-grid{grid-template-columns:1fr}.ai-save-row{display:block}.ai-save-row .btn{width:100%;margin-top:12px}}
 
 /* ===== HEADER ADMIN ALERTS ===== */
-.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}.vybe-header-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 11px 26px rgba(23,32,51,.20)}.vybe-header-alert:active{transform:translateY(0) scale(.98)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 17px 14px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:4px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:6px 9px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:390px;overflow:auto;padding:8px}.vybe-header-alert-item-form{margin:0;padding:0}.vybe-header-alert-item{width:100%;display:flex;align-items:center;gap:10px;padding:11px 10px;border-radius:13px;color:#17202b;text-decoration:none;background:transparent;border:0;text-align:left;cursor:pointer;font:inherit;transition:background .15s ease,transform .15s ease}.vybe-header-alert-item:hover{background:#f4f8fc;transform:translateX(2px)}.vybe-header-alert-item.is-new{background:#f7fbff}.vybe-alert-type{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eef5ff;color:#2f6fca;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-header-alert-item.is-new .vybe-alert-type{background:#eaf7df;color:#4d8f21}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vybe-alert-open{flex:0 0 auto;padding:5px 7px;border-radius:7px;background:#f0f2f5;color:#7b8793;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-item.is-new .vybe-alert-open{background:#eaf7df;color:#4d8f21}.vybe-alert-arrow{flex:0 0 auto;font-size:19px;line-height:1;color:#a2adb8}.vybe-header-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}.vybe-header-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}.vybe-header-alert-all:hover{background:#f5f9fd}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.vybe-header-alert-list{max-height:calc(100vh - 180px)}}
+.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:#fff;border:1px solid #dfe5ea;border-radius:16px;box-shadow:0 18px 44px rgba(20,37,55,.18);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 15px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:3px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:5px 8px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:360px;overflow:auto;padding:7px}.vybe-header-alert-item{width:100%;display:flex;align-items:flex-start;gap:10px;padding:11px 10px;border-radius:11px;color:#17202b;background:#f8fbff;border:0;text-align:left;box-sizing:border-box}.vybe-header-alert-item + .vybe-header-alert-item{margin-top:4px}.vybe-alert-type{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;border-radius:8px;background:#eaf7df;color:#4d8f21;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;font-size:12px;line-height:1.3}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vybe-alert-copy p{margin:5px 0 0;color:#687482;font-size:10px;line-height:1.4;white-space:normal}.vybe-alert-open{flex:0 0 auto;padding:4px 6px;border-radius:6px;background:#eaf7df;color:#4d8f21;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-empty{padding:24px 15px;text-align:center;color:#7b8793;font-size:12px}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:16px}.vybe-header-alert-list{max-height:calc(100vh - 160px)}}
 
 /* ===== SINGLE MOBILE STUDENT SHELL ===== */
 @media (max-width:850px){
@@ -4197,6 +4262,41 @@ def layout(title, body, admin=False):
 @media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
 @media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
 
+/* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
+html{{scroll-behavior:auto!important}}
+body{{background-attachment:scroll!important}}
+body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7faf8 48%,#f1f8f3 100%)!important}}
+.nav:has(.student-nav-compact),
+.nav:has(.admin-header),
+.mobile-nav.open,
+.admin-mobile-menu,
+.vybe-assistant-panel,
+.vybe-status-card,
+.chat-composer{{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
+
+/* No continuous paint work on the student experience. */
+.home-live-glow,
+.home-live-orbit,
+.home-live-status span,
+.student-home [class*="orbit"],
+.student-home [class*="glow"]{{animation:none!important}}
+.home-live-glow{{filter:none!important}}
+
+/* Keep cards visually clean without large soft shadows while scrolling. */
+.student-feature,.student-mini,.student-link,.home-action,.home-update-panel,.ah-key,.ah-choice,.ah-result{{box-shadow:0 3px 10px rgba(20,30,20,.045)!important}}
+.student-feature:hover,.student-mini:hover,.student-link:hover,.home-action:hover,.ah-key:hover,.ah-choice:hover,.ah-result:hover{{transform:none!important;box-shadow:0 3px 10px rgba(20,30,20,.045)!important}}
+
+@media(max-width:850px){{
+  body{{background:#f4f8fb!important;background-attachment:scroll!important}}
+  .nav:has(.student-nav-compact){{background:#fff!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:0 2px 8px rgba(20,35,28,.06)!important}}
+  .student-bottom-nav{{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:0 -2px 9px rgba(20,35,28,.055)!important}}
+  .mobile-nav.open{{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:0 8px 24px rgba(20,35,28,.10)!important}}
+  .home-live-glow{{display:none!important}}
+  .home-live-orbit{{animation:none!important;box-shadow:none!important}}
+  .live-home-grid .home-action{{box-shadow:0 2px 8px rgba(20,30,20,.04)!important}}
+}}
+@media(prefers-reduced-motion:reduce){{*,*::before,*::after{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}
+
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
@@ -4235,19 +4335,7 @@ function setMenu(open){{
   fields.forEach(function(input){{
     if(input.dataset.vybeSuggestReady==='1') return;
     input.dataset.vybeSuggestReady='1';
-    let i=0, timer=null, focused=false;
-    function rotate(){{
-      if(focused || input.value) return;
-      input.style.opacity='0.35';
-      setTimeout(function(){{
-        if(!focused && !input.value){{ input.placeholder=suggestions[i%suggestions.length]; i++; }}
-        input.style.opacity='1';
-      }},180);
-    }}
     input.placeholder=input.placeholder||suggestions[0];
-    timer=setInterval(rotate,2600);
-    input.addEventListener('focus',function(){{focused=true;input.style.opacity='1'}});
-    input.addEventListener('blur',function(){{focused=false}});
   }});
 }})();
 
@@ -4284,77 +4372,6 @@ function setMenu(open){{
     input.addEventListener('blur',closeSuggestions);
   }});
 }})();
-
-const notificationBell=document.getElementById("vybeNotificationBell");
-const notificationBadge=document.getElementById("vybeNotificationBadge");
-const notificationPanel=document.getElementById("vybeNotificationPanel");
-const notificationList=document.getElementById("vybeNotificationList");
-const notificationReadAll=document.getElementById("vybeNotificationsReadAll");
-let notificationTimer=null;
-let notificationFirstLoad=true;
-
-function escNotif(value){{
-  return String(value||"").replace(/[&<>"]/g,function(ch){{return {{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}}[ch]}});
-}}
-function renderStudentNotifications(data){{
-  if(!notificationList)return;
-  const items=data.notifications||[];
-  notificationList.innerHTML=items.length?items.map(function(n){{
-    return '<button type="button" class="student-notification-item" data-notification-id="'+n.id+'" data-reply-message-id="'+(n.reply_message_id||"")+'">'
-      +'<strong>'+escNotif(n.sender_name)+ ' · '+escNotif(n.title)+'</strong>'
-      +'<span>'+escNotif(n.message)+'</span></button>';
-  }}).join(''):'<div class="student-notification-empty">No new notifications.</div>';
-  if(notificationBadge){{
-    const count=Number(data.unread||0);
-    notificationBadge.textContent=count>99?'99+':String(count);
-    notificationBadge.hidden=count===0;
-  }}
-}}
-function refreshStudentNotifications(){{
-  fetch('/student/notifications',{{credentials:'same-origin',cache:'no-store'}})
-    .then(function(r){{return r.ok?r.json():null;}})
-    .then(function(data){{if(data)renderStudentNotifications(data);}})
-    .catch(function(){{}});
-}}
-if(notificationBell){{
-  notificationBell.addEventListener('click',function(e){{
-    e.stopPropagation();
-    const open=!notificationPanel.hidden;
-    notificationPanel.hidden=open;
-    notificationBell.setAttribute('aria-expanded',open?'false':'true');
-    if(!open){{ refreshStudentNotifications(); }}
-  }});
-}}
-if(notificationList){{
-  notificationList.addEventListener('click',function(e){{
-    const item=e.target.closest('.student-notification-item');
-    if(!item)return;
-    const nid=item.getAttribute('data-notification-id');
-    const mid=item.getAttribute('data-reply-message-id');
-    const fd=new FormData(); fd.append('notification_id',nid);
-    fetch('/student/notifications/read',{{method:'POST',body:fd,credentials:'same-origin'}})
-      .finally(function(){{
-        if(mid) window.location.href='/community/chat#community-msg-'+mid;
-        else refreshStudentNotifications();
-      }});
-  }});
-}}
-if(notificationReadAll){{
-  notificationReadAll.addEventListener('click',function(){{
-    fetch('/student/notifications/read',{{method:'POST',body:new URLSearchParams(),credentials:'same-origin'}})
-      .then(function(){{refreshStudentNotifications();}}).catch(function(){{}});
-  }});
-}}
-if(notificationBell){{
-  document.addEventListener('click',function(e){{
-    if(notificationPanel && !notificationPanel.hidden && !e.target.closest('.student-notification-wrap')){{
-      notificationPanel.hidden=true;
-      notificationBell.setAttribute('aria-expanded','false');
-    }}
-  }});
-  refreshStudentNotifications();
-  notificationTimer=setInterval(function(){{ if(document.visibilityState==='visible') refreshStudentNotifications(); }},30000);
-}}
 
 window.vybeToggleStudentMenu=function(e){{
   if(e){{e.preventDefault();e.stopPropagation();}}
@@ -4445,20 +4462,27 @@ if(assistantClose)assistantClose.addEventListener("click",function(e){{e.prevent
 if(assistantPanel)assistantPanel.addEventListener("click",function(e){{e.stopPropagation();}});
 document.addEventListener("click",function(e){{if(assistantPanel&&assistantPanel.classList.contains("open")&&!assistantPanel.contains(e.target)&&e.target!==assistantFab)setAssistant(false);}});
 document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistant(false);}});
-}})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.stopPropagation();const open=!p.hidden;p.hidden=open;b.setAttribute("aria-expanded",open?"false":"true");}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(){{p.hidden=true;b.setAttribute("aria-expanded","false");}});}})();
-(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();(function(){{
+}})();(function(){{const b=document.getElementById("vybeHeaderAlertButton"),p=document.getElementById("vybeHeaderAlertPanel");if(!b||!p)return;let marked=false;function closePanel(){{p.hidden=true;b.setAttribute("aria-expanded","false");}}b.addEventListener("click",function(e){{e.preventDefault();e.stopPropagation();const opening=p.hidden;p.hidden=!opening;b.setAttribute("aria-expanded",opening?"true":"false");if(opening&&!marked){{marked=true;fetch('/student/header-notifications/read',{{method:'POST',credentials:'same-origin',headers:{{'Accept':'application/json'}}}}).then(function(){{const badge=b.querySelector('.vybe-alert-count');if(badge)badge.remove();const count=document.getElementById('vybeHeaderAlertCount');if(count)count.textContent='0';}}).catch(function(){{}});}}}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(e){{if(!p.hidden&&!e.target.closest('.vybe-header-alert-wrap'))closePanel();}});document.addEventListener("keydown",function(e){{if(e.key==='Escape')closePanel();}});}})();(function(){{const m=document.querySelector('meta[name="vybe-csrf-token"]');const t=m&&m.content;if(!t)return;document.querySelectorAll('form').forEach(function(f){{const method=(f.getAttribute('method')||'get').toLowerCase();if(!['post','put','patch','delete'].includes(method))return;if(!f.querySelector('input[name="csrf_token"]')){{const i=document.createElement('input');i.type='hidden';i.name='csrf_token';i.value=t;f.appendChild(i);}}}});const originalFetch=window.fetch;if(originalFetch&&!window.__vybeCsrfFetchWrapped){{window.__vybeCsrfFetchWrapped=true;window.fetch=function(input,init){{init=init||{{}};const u=typeof input==='string'?input:(input&&input.url)||'';const same=!u||u.startsWith('/')||u.startsWith(location.origin);const method=String(init.method||((typeof input!=='string'&&input&&input.method)||'GET')).toUpperCase();if(same&&['POST','PUT','PATCH','DELETE'].includes(method)){{const h=new Headers(init.headers||{{}});if(!h.has('X-VYBE-CSRF'))h.set('X-VYBE-CSRF',t);init.headers=h;}}return originalFetch.call(this,input,init);}};}}}})();(function(){{
   // Seamless student-side sync: admin changes are detected quickly and the
   // current page content is replaced in-place, without a browser refresh.
   // Chat pages keep their own realtime polling so an admin content sync never
   // interrupts an active conversation.
   if(!document.body.classList.contains('vybe-student-page') && !document.querySelector('.student-nav-compact')) return;
+  if(!document.querySelector('main.page-updates, main.page-announcements, main.page-events, main.page-timetable, main.page-community, main.page-dashboard, main.page-issues')) return;
   if(window.__vybeContentSyncStarted)return;
   window.__vybeContentSyncStarted=true;
   let lastVersion=null;
   let syncing=false;
+  let scrolling=false;
+  let scrollTimer=0;
   const syncable=()=>!document.querySelector('.community-chat, #communityChatWindow, .chat-window');
+  window.addEventListener('scroll',function(){{
+    scrolling=true;
+    clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(function(){{scrolling=false;}},700);
+  }},{{passive:true}});
   async function check(){{
-    if(syncing || !syncable())return;
+    if(syncing || scrolling || !syncable() || document.visibilityState!=='visible')return;
     try{{
       const r=await fetch('/student/content-version',{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
       if(!r.ok)return;
@@ -4477,16 +4501,16 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
       const fresh=doc.querySelector('main.page-shell');
       const current=document.querySelector('main.page-shell');
       if(fresh&&current){{
-        current.innerHTML=fresh.innerHTML;
+        current.replaceChildren(...Array.from(fresh.childNodes).map(function(n){{return document.importNode(n,true);}}));
         current.className=fresh.className;
         document.title=doc.title;
-        window.scrollTo({{top:y,behavior:'instant'}});
+        window.scrollTo(0,y);
       }}
     }}catch(_){{}}
     syncing=false;
   }}
-  check();
-  setInterval(function(){{ if(document.visibilityState==='visible') check(); }},30000);
+  setTimeout(check,5000);
+  setInterval(function(){{ if(document.visibilityState==='visible' && !scrolling) check(); }},90000);
 }})();</script></body></html>'''
 
 
