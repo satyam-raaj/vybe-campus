@@ -8190,7 +8190,13 @@ def admin_academic_hub():
         return redirect(url_for("admin_academic_hub",section=section))
     rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,created_at FROM resources WHERE resource_type=? ORDER BY id DESC LIMIT 100",(allowed[section],)).fetchall()
     con.close()
-    descriptions={"notes":"Revision notes by subject and semester.","study_material":"Semester-wise reference and study files.","pyq":"Previous-year question papers by subject and semester."}
+    descriptions={
+        "notes":"Revision notes by semester and subject.",
+        "study_material":"Study files organized by semester and subject.",
+        "pyq":"Previous-year question papers by semester and subject.",
+        "syllabus":"Syllabus files organized by semester and subject.",
+        "assignments":"Assignments organized by semester and subject.",
+    }
     tabs=[]
     for k,v in allowed.items():
         active=" active" if k==section else ""
@@ -8220,7 +8226,13 @@ def admin_academic_hub_delete_resource(rid):
     if not row:
         con.close(); flash("Resource not found."); return redirect(url_for("admin_academic_hub"))
     typ=row["resource_type"] or "Notes"
-    section={"Notes":"notes","Study material":"study_material","Previous Year Questions":"pyq"}.get(typ,"notes")
+    section={
+        "Notes":"notes",
+        "Study material":"study_material",
+        "Previous Year Questions":"pyq",
+        "Syllabus":"syllabus",
+        "Assignments":"assignments",
+    }.get(typ,"notes")
     con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
     if row["drive_file_id"]:
         try: _drive_delete_file(row["drive_file_id"])
