@@ -1133,18 +1133,18 @@ def publisher_permissions(student_id, con=None):
             except Exception: pass
 
 
+PUBLISHER_ACCESS_PICKER_CSS = """
+<style>
+.publisher-picker-card,.publisher-controls-card{max-width:900px;margin:0 auto 16px}.publisher-picker-label{display:block;font-size:10px;font-weight:900;letter-spacing:.11em;color:#667887;margin-bottom:8px}.publisher-picker-form select{width:100%;min-height:48px;border:1px solid #d6e0e7;border-radius:13px;background:#fff;color:#17202b;padding:0 13px;font:inherit}.publisher-selected{margin-top:12px;padding:12px 14px;border:1px solid #dce5eb;border-radius:14px;background:#f8fbfd;display:flex;align-items:center;justify-content:space-between;gap:12px}.publisher-selected strong{display:block;font-size:14px}.publisher-selected small{display:block;color:#71808d;font-size:11px;margin-top:3px}.publisher-selected-empty{display:block}.publisher-control-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.publisher-control-option{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid #dce5eb;border-radius:14px;background:#fff;cursor:pointer}.publisher-control-option input{margin-top:2px;width:17px;height:17px;accent-color:#2f6fca}.publisher-control-option strong{display:block;font-size:12px}.publisher-control-option small{display:block;margin-top:3px;color:#71808d;font-size:10px;line-height:1.4}.publisher-control-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}@media(max-width:700px){.publisher-picker-card,.publisher-controls-card{margin-bottom:12px}.publisher-control-grid{grid-template-columns:1fr}.publisher-control-actions{display:grid}.publisher-control-actions .btn{width:100%}.publisher-selected{align-items:flex-start;flex-direction:column}.publisher-selected .pill{align-self:flex-start}}
+</style>
+"""
+
 def content_manager_required(fn):
     @wraps(fn)
     @student_required
     def wrapper(*args, **kwargs):
         sid = session.get("student_db_id")
-        con = db()
-        try:
-            row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
-            permitted = bool(row and row["value"] == "1" and publisher_permissions(sid, con=con))
-        finally:
-            con.close()
-        if not permitted:
+        if not publisher_permissions(sid):
             flash("You do not have publisher access.")
             return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
@@ -3778,6 +3778,11 @@ body{background-attachment:scroll!important}
 
   /* Admin Students: keep desktop as a table, use compact cards on phones. */
   .admin-students-desktop{overflow:auto!important}
+  .admin-students-page .admin-student-search{margin:12px 0 14px;padding:12px 14px;border:1px solid #dfe5ea;border-radius:16px;background:#fff;box-shadow:0 4px 14px rgba(20,30,40,.035)}
+  .admin-students-page .admin-student-search form{display:flex;gap:8px;align-items:center;margin:0}
+  .admin-students-page .admin-student-search input{flex:1;min-width:0;min-height:44px;border:1px solid #d5dee6;border-radius:12px;background:#fbfdff;color:#17202b;padding:0 13px;font:inherit}
+  .admin-students-page .admin-student-search input:focus{border-color:#6aa1cf;box-shadow:0 0 0 3px rgba(47,111,202,.08);outline:none}
+  .admin-students-page .admin-student-search small{display:block;margin-top:7px;color:#788692;font-size:10px}
   .admin-students-page .admin-student-actions{display:flex!important;gap:9px!important;flex-wrap:wrap!important;align-items:center!important}
   .admin-students-page .admin-student-actions form{margin:0!important}
   .admin-students-page .admin-student-actions .btn{min-height:42px!important}
@@ -3806,6 +3811,9 @@ body{background-attachment:scroll!important}
     .admin-students-page .admin-page-head{display:block!important;margin-bottom:12px!important}
     .admin-students-page .admin-page-head p{max-width:100%!important;font-size:13px!important;line-height:1.45!important}
     .admin-students-page .admin-student-count{margin-top:10px!important}
+    .admin-students-page .admin-student-search{margin:10px 0 12px;padding:10px}
+    .admin-students-page .admin-student-search form{display:grid!important;grid-template-columns:1fr!important;gap:7px!important}
+    .admin-students-page .admin-student-search input,.admin-students-page .admin-student-search .btn{width:100%!important;box-sizing:border-box!important}
     .admin-students-page .admin-student-actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
     .admin-students-page .admin-student-actions>a,.admin-students-page .admin-student-actions>form{width:100%!important}
     .admin-students-page .admin-student-actions .btn{width:100%!important}
@@ -6092,14 +6100,7 @@ def assistant():
 def dashboard():
     con = db()
     s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    publisher_setting = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{session["student_db_id"]}",)).fetchone()
-    publisher_permission_setting = con.execute("SELECT value FROM settings WHERE key=?", (f"publisher_permissions_{session["student_db_id"]}",)).fetchone()
-    publisher_enabled = bool(publisher_setting and publisher_setting["value"] == "1")
-    if publisher_enabled:
-        try:
-            publisher_enabled = bool(json.loads(publisher_permission_setting["value"]) if publisher_permission_setting and publisher_permission_setting["value"] else [])
-        except Exception:
-            publisher_enabled = False
+    publisher_enabled = bool(publisher_permissions(session["student_db_id"], con=con))
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
@@ -8048,30 +8049,43 @@ def admin_status():
 @app.route("/admin/students")
 @admin_required
 def admin_students():
-    # Lightweight, schema-tolerant Students & Access management page.
+    """Student approval/access management with lightweight server-side search."""
+    q = request.args.get("q", "").strip()[:100]
     students = []
     publisher_by_student = {}
     db_error = None
     con = None
     try:
         con = db()
+        params = []
+        where = ""
+        if q:
+            where = " WHERE LOWER(CAST(name AS TEXT)) LIKE LOWER(?) OR LOWER(CAST(student_id AS TEXT)) LIKE LOWER(?) "
+            like = f"%{q}%"
+            params = [like, like]
         try:
             raw_students = con.execute(
-                "SELECT id,name,student_id,status,created_at,last_seen FROM students ORDER BY id DESC LIMIT 300"
+                f"SELECT id,name,student_id,status,created_at,last_seen FROM students{where} ORDER BY id DESC LIMIT 300",
+                params,
             ).fetchall()
         except Exception:
             try:
                 raw_students = con.execute(
-                    "SELECT id,name,student_id,status,created_at FROM students ORDER BY id DESC LIMIT 300"
+                    f"SELECT id,name,student_id,status,created_at FROM students{where} ORDER BY id DESC LIMIT 300",
+                    params,
                 ).fetchall()
             except Exception:
-                raw_students = con.execute(
-                    "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
-                ).fetchall()
+                if q:
+                    raw_students = con.execute(
+                        "SELECT id,name,student_id FROM students WHERE LOWER(CAST(name AS TEXT)) LIKE LOWER(?) OR LOWER(CAST(student_id AS TEXT)) LIKE LOWER(?) ORDER BY id DESC LIMIT 300",
+                        params,
+                    ).fetchall()
+                else:
+                    raw_students = con.execute(
+                        "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
+                    ).fetchall()
         try:
-            access_rows = con.execute(
-                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'"
-            ).fetchall()
+            access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
         except Exception:
             access_rows = []
         publisher_by_student = {
@@ -8119,7 +8133,9 @@ def admin_students():
         desktop_rows.append(f'<tr><td><span class="student-presence"><span class="presence-dot {dot}"></span>{esc(srow["name"])}</span></td><td>{esc(srow["student_id"])}</td><td><span class="pill">{esc(status)} · {presence_label}</span></td><td>{esc(srow["created_at"])}</td><td><div class="actions">{state}{access}{delete}</div></td></tr>')
 
     warning='<div class="admin-students-warning">Students could not be loaded right now. Please refresh once the database connection is available.</div>' if db_error else ''
-    body=f'''<section class="section admin-students-page" id="pending"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">STUDENTS / ACCESS</span><h1>Students.</h1><p class="muted">Approve students, block or unblock access, and manage limited publisher access.</p></div><div class="admin-student-count"><strong>{len(students)}</strong><small>students shown</small></div></div>{warning}<div class="admin-student-actions"><a class="btn" href="/admin/publisher-access">Manage Publisher Access →</a><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger" type="submit">Delete all students</button></form></div><div class="admin-students-desktop card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Access / Actions</th></tr></thead><tbody>{''.join(desktop_rows) or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div><div class="admin-students-mobile">{''.join(card_rows) or '<div class="card admin-students-empty">No students.</div>'}</div></section>'''
+    search_value=esc(q)
+    result_text=f'{len(students)} matching student(s)' if q else f'{len(students)} student(s) shown'
+    body=f"""<section class="section admin-students-page" id="pending"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">STUDENTS / ACCESS</span><h1>Students.</h1><p class="muted">Approve students, block or unblock access, and manage limited publisher access.</p></div><div class="admin-student-count"><strong>{len(students)}</strong><small>{"matches" if q else "students shown"}</small></div></div>{warning}<div class="admin-student-search"><form method="get" action="/admin/students" autocomplete="off"><input type="search" name="q" value="{search_value}" maxlength="100" placeholder="Search student name or Student ID…" aria-label="Search students"><button class="btn accent" type="submit">Search</button>{f'<a class="btn" href="/admin/students">Clear</a>' if q else ''}</form><small>{esc(result_text)}{f' for “{search_value}”' if q else ''}</small></div><div class="admin-student-actions"><a class="btn" href="/admin/publisher-access">Manage Publisher Access →</a><form method="post" action="/admin/students/delete-all" onsubmit="return confirm(\'Delete ALL students and their dependent records?\')"><button class="btn danger" type="submit">Delete all students</button></form></div><div class="admin-students-desktop card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Access / Actions</th></tr></thead><tbody>{''.join(desktop_rows) or '<tr><td colspan="5">No students match your search.</td></tr>'}</tbody></table></div><div class="admin-students-mobile">{''.join(card_rows) or '<div class="card admin-students-empty">No students match your search.</div>'}</div></section>"""
     return layout("Students & Access", body, admin=True)
 
 
@@ -8396,119 +8412,91 @@ def admin_content_access(sid, action):
 @app.route("/admin/publisher-access", methods=["GET", "POST"])
 @admin_required
 def admin_publisher_access():
+    """Manage publishing controls only for students who already have publisher access."""
     con = db()
     try:
+        allowed = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
+        try:
+            selected_sid = int(request.values.get("student_id", "0") or 0)
+        except (TypeError, ValueError):
+            selected_sid = 0
+
         if request.method == "POST":
-            try:
-                sid = int(request.form.get("student_id", "0"))
-            except (TypeError, ValueError):
-                sid = 0
-            try:
-                student = con.execute("SELECT id,name,status FROM students WHERE id=?", (sid,)).fetchone()
-            except Exception:
-                student = con.execute("SELECT id,name FROM students WHERE id=?", (sid,)).fetchone()
-            if not student or ("status" in student.keys() and student["status"] != "approved"):
-                flash("Select an approved student first.")
+            student = con.execute("SELECT id,name,status FROM students WHERE id=?", (selected_sid,)).fetchone() if selected_sid else None
+            if not student or str(student["status"]).lower() != "approved":
+                flash("Select a valid approved publisher first.")
                 return redirect(url_for("admin_publisher_access"))
-            action = request.form.get("action", "permissions").strip()
-            if action == "grant":
-                set_setting(con, f"content_manager_{sid}", "1")
-                if not publisher_permissions(sid, con=con):
-                    set_setting(con, f"publisher_permissions_{sid}", json.dumps(["announcements", "events", "timetable"]))
-            elif action == "revoke":
-                set_setting(con, f"content_manager_{sid}", "0")
-                set_setting(con, f"publisher_permissions_{sid}", json.dumps([]))
+            action = request.form.get("action", "save").strip()
+            if action == "revoke":
+                set_setting(con, f"content_manager_{selected_sid}", "0")
+                set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps([]))
+                con.commit()
+                flash(f"Publisher access revoked from {student['name']}.")
             else:
-                allowed = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
                 selected = [x for x in request.form.getlist("permissions") if x in allowed]
-                set_setting(con, f"content_manager_{sid}", "1")
-                set_setting(con, f"publisher_permissions_{sid}", json.dumps(selected))
-            con.commit()
-            flash(f"Publisher access updated for {student['name']}.")
+                set_setting(con, f"content_manager_{selected_sid}", "1")
+                set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps(selected))
+                con.commit()
+                flash(f"Publisher controls updated for {student['name']}.")
             return redirect(url_for("admin_publisher_access"))
 
         try:
-            approved = con.execute(
-                "SELECT id,name,student_id FROM students WHERE status='approved' ORDER BY name, id LIMIT 300"
-            ).fetchall()
+            access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
         except Exception:
-            approved = con.execute(
-                "SELECT id,name,student_id FROM students ORDER BY name, id LIMIT 300"
-            ).fetchall()
-        try:
-            setting_rows = con.execute(
-                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
-            ).fetchall()
-        except Exception:
-            setting_rows = []
-        setting_map = {str(r["key"]): str(r["value"] or "") for r in setting_rows}
-        allowed = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
-        catalog_html = [
-            f'<div class="publisher-permission"><span><strong>{esc(label)}</strong><small>{esc(desc)}</small></span></div>'
-            for _, label, desc in PUBLISHER_PERMISSION_CATALOG
-        ]
-        rows = []
-        for srow in approved:
-            sid = int(srow["id"])
-            active = setting_map.get(f"content_manager_{sid}") == "1"
-            selected = set()
-            if active:
+            access_rows = []
+        publisher_ids = []
+        for r in access_rows:
+            key = str(r["key"])
+            if key.startswith("content_manager_") and str(r["value"] or "") == "1":
                 try:
-                    parsed = json.loads(setting_map.get(f"publisher_permissions_{sid}", "[]"))
-                    if isinstance(parsed, list):
-                        selected = {str(x) for x in parsed if str(x) in allowed}
-                except Exception:
-                    selected = set()
-                if not selected:
-                    selected = {"announcements", "events", "timetable"}
-            checks = []
-            for key, label, desc in PUBLISHER_PERMISSION_CATALOG:
-                checked = " checked" if key in selected else ""
-                checks.append(
-                    f'<label class="publisher-permission"><input type="checkbox" name="permissions" value="{esc(key)}"{checked}><span><strong>{esc(label)}</strong><small>{esc(desc)}</small></span></label>'
-                )
-            badge = '<span class="pill publisher-on">Publisher active</span>' if active else '<span class="pill">No publisher access</span>'
-            if active:
-                actions = (
-                    f'<form method="post"><input type="hidden" name="student_id" value="{sid}"><input type="hidden" name="action" value="permissions">'
-                    f'<div class="publisher-permission-grid">{"".join(checks)}</div><div class="actions">'
-                    f'<button class="btn accent" type="submit">Save permissions</button>'
-                    f'<button class="btn danger" type="submit" name="action" value="revoke" onclick="return confirm(\'Revoke publisher access from this student?\')">Revoke access</button></div></form>'
-                )
+                    publisher_ids.append(int(key[len("content_manager_"):]))
+                except (TypeError, ValueError):
+                    continue
+        if publisher_ids:
+            placeholders = ",".join("?" for _ in publisher_ids)
+            approved = con.execute(
+                f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name, id LIMIT 300",
+                publisher_ids,
+            ).fetchall()
+        else:
+            approved = []
+
+        selected_student = None
+        selected = set()
+        if selected_sid:
+            selected_student = next((r for r in approved if int(r["id"]) == selected_sid), None)
+            if not selected_student:
+                selected_sid = 0
             else:
-                actions = (
-                    f'<form method="post"><input type="hidden" name="student_id" value="{sid}"><input type="hidden" name="action" value="grant">'
-                    f'<button class="btn accent" type="submit">Give publisher access →</button></form>'
-                )
-            rows.append(
-                f'<div class="publisher-student-card"><div class="publisher-student-head"><div><strong>{esc(srow["name"])}</strong><small>Student ID: {esc(srow["student_id"])}</small></div>{badge}</div>{actions}</div>'
-            )
-        body = (
-            '<section class="section publisher-access-page">'
-            '<div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a>'
-            '<span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Who can publish?</h1>'
-            '<p>Give trusted students publisher access, then choose exactly what they are allowed to publish. Admin delete, security and settings controls stay private.</p></div>'
-            f'<div class="card publisher-access-note"><strong>{len(approved)}</strong><small>approved students</small></div></div>'
-            '<div class="card publisher-permission-legend"><strong>Available publishing controls</strong><div class="publisher-permission-grid">'
-            + "".join(catalog_html) + '</div></div>'
-            + '<div class="publisher-student-list">'
-            + ("".join(rows) or '<div class="card"><h2>No approved students</h2><p class="muted">Approve a student first, then return here to grant publisher access.</p></div>')
-            + '</div></section>'
-        )
+                selected = publisher_permissions(selected_sid, con=con)
+
+        options = ['<option value="">Choose a publisher…</option>']
+        for row in approved:
+            sid = int(row["id"])
+            mark = " selected" if sid == selected_sid else ""
+            options.append(f'<option value="{sid}"{mark}>{esc(row["name"])} · {esc(row["student_id"] or "No Student ID")}</option>')
+
+        controls = []
+        for key, label, desc in PUBLISHER_PERMISSION_CATALOG:
+            checked = " checked" if key in selected else ""
+            controls.append(f'<label class="publisher-control-option"><input type="checkbox" name="permissions" value="{esc(key)}"{checked}><span><strong>{esc(label)}</strong><small>{esc(desc)}</small></span></label>')
+
+        if selected_student:
+            summary = (f'<div class="publisher-selected"><div><strong>{esc(selected_student["name"])}</strong>'
+                       f'<small>Student ID: {esc(selected_student["student_id"] or "No Student ID")}</small></div>'
+                       f'<span class="pill publisher-on">Publisher active</span></div>')
+        else:
+            summary = '<div class="publisher-selected publisher-selected-empty"><strong>Choose a publisher above.</strong><small>Only students already granted publisher access from Students &amp; Access are listed here.</small></div>'
+
+        disabled = " disabled" if not selected_student else ""
+        body = f'''{PUBLISHER_ACCESS_PICKER_CSS}<section class="section publisher-access-page"><div class="admin-page-head"><div><a href="/admin/students" class="admin-back">← Students / Access</a><span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Publisher controls.</h1><p>Choose a student who already has publisher access, then select exactly what they can publish.</p></div><div class="card publisher-access-note"><strong>{len(approved)}</strong><small>publisher students</small></div></div><div class="card publisher-picker-card"><span class="publisher-picker-label">PUBLISHER STUDENT</span><form method="get" class="publisher-picker-form"><select name="student_id" onchange="this.form.submit()">{"".join(options)}</select></form>{summary}</div><div class="card publisher-controls-card"><span class="publisher-picker-label">PUBLISHING CONTROLS</span><h2>What can this student publish?</h2><p>Select only the permissions you want this publisher to have.</p><form method="post" class="publisher-control-form"><input type="hidden" name="student_id" value="{selected_sid}"><div class="publisher-control-grid">{"".join(controls)}</div><div class="publisher-control-actions"><button class="btn accent" type="submit"{disabled}>Save selected controls</button><button class="btn danger" type="submit" name="action" value="revoke"{disabled} onclick="return confirm('Revoke publisher access from this student?')">Revoke access</button></div></form></div></section>'''
         return layout("Publisher Access", body, admin=True)
-    except Exception as exc:
+    except Exception:
         try: con.rollback()
         except Exception: pass
         app.logger.exception("Publisher Access page failed")
-        error_name = html.escape(type(exc).__name__, quote=True)
-        return ("<!doctype html><html lang='en'><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<title>Publisher Access · VYBE</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f7fb;"
-                "color:#17202b;font-family:system-ui,sans-serif}main{max-width:700px;margin:auto;padding:24px 14px 60px}"
-                ".card{background:#fff;border:1px solid #dfe5ea;border-radius:20px;padding:22px;box-shadow:0 10px 28px rgba(20,35,55,.06)}"
-                "a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px;border-radius:12px;"
-                "background:#2f6fca;color:#fff;text-decoration:none;font-weight:750}</style></head><body><main><div class='card'>"
-                "<h1>Publisher Access</h1><p>VYBE could not load one optional access record. No permissions were changed.</p><p><small>" + error_name +
-                "</small></p><a href='/admin/publisher-access'>Reload Publisher Access</a></div></main></body></html>")
+        flash("Publisher Access could not be loaded. Please try again.")
+        return redirect(url_for("admin_students"))
     finally:
         try: con.close()
         except Exception: pass
