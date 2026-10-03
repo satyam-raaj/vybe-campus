@@ -1172,20 +1172,34 @@ PUBLISHER_ACCESS_PICKER_CSS = """
 """
 
 def publisher_is_active(student_id, con=None):
-    """Return whether the student has been explicitly granted publisher access."""
+    """Return whether a student currently has publisher access."""
     own_con = con is None
     if own_con:
         con = db()
     try:
         sid = int(student_id)
-        row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
-        return bool(row and str(row["value"] or "") == "1")
+        rows = con.execute(
+            "SELECT key,value FROM settings WHERE key IN (?,?)",
+            (f"content_manager_{sid}", f"publisher_permissions_{sid}"),
+        ).fetchall()
+        values = {str(r["key"]): str(r["value"] or "").strip() for r in rows}
+        flag = values.get(f"content_manager_{sid}", "").lower() in {"1", "true", "yes", "on"}
+        if flag:
+            return True
+        try:
+            data = json.loads(values.get(f"publisher_permissions_{sid}", "[]") or "[]")
+            allowed = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
+            return isinstance(data, list) and any(str(x) in allowed for x in data)
+        except Exception:
+            return False
     except Exception:
         return False
     finally:
         if own_con and con is not None:
-            try: con.close()
-            except Exception: pass
+            try:
+                con.close()
+            except Exception:
+                pass
 
 
 def content_manager_required(fn):
@@ -1782,7 +1796,7 @@ def security_headers(response):
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://api.openai.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-src 'self' https://drive.google.com https://docs.google.com"
-    if session.get("student_db_id"):
+    if session.get("student_db_id") or session.get("admin_authenticated"):
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
     elif request.path == "/" and request.method == "GET":
         # The public VYBE landing page is database-free and safe to edge-cache.
@@ -6075,7 +6089,9 @@ def assistant():
 def dashboard():
     con = db()
     s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    publisher_enabled = publisher_is_active(session["student_db_id"], con=con) and bool(publisher_permissions(session["student_db_id"], con=con))
+    publisher_enabled = publisher_is_active(session["student_db_id"], con=con)
+    if publisher_enabled:
+        publisher_enabled = bool(publisher_permissions(session["student_db_id"], con=con))
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
@@ -8090,16 +8106,18 @@ def admin_students():
         publisher_by_student = {}
         allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
         for ar in access_rows:
-            key = str(ar["key"] or "")
-            value = str(ar["value"] or "")
+            key = str(ar["key"] or "").strip()
+            value = str(ar["value"] or "").strip()
             try:
-                if key.startswith("content_manager_") and value == "1":
-                    publisher_by_student[key[len("content_manager_"):]] = True
+                if key.startswith("content_manager_"):
+                    sid_key = key[len("content_manager_"):].strip()
+                    if value.lower() in {"1", "true", "yes", "on"}:
+                        publisher_by_student[sid_key] = True
                 elif key.startswith("publisher_permissions_"):
-                    sid_key = key[len("publisher_permissions_"):]
+                    sid_key = key[len("publisher_permissions_"):].strip()
                     data = json.loads(value or "[]")
                     if isinstance(data, list) and any(str(x) in allowed_publisher_keys for x in data):
-                        publisher_by_student.setdefault(sid_key, True)
+                        publisher_by_student[sid_key] = True
             except Exception:
                 continue
         for row in raw_students:
@@ -8439,23 +8457,17 @@ def admin_publisher_access():
             if selected_sid:
                 # The publisher-control screen must accept only students who were
                 # already granted publisher access from Students & Access.
-                try:
-                    student = con.execute(
-                        "SELECT s.id,s.name,s.status FROM students s "
-                        "JOIN settings pm ON pm.key=('content_manager_' || CAST(s.id AS TEXT)) "
-                        "WHERE s.id=? AND s.status='approved' AND pm.value='1'",
-                        (selected_sid,),
-                    ).fetchone()
-                except Exception:
+                student = con.execute("SELECT id,name,status FROM students WHERE id=? AND status='approved'", (selected_sid,)).fetchone()
+                if student and not publisher_is_active(selected_sid, con=con):
                     student = None
             if not student:
                 flash("Select a student who already has publisher access.")
                 return redirect(url_for("admin_publisher_access"))
             selected = [x for x in request.form.getlist("permissions") if x in allowed]
-            set_setting(con, f"content_manager_{selected_sid}", "1")
             set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps(selected))
+            set_setting(con, f"content_manager_{selected_sid}", "1" if selected else "0")
             con.commit()
-            flash(f"Publisher controls updated for {student['name']}.")
+            flash(f"Publisher controls updated for {student['name']}." if selected else f"Publisher access revoked for {student['name']} because no publishing controls were selected.")
             return redirect(url_for("admin_publisher_access", student_id=selected_sid))
 
         # Query active publisher students directly from the relationship between
@@ -8465,20 +8477,25 @@ def admin_publisher_access():
         # This works consistently on both PostgreSQL and SQLite and also recognizes
         # older records where permissions were saved before content_manager_* existed.
         publisher_ids=set()
+        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
         try:
             access_rows=con.execute(
-                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'"
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
             ).fetchall()
         except Exception:
             access_rows=[]
         for r in access_rows:
-            key=str(r["key"] or "")
-            value=str(r["value"] or "")
-            if key.startswith("content_manager_") and value == "1":
-                try:
-                    publisher_ids.add(int(key[len("content_manager_"):]))
-                except (TypeError,ValueError,OverflowError):
-                    continue
+            key=str(r["key"] or "").strip()
+            value=str(r["value"] or "").strip()
+            try:
+                if key.startswith("content_manager_") and value.lower() in {"1","true","yes","on"}:
+                    publisher_ids.add(int(key[len("content_manager_"):].strip()))
+                elif key.startswith("publisher_permissions_"):
+                    data=json.loads(value or "[]")
+                    if isinstance(data,list) and any(str(x) in allowed_publisher_keys for x in data):
+                        publisher_ids.add(int(key[len("publisher_permissions_"):].strip()))
+            except (TypeError,ValueError,OverflowError,json.JSONDecodeError):
+                continue
         approved=[]
         if publisher_ids:
             placeholders=",".join("?" for _ in publisher_ids)
