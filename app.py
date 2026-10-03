@@ -25,7 +25,7 @@ from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_file, jsonify, g
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_file, jsonify, g, has_request_context
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -143,6 +143,7 @@ class DB:
     """
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
+        self._request_scoped = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
@@ -176,11 +177,42 @@ class DB:
         self.conn.rollback()
 
     def close(self):
+        if getattr(self, "_request_scoped", False):
+            # Preserve the historical close() call sites while keeping the
+            # connection reusable for the rest of this request. Any pending
+            # transaction is discarded, matching normal close semantics.
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            return
         self.conn.close()
 
 
 def db():
+    if has_request_context():
+        con = g.get("_vybe_db")
+        if con is not None:
+            return con
+        con = DB()
+        con._request_scoped = True
+        g._vybe_db = con
+        return con
     return DB()
+
+
+@app.teardown_request
+def _close_request_db(_exc=None):
+    con = g.pop("_vybe_db", None)
+    if con is not None:
+        try:
+            con.conn.rollback()
+        except Exception:
+            pass
+        try:
+            con.conn.close()
+        except Exception:
+            pass
 
 
 def now():
@@ -1000,7 +1032,7 @@ def _student_status_cached(sid):
         _AUTHZ_CACHE[("student", key)] = (now_m + _AUTHZ_CACHE_TTL, status)
     return status
 
-_HEADER_CACHE_TTL = 8.0
+_HEADER_CACHE_TTL = 30.0
 def _student_header_updates_cached(sid):
     key=("header_updates",int(sid))
     now_m=time.monotonic()
@@ -1017,7 +1049,7 @@ def _student_header_updates_cached(sid):
         _AUTHZ_CACHE[key]=(now_m+_HEADER_CACHE_TTL,rows)
     return rows
 
-_AI_SETTINGS_CACHE_TTL = 30.0
+_AI_SETTINGS_CACHE_TTL = 120.0
 def _student_ai_settings_cached():
     key=("ai_settings",0)
     now_m=time.monotonic()
@@ -1782,7 +1814,7 @@ CSS = r"""
 @media(max-width:850px){.community-chat-page-section{padding:8px 8px 18px!important}.community-chat-page-section .community-page-top{padding:0 3px!important;margin-bottom:9px!important}.community-chat-page-section .community-page-top h1{font-size:29px!important}.community-chat-page-section .community-page-top p{font-size:11px!important}.community-chat-page-card{border-radius:20px!important;height:calc(100dvh - 230px)!important;max-height:700px!important;display:flex!important;flex-direction:column!important}.community-chat-page-card .community-chat-tools{height:48px;padding:0 11px!important}.community-chat-page-card .community-select-help{font-size:10px!important}.community-chat-window{height:auto!important;min-height:0!important;flex:1!important;padding:16px 10px 18px!important;gap:9px!important}.community-message{max-width:88%!important;padding:9px 11px!important;border-radius:15px!important}.community-message-text{font-size:13px!important}.community-message-actions{opacity:1!important;margin-top:6px!important}.community-message-action{padding:5px 8px!important;font-size:10px!important}.community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:9px 9px calc(9px + env(safe-area-inset-bottom))!important;gap:7px!important}.community-chat-form textarea{height:44px!important;min-height:44px!important;border-radius:15px!important}.community-send-button{width:44px;height:44px;border-radius:14px!important}.community-reply-bar{padding:8px 11px!important}}
 
 :root{--bg:#01040a;--bg2:#020914;--panel:rgba(3,14,27,.86);--line:rgba(28,91,145,.24);--line2:rgba(37,116,181,.48);--text:#eef6ff;--muted:#8fa6bd;--good:#5de6a1;--warn:#ffd166;--bad:#ff6878;--accent:#268fd0;--accent2:#073f6b;--shadow:0 28px 90px rgba(0,0,0,.68)}
-*{box-sizing:border-box}html{scroll-behavior:auto}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:transform .28s ease,border-color .28s ease,background .28s ease;animation:fadeUp .45s ease both}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+*{box-sizing:border-box}html{scroll-behavior:auto}body{margin:0;background:radial-gradient(900px 500px at 50% -180px,rgba(255,255,255,.105),transparent 62%),radial-gradient(700px 500px at 100% 15%,rgba(255,255,255,.035),transparent 65%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;min-height:100vh;letter-spacing:-.012em}a{text-decoration:none;color:inherit}.nav{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.72);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid rgba(255,255,255,.075)}.navin{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-weight:800;letter-spacing:-.055em;font-size:23px}.brandmark{display:inline-grid;place-items:center;width:31px;height:31px;margin-right:8px;border-radius:9px;background:#f5f5f7;color:#050505;font-size:14px;font-weight:900;box-shadow:0 5px 18px rgba(255,255,255,.08)}.navlinks{display:flex;gap:4px;flex-wrap:wrap}.navlinks a{padding:9px 11px;border-radius:11px;color:#b7b7bd;font-size:13px;transition:.2s ease}.navlinks a:hover{background:rgba(255,255,255,.07);color:#fff}.wrap{max-width:1180px;margin:auto;padding:24px 20px 80px}.hero{min-height:68vh;display:grid;place-items:center;text-align:center;padding:80px 0 50px}.hero h1{font-size:clamp(76px,14vw,155px);line-height:.78;margin:18px 0;letter-spacing:-.1em;background:linear-gradient(180deg,#fff 8%,#d7d7da 45%,#5d5d63 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{max-width:690px;color:var(--muted);font-size:18px;line-height:1.65;margin:0 auto 28px}.badge,.pill{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.045);padding:7px 11px;border-radius:999px;color:#c9c9ce;font-size:12px;backdrop-filter:blur(12px)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.028));border:1px solid var(--line);border-radius:26px;padding:22px;box-shadow:var(--shadow);transition:border-color .16s ease,background .16s ease}.card:hover{transform:translateY(-3px);border-color:var(--line2);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.card h2,.card h3{margin:0 0 9px;letter-spacing:-.035em}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;padding:11px 16px;border-radius:14px;background:#f5f5f7;color:#080808;font-weight:750;transition:transform .2s ease,opacity .2s ease,background .2s ease;box-shadow:0 8px 24px rgba(0,0,0,.18)}.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}.btn.dark{background:rgba(255,255,255,.075);color:#fff;border-color:var(--line);box-shadow:none}.btn.good{background:rgba(45,180,105,.12);color:#9bf2bf;border-color:rgba(98,230,162,.25);box-shadow:none}.btn.danger{background:rgba(255,70,90,.11);color:#ffb5bd;border-color:rgba(255,104,120,.23);box-shadow:none}.btn.accent{background:linear-gradient(180deg,#fff,#d7d7da);color:#080808}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.section{padding:30px 0}.auth{min-height:80vh;display:grid;place-items:center}.authbox{width:min(470px,100%)}.form{display:grid;gap:13px}.label{font-size:13px;color:#b5b5bb;margin-bottom:5px}input,textarea,select{width:100%;padding:13px 14px;background:rgba(255,255,255,.045);color:#fff;border:1px solid #2a2a2e;border-radius:14px;outline:none;transition:border-color .2s,background .2s,box-shadow .2s}input::placeholder,textarea::placeholder{color:#68686e}input:focus,textarea:focus,select:focus{border-color:#707076;background:rgba(255,255,255,.06);box-shadow:0 0 0 4px rgba(255,255,255,.045)}textarea{min-height:125px;resize:vertical}.flash{padding:13px 15px;border:1px solid #303035;background:rgba(255,255,255,.055);border-radius:15px;margin:10px 0;backdrop-filter:blur(14px)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 9px;border-bottom:1px solid #29292e;vertical-align:top}.tablewrap{overflow:auto}.kpi{font-size:38px;font-weight:850;letter-spacing:-.065em}.footer{padding:50px 0;color:#606066;text-align:center}.empty{text-align:center;padding:45px;color:var(--muted);border:1px dashed #2b2b31;border-radius:20px}.status-good{color:var(--good)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}.online{color:var(--good)}.offline{color:var(--bad)}.icon{font-size:30px;margin-bottom:12px}.resource-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.danger-zone{border-color:#5a252d}.notice{padding:16px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid var(--line);line-height:1.55}.chat{display:grid;gap:9px;margin-top:15px}.bubble{padding:13px 15px;border-radius:17px;background:rgba(255,255,255,.045);border:1px solid #24242a}.mine{border-color:#34343b}.offline-page{min-height:78vh;display:grid;place-items:center;text-align:center}.offline-page h1{font-size:clamp(48px,8vw,92px);letter-spacing:-.07em;margin:12px 0} .community-launch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;min-height:92px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.13);border-radius:24px;box-shadow:0 20px 55px rgba(0,0,0,.28);transition:transform .25s ease,border-color .25s ease,background .25s ease}.community-launch:before{content:"";position:absolute;inset:-80px auto auto -50px;width:180px;height:180px;background:rgba(255,255,255,.07);filter:blur(35px);border-radius:50%}.community-launch:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);background:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.045))}.student-presence{display:inline-flex;align-items:center;gap:8px}.presence-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 8px}.presence-dot.is-online{background:#32d74b;box-shadow:0 0 9px rgba(50,215,75,.55)}.presence-dot.is-offline{background:#ff453a}.community-icon{position:relative;z-index:1;width:50px;height:50px;display:grid;place-items:center;border-radius:16px;background:#f5f5f7;color:#080808;font-size:22px;box-shadow:0 8px 25px rgba(255,255,255,.10)}.community-copy{position:relative;z-index:1;flex:1}.community-copy h3{margin:0 0 4px;font-size:18px}.community-copy p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.community-arrow{position:relative;z-index:1;width:38px;height:38px;border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;color:#fff;background:rgba(255,255,255,.06);font-size:18px}.chat-composer{position:sticky;bottom:14px;padding:14px;border-radius:20px;background:rgba(10,10,12,.78);border:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .notice-card{position:relative;overflow:hidden}
 .notice-card:after{content:"";position:absolute;inset:auto -40px -70px auto;width:170px;height:170px;background:rgba(255,255,255,.045);filter:blur(25px);border-radius:50%}
 .event-date{font-size:30px;font-weight:850;letter-spacing:-.06em}
@@ -1795,7 +1827,7 @@ CSS = r"""
 .stat-row{display:flex;gap:10px;flex-wrap:wrap}
 .stat-chip{padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.045)}
 .student-top-tools{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}.top-stat,.top-tool{min-height:38px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.055);display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 9px;color:#eee;font-size:12px;white-space:nowrap}.top-stat{flex-direction:column;line-height:1;min-width:58px}.top-stat small{font-size:8px;color:var(--muted);text-transform:uppercase}.top-search{display:flex;align-items:center;width:190px}.top-search input{height:38px;border-radius:12px 0 0 12px;padding:8px 10px;font-size:12px}.top-search button{height:38px;width:38px;border:1px solid #2a2a2e;border-left:0;border-radius:0 12px 12px 0;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.page-back,.mobile-back{border:1px solid var(--line);background:rgba(255,255,255,.05);color:#ddd;border-radius:12px;padding:8px 12px;cursor:pointer}.page-back{margin:2px 0 4px}.mobile-back{display:none;width:100%;text-align:left}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.student-home{max-width:900px;margin:0 auto;padding:34px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(0,174,255,.75);border-radius:999px;color:#5fc9ff;background:rgba(0,151,255,.08);font-size:12px;font-weight:800;letter-spacing:.08em}.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#a9b9d0;margin:0}.student-home-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.student-home-stats span{padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid var(--line);color:#cdd7e5;font-size:12px}.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(92,124,157,.28);border-radius:24px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));box-shadow:0 18px 50px rgba(0,0,0,.25);transition:.25s ease;overflow:hidden}.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5);box-shadow:0 22px 60px rgba(0,0,0,.32)}.student-feature.primary{border-color:rgba(0,190,255,.78);background:linear-gradient(135deg,rgba(14,42,61,.96),rgba(9,16,24,.94));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,112,190,.13)}.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(60,96,132,.45),rgba(15,27,40,.8));border:1px solid rgba(130,181,225,.22);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#a7b8cf;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#70caff}.student-arrow{font-size:37px;color:#8ba6c5;line-height:1}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.25s ease}.student-mini:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#829ab7}.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7b8cf}.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(92,124,157,.28);background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(52,91,125,.3);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb0c5}.campus-tool b{font-size:26px;color:#819bb9;font-weight:400}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.nav{position:relative}.mobile-nav.open{display:grid;gap:4px;position:absolute;right:18px;top:72px;z-index:120;min-width:210px;padding:10px;border:1px solid rgba(58,145,214,.28);border-radius:18px;background:rgba(3,12,22,.97);box-shadow:0 22px 60px rgba(0,0,0,.5);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.timetable-head{padding:8px 0 6px}.timetable-head h1{font-size:34px;letter-spacing:-.045em;margin:14px 0 7px}.timetable-head .muted{font-size:13px;line-height:1.45}.timetable-list{padding:8px 0 18px;display:grid;gap:12px}.timetable-card{padding:14px;border-radius:20px;overflow:hidden}.timetable-card h2{font-size:18px;line-height:1.2;margin:10px 0 5px}.timetable-card .small{font-size:11px}.timetable-preview{width:100%;overflow:hidden;border-radius:14px;margin-top:10px;background:#030a12;border:1px solid rgba(58,145,214,.18)}.timetable-preview img{width:100%!important;height:auto!important;max-height:none!important;object-fit:contain!important;border-radius:14px!important;display:block}.timetable-actions{margin-top:10px;display:flex}.timetable-actions .btn{width:100%;justify-content:center;text-align:center;padding:12px 14px;font-size:13px}.timetable-card .notice{padding:14px}.timetable-card .notice strong{font-size:13px;word-break:break-word}}@media(max-width:850px){.student-bottom-nav a{flex:1;min-width:0}.student-bottom-nav .mobile-menu-nav{order:1}.student-bottom-nav .mobile-home-nav{order:2}.student-bottom-nav .mobile-profile-nav{order:3}.student-bottom-nav .mobile-back-nav{order:4}}\n@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini{min-height:72px;padding:10px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.page-back{display:inline-flex}.hero{min-height:0;display:flex;align-items:flex-start;justify-content:center;padding:34px 0 24px}.hero>div{width:100%;display:flex;flex-direction:column;align-items:center}.hero .badge{max-width:100%;text-align:center}.hero h1{font-size:68px;line-height:.9;margin:18px 0 14px}.hero p{max-width:320px;font-size:17px;line-height:1.5;margin:0 auto 24px}.hero .actions{width:100%;max-width:340px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:0}.hero .actions .btn{width:100%;max-width:none;min-width:0;box-sizing:border-box}.hero .actions .btn:last-child{grid-column:1/-1;justify-self:center;width:calc((100% - 10px)/2)}.card{border-radius:22px}.actions .btn{max-width:100%}}
+.student-home{max-width:900px;margin:0 auto;padding:34px 0 20px}.student-home-head{text-align:left;padding:12px 2px 28px}.student-space-pill{display:inline-flex;align-items:center;padding:9px 15px;border:1px solid rgba(0,174,255,.75);border-radius:999px;color:#5fc9ff;background:rgba(0,151,255,.08);font-size:12px;font-weight:800;letter-spacing:.08em}.student-home-head h1{font-size:clamp(38px,6vw,58px);line-height:1.02;margin:24px 0 10px;letter-spacing:-.06em}.student-home-head p{font-size:18px;color:#a9b9d0;margin:0}.student-home-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.student-home-stats span{padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid var(--line);color:#cdd7e5;font-size:12px}.student-feature-list{display:grid;gap:14px}.student-feature,.student-wide-link{position:relative;display:flex;align-items:center;gap:18px;min-height:112px;padding:20px 22px;border:1px solid rgba(92,124,157,.28);border-radius:24px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));box-shadow:0 18px 50px rgba(0,0,0,.25);transition:.25s ease;overflow:hidden}.student-feature:hover,.student-wide-link:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5);box-shadow:0 22px 60px rgba(0,0,0,.32)}.student-feature.primary{border-color:rgba(0,190,255,.78);background:linear-gradient(135deg,rgba(14,42,61,.96),rgba(9,16,24,.94));box-shadow:0 0 0 1px rgba(0,180,255,.06),0 20px 65px rgba(0,112,190,.13)}.student-feature-icon{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,rgba(60,96,132,.45),rgba(15,27,40,.8));border:1px solid rgba(130,181,225,.22);font-size:27px;box-shadow:inset 0 1px rgba(255,255,255,.08)}.student-feature-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.student-feature-copy strong{font-size:21px;letter-spacing:-.035em}.student-feature-copy small,.student-feature-copy em{font-size:14px;color:#a7b8cf;line-height:1.45;font-style:normal}.student-feature-copy em{font-size:12px;color:#70caff}.student-arrow{font-size:37px;color:#8ba6c5;line-height:1}.student-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.student-mini{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 16px;border:1px solid rgba(92,124,157,.28);border-radius:22px;background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.25s ease}.student-mini:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.student-mini .student-feature-icon{width:48px;height:48px;flex-basis:48px;font-size:21px;border-radius:15px}.student-mini strong{font-size:14px;flex:1}.student-mini>span:last-child{font-size:29px;color:#829ab7}.student-wide-link{margin-top:14px;min-height:84px}.student-wide-link .student-feature-icon{width:50px;height:50px;flex-basis:50px;font-size:23px}.student-wide-link span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.student-wide-link strong{font-size:17px}.student-wide-link small{color:#a7b8cf}.campus-tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.campus-tool{display:flex;align-items:center;gap:13px;padding:16px;border-radius:20px;border:1px solid rgba(92,124,157,.28);background:linear-gradient(135deg,rgba(19,29,41,.92),rgba(9,14,20,.9));transition:.2s ease}.campus-tool:hover{transform:translateY(-2px);border-color:rgba(74,181,255,.5)}.campus-tool-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:rgba(52,91,125,.3);font-size:22px}.campus-tool span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.campus-tool strong{font-size:15px}.campus-tool small{font-size:11px;color:#9eb0c5}.campus-tool b{font-size:26px;color:#819bb9;font-weight:400}.nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.06);color:#fff;font-size:20px;cursor:pointer}.mobile-nav{display:none}.mobile-nav a{display:block;padding:12px 14px;border-radius:13px;color:#ddd}.nav{position:relative}.mobile-nav.open{display:grid;gap:4px;position:absolute;right:18px;top:72px;z-index:120;min-width:210px;padding:10px;border:1px solid rgba(58,145,214,.28);border-radius:18px;background:rgba(3,12,22,.97);box-shadow:0 22px 60px rgba(0,0,0,.5);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}.mobile-nav a:hover{background:rgba(255,255,255,.07)}@media(max-width:850px){.timetable-head{padding:8px 0 6px}.timetable-head h1{font-size:34px;letter-spacing:-.045em;margin:14px 0 7px}.timetable-head .muted{font-size:13px;line-height:1.45}.timetable-list{padding:8px 0 18px;display:grid;gap:12px}.timetable-card{padding:14px;border-radius:20px;overflow:hidden}.timetable-card h2{font-size:18px;line-height:1.2;margin:10px 0 5px}.timetable-card .small{font-size:11px}.timetable-preview{width:100%;overflow:hidden;border-radius:14px;margin-top:10px;background:#030a12;border:1px solid rgba(58,145,214,.18)}.timetable-preview img{width:100%!important;height:auto!important;max-height:none!important;object-fit:contain!important;border-radius:14px!important;display:block}.timetable-actions{margin-top:10px;display:flex}.timetable-actions .btn{width:100%;justify-content:center;text-align:center;padding:12px 14px;font-size:13px}.timetable-card .notice{padding:14px}.timetable-card .notice strong{font-size:13px;word-break:break-word}}@media(max-width:850px){.student-bottom-nav a{flex:1;min-width:0}.student-bottom-nav .mobile-menu-nav{order:1}.student-bottom-nav .mobile-home-nav{order:2}.student-bottom-nav .mobile-profile-nav{order:3}.student-bottom-nav .mobile-back-nav{order:4}}\n@media(max-width:850px){.grid,.grid2,.two,.campus-tools{grid-template-columns:1fr}.navin{padding:9px 10px;gap:5px}.navlinks{display:none}.nav-toggle{display:grid;place-items:center;width:40px;height:40px}.brand{font-size:0;flex:0 0 34px}.brandmark{margin:0;width:32px;height:32px}.student-top-tools{gap:4px;overflow:hidden;justify-content:flex-start}.top-stat{min-width:38px;width:38px;padding:5px 2px;font-size:9px}.top-stat small{display:none}.top-tool{width:55px;min-width:55px;padding:6px 2px;font-size:9px}.top-search{width:64px;min-width:64px}.top-search input{font-size:10px;padding:7px}.top-search button{width:30px}.mobile-nav.open{display:grid;gap:4px;padding:10px 14px 14px;border-top:1px solid rgba(255,255,255,.06);background:rgba(5,5,5,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.mobile-back{display:block}.menu-sub{padding-left:28px!important;font-size:12px!important;color:#aaa!important}.wrap{padding:12px}.student-home{padding-top:18px}.student-home-head h1{font-size:39px}.student-home-head p{font-size:15px}.student-feature{min-height:96px;padding:16px}.student-feature-icon{width:52px;height:52px;flex-basis:52px;font-size:24px}.student-feature-copy strong{font-size:18px}.student-feature-copy small{font-size:13px}.student-mini{min-height:72px;padding:10px}.student-mini-grid{grid-template-columns:1fr}.student-wide-link{min-height:78px}.page-back{display:inline-flex}.hero{min-height:0;display:flex;align-items:flex-start;justify-content:center;padding:34px 0 24px}.hero>div{width:100%;display:flex;flex-direction:column;align-items:center}.hero .badge{max-width:100%;text-align:center}.hero h1{font-size:68px;line-height:.9;margin:18px 0 14px}.hero p{max-width:320px;font-size:17px;line-height:1.5;margin:0 auto 24px}.hero .actions{width:100%;max-width:340px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:0}.hero .actions .btn{width:100%;max-width:none;min-width:0;box-sizing:border-box}.hero .actions .btn:last-child{grid-column:1/-1;justify-self:center;width:calc((100% - 10px)/2)}.card{border-radius:22px}.actions .btn{max-width:100%}}
 
 .admin-header{min-width:0}.admin-navlinks{display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;margin-left:12px}.admin-navlinks::-webkit-scrollbar{display:none}.admin-navlinks a{flex:0 0 auto;padding:8px 9px;border-radius:10px;color:#c9d8e7;font-size:11px;white-space:nowrap}.admin-navlinks a:hover{background:rgba(25,101,157,.18);color:#fff}.admin-header .nav-toggle{display:none;flex:0 0 auto}@media(max-width:1050px){.admin-navlinks{gap:2px}.admin-navlinks a{padding:7px 6px;font-size:10px}}@media(max-width:850px){.admin-navlinks{display:none}.admin-header .nav-toggle{display:grid;place-items:center}}
 
@@ -3301,29 +3333,61 @@ a.card textarea{
 
 
 def _admin_update_feed(con, student_id, limit=18):
-    # On the first visit after this feature is deployed, establish a baseline
-    # from the content that already existed. Only subsequently published items
-    # become alerts for that student.
+    """Return unread header updates with bounded, set-based database work."""
     try:
-        existing_view = con.execute("SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)).fetchone()
+        existing_view = con.execute(
+            "SELECT 1 FROM student_update_views WHERE student_id=? LIMIT 1", (student_id,)
+        ).fetchone()
         if not existing_view:
-            for typ, table in (("academic","academic_updates"),("resource","resources"),("timetable","timetables"),("announcement","announcements"),("event","events"),("admin_solution","admin_problem_solutions")):
-                for r in con.execute(f"SELECT id FROM {table}").fetchall():
-                    rid=int(r["id"])
+            baseline_time = now()
+            specs = (
+                ("academic", "academic_updates", False),
+                ("resource", "resources", False),
+                ("timetable", "timetables", False),
+                ("announcement", "announcements", False),
+                ("event", "events", False),
+                ("admin_solution", "admin_problem_solutions", True),
+            )
+            for typ, table, student_only in specs:
+                if student_only:
+                    sql = (
+                        "INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) "
+                        "SELECT ?, ?, id, ? FROM admin_problem_solutions WHERE student_id=?"
+                    )
+                    params = (student_id, typ, baseline_time, student_id)
+                else:
+                    sql = (
+                        "INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) "
+                        f"SELECT ?, ?, id, ? FROM {table}"
+                    )
+                    params = (student_id, typ, baseline_time)
+                try:
                     if con.is_pg:
-                        con.execute("INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING", (student_id,typ,rid,now()))
+                        sql += " ON CONFLICT(student_id,item_type,item_id) DO NOTHING"
                     else:
-                        con.execute("INSERT OR IGNORE INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?)", (student_id,typ,rid,now()))
+                        sql = sql.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+                    con.execute(sql, params)
+                except Exception:
+                    pass
             con.commit()
             return []
     except Exception:
         pass
+
+    sources = [
+        ("academic", "SELECT id,title,description,created_at FROM academic_updates WHERE kind IN ('Result','Date Sheet','Exam Notice','Admit Card') ORDER BY id DESC LIMIT 50", "Academic update"),
+        ("resource", "SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 50", "Study resource"),
+        ("timetable", "SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 50", "Timetable"),
+        ("announcement", "SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 50", "Announcement"),
+        ("event", "SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 50", "Campus event"),
+        ("admin_solution", "SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 50", "Admin solution"),
+    ]
     items=[]
-    sources=[("academic","SELECT id,title,description,created_at FROM academic_updates WHERE kind IN ('Result','Date Sheet','Exam Notice','Admit Card') ORDER BY id DESC LIMIT 80","/updates","Academic update"),("resource","SELECT id,title,description,created_at FROM resources ORDER BY id DESC LIMIT 80","/academics","Study resource"),("timetable","SELECT id,title,original_name,created_at FROM timetables ORDER BY id DESC LIMIT 80","/timetable","Timetable"),("announcement","SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 80","/announcements","Announcement"),("event","SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 80","/events","Campus event"),("admin_solution","SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 80","/issues","Admin solution")]
-    for typ,sql,base,label in sources:
+    for typ,sql,label in sources:
         try:
             rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
-        except Exception: rows=[]
+        except Exception:
+            rows=[]
         for r in rows:
             keys=r.keys()
             detail=str(r["description"] or "")[:120] if "description" in keys else ""
@@ -3331,31 +3395,37 @@ def _admin_update_feed(con, student_id, limit=18):
                 try: detail=str(r["message"] or r["original_name"] or "")[:120]
                 except Exception: detail=""
             rid=int(r["id"])
-            if typ=="academic": target=f"/updates#academic-update-{rid}"
-            elif typ=="resource": target=f"/resource/{rid}"
-            elif typ=="timetable": target=f"/timetable-file/{rid}"
-            elif typ=="announcement": target="/announcements"
-            elif typ=="event": target="/events"
-            else: target=f"/student-admin-solution/{rid}"
+            target={
+                "academic":f"/updates#academic-update-{rid}",
+                "resource":f"/resource/{rid}",
+                "timetable":f"/timetable-file/{rid}",
+                "announcement":"/announcements",
+                "event":"/events",
+                "admin_solution":f"/student-admin-solution/{rid}",
+            }[typ]
             items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
-    # The bell is an UNREAD inbox, not a history list.  Anything already
-    # recorded in student_update_views has been opened/seen and must disappear
-    # from the bell completely.  The view row is intentionally kept in the DB
-    # as the read-state marker so the same item can never come back as NEW.
-    unread_items=[]
-    for x in items:
+
+    # Check all candidate IDs in batches rather than issuing a SELECT per item.
+    seen_by_type={}
+    for typ in {x["type"] for x in items}:
+        ids=[x["id"] for x in items if x["type"]==typ]
+        if not ids: continue
+        placeholders=",".join("?" for _ in ids)
         try:
-            seen=bool(con.execute(
-                "SELECT 1 FROM student_update_views WHERE student_id=? AND item_type=? AND item_id=?",
-                (student_id,x["type"],x["id"]),
-            ).fetchone())
+            rows=con.execute(
+                f"SELECT item_id FROM student_update_views WHERE student_id=? AND item_type=? AND item_id IN ({placeholders})",
+                (student_id,typ,*ids),
+            ).fetchall()
+            seen_by_type[typ]={int(r["item_id"]) for r in rows}
         except Exception:
-            seen=True
-        if not seen:
-            x["unread"]=True
-            unread_items.append(x)
-    unread_items.sort(key=lambda x:x["created_at"],reverse=True)
-    return unread_items[:limit]
+            seen_by_type[typ]=set(ids)
+    unread=[x for x in items if x["id"] not in seen_by_type.get(x["type"],set())]
+    unread.sort(key=lambda x:x["created_at"],reverse=True)
+    return unread[:limit]
+
+
+
+
 
 
 def _mark_admin_update_seen(student_id,item_type,item_id):
@@ -3543,7 +3613,7 @@ ADMIN_PROBLEM_ALERT_CSS = r"""
 @media(max-width:800px){.admin-problem-alert{width:38px;height:38px}.admin-problem-alert-panel{position:fixed;top:61px;right:10px;width:min(420px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.admin-problem-alert-list{max-height:calc(100vh - 180px)}}
 """
 
-_ADMIN_HEADER_CACHE_TTL = 8.0
+_ADMIN_HEADER_CACHE_TTL = 20.0
 def _admin_header_alerts_cached():
     key=("admin_header_alerts", 0)
     now_m=time.monotonic()
@@ -3674,187 +3744,48 @@ def layout(title, body, admin=False):
     # This is injected inside layout()'s single <style> block. Keep it as raw CSS.
     # Wrapping it in <style> here would prematurely close the outer style tag and
     # cause the following mobile CSS to be rendered as visible text in the page.
-    performance_css = """
-/* ===== VYBE PERFORMANCE LAYER =====
-   Keep the visual design, but remove paint-heavy effects from normal pages.
-   In particular, fixed gradient backgrounds + backdrop filters + continuous
-   animations can make mobile scrolling hitch on mid-range devices. */
+    performance_css = r"""
+/* ===== VYBE PERFORMANCE LAYER ===== */
 html{scroll-behavior:auto!important}
 body{background-attachment:scroll!important}
-.nav,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab,
-.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-
-/* The student dashboard is visited frequently and should scroll like a native
-   lightweight page. Static gradients are cheaper than animated/blurred layers. */
-.page-home .home-live-glow,
-.page-home .home-live-orbit,
-.page-home .home-live-status span{animation:none!important}
-.page-home .home-live-glow{filter:none!important;opacity:.55!important}
-.page-home .home-live-orbit{box-shadow:0 10px 24px rgba(47,111,202,.08)!important}
-.page-home .home-action,
-.page-home .home-update-panel{box-shadow:0 5px 16px rgba(20,30,20,.045)!important}
-.page-home .home-action:hover{transform:none!important;box-shadow:0 5px 16px rgba(20,30,20,.045)!important}
-
-/* Avoid expensive hover/entrance work on common student components. */
-.student-feature,.student-mini,.student-link,.home-action,.home-update-panel{box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
-.student-feature:hover,.student-mini:hover,.student-link:hover,.home-action:hover{transform:none!important;box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
-
-.admin-students-desktop{display:block!important}
-.admin-students-mobile{display:none!important}
-
+*,*::before,*::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.nav,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab,.chat-composer,.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.card,.admin-control-card,.admin-tool,.home-action,.home-update-panel,.home-update{animation:none!important}
+.card{transition:border-color .14s ease,background .14s ease!important}
 @media(max-width:850px){
+  *,*::before,*::after{animation:none!important}
+  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
   body{background:#f4f8fb!important}
-  .page-home .home-live-glow{display:none!important}
-  .page-home .home-live-orbit{box-shadow:none!important;background:#f8fbff!important}
-  .page-home .home-action,
-  .page-home .home-update-panel{box-shadow:0 2px 8px rgba(20,30,20,.045)!important}
-  .student-bottom-nav{box-shadow:0 -3px 12px rgba(20,30,20,.06)!important}
-  .vybe-assistant-fab{box-shadow:0 7px 18px rgba(16,24,39,.12)!important}
-}
-
-@media(min-width:851px){
-  .page-home .home-live-glow{display:none!important}
-  .page-home .home-live-orbit{animation:none!important}
-}
-
-/* ===== MOBILE LAYOUT + SCROLL POLISH =====
-   Keep the existing visual language, but prevent wide content, paint-heavy
-   effects, and table overflow from making phones feel slow or cramped. */
-.card,.btn,.home-action,.home-update-panel,.home-update,.admin-home-card,.admin-home-status{
-  animation:none!important;
-}
-.nav,.mobile-nav,.student-bottom-nav,.chat-composer,.community-launch,.flash,.badge,.pill{
-  backdrop-filter:none!important;
-  -webkit-backdrop-filter:none!important;
-}
-@media(max-width:850px){
-  body{overflow-x:hidden!important;background-attachment:scroll!important}
-  .card,.btn,.home-action,.home-update-panel,.home-update,.admin-home-card,.admin-home-status{
-    transition:none!important;
-  }
-  .page-home .home-updates-grid{
-    display:grid!important;
-    grid-template-columns:1fr!important;
-    gap:12px!important;
-    width:100%!important;
-    max-width:100%!important;
-    overflow:visible!important;
-  }
-  .page-home .home-update-panel{
-    width:100%!important;
-    min-width:0!important;
-    max-width:100%!important;
-    box-sizing:border-box!important;
-    overflow:hidden!important;
-    padding:12px!important;
-    border-radius:18px!important;
-  }
-  .page-home .home-panel-title{
-    min-width:0!important;
-    width:100%!important;
-    box-sizing:border-box!important;
-    margin:0 0 8px!important;
-  }
-  .page-home .home-panel-title span{
-    min-width:0!important;
-    overflow:hidden!important;
-    text-overflow:ellipsis!important;
-    white-space:nowrap!important;
-  }
-  .page-home .home-update{
-    display:grid!important;
-    grid-template-columns:34px minmax(0,1fr) 14px!important;
-    align-items:center!important;
-    width:100%!important;
-    min-width:0!important;
-    max-width:100%!important;
-    box-sizing:border-box!important;
-    padding:10px 8px!important;
-    gap:9px!important;
-  }
-  .page-home .home-update>span:nth-child(2){
-    min-width:0!important;
-    max-width:100%!important;
-    overflow:hidden!important;
-  }
-  .page-home .home-update strong,.page-home .home-update small{
-    display:block!important;
-    max-width:100%!important;
-    overflow:hidden!important;
-    text-overflow:ellipsis!important;
-    white-space:nowrap!important;
-  }
+  .card,.btn,.home-action,.home-update-panel,.home-update,.admin-control-card,.admin-tool,.settings-tile,.publisher-student-card,.ah-key,.ah-choice{transition:none!important;animation:none!important}
+  .page-home .home-live-glow,.page-home .home-live-orbit{display:none!important}
+  .page-home .home-updates-grid{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;width:100%!important;max-width:100%!important;overflow:visible!important}
+  .page-home .home-update-panel{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;overflow:hidden!important;padding:12px!important;border-radius:18px!important;box-shadow:0 2px 8px rgba(20,30,20,.045)!important}
+  .page-home .home-update{display:grid!important;grid-template-columns:34px minmax(0,1fr) 14px!important;align-items:center!important;width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;padding:10px 8px!important;gap:9px!important}
+  .page-home .home-update>span:nth-child(2){min-width:0!important;max-width:100%!important;overflow:hidden!important}
+  .page-home .home-update strong,.page-home .home-update small{display:block!important;max-width:100%!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
   .page-home .home-update>b{font-size:18px!important}
-
-  /* Admin Students: keep desktop as a table, use compact cards on phones. */
-  .admin-students-desktop{overflow:auto!important}
-  .admin-students-page .admin-student-search{margin:12px 0 14px;padding:12px 14px;border:1px solid #dfe5ea;border-radius:16px;background:#fff;box-shadow:0 4px 14px rgba(20,30,40,.035)}
-  .admin-students-page .admin-student-search form{display:flex;gap:8px;align-items:center;margin:0}
-  .admin-students-page .admin-student-search input{flex:1;min-width:0;min-height:44px;border:1px solid #d5dee6;border-radius:12px;background:#fbfdff;color:#17202b;padding:0 13px;font:inherit}
-  .admin-students-page .admin-student-search input:focus{border-color:#6aa1cf;box-shadow:0 0 0 3px rgba(47,111,202,.08);outline:none}
-  .admin-students-page .admin-student-search small{display:block;margin-top:7px;color:#788692;font-size:10px}
-  .admin-students-page .admin-student-actions{display:flex!important;gap:9px!important;flex-wrap:wrap!important;align-items:center!important}
-  .admin-students-page .admin-student-actions form{margin:0!important}
-  .admin-students-page .admin-student-actions .btn{min-height:42px!important}
-  .admin-students-page .admin-student-count{display:flex!important;align-items:center!important;gap:7px!important;width:max-content!important;padding:7px 10px!important;border:1px solid #dfe5ea!important;border-radius:11px!important;background:#fff!important}
-  .admin-students-page .admin-student-count strong{font-size:16px!important}
-  .admin-students-page .admin-student-count small{font-size:9px!important;color:#7a8793!important;text-transform:uppercase!important}
-  .admin-students-page .admin-students-warning{margin:10px 0;padding:11px 12px;border:1px solid #efd0d3;border-radius:12px;background:#fff7f8;color:#9f4a51;font-size:12px}
-  .admin-student-card{padding:14px;border:1px solid #dfe5ea;border-radius:17px;background:#fff;box-shadow:0 3px 10px rgba(20,30,20,.045)}
-  .admin-student-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-  .admin-student-person{display:flex;align-items:flex-start;gap:9px;min-width:0}
-  .admin-student-person>div{min-width:0}
-  .admin-student-person strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#17202b;font-size:14px}
-  .admin-student-person small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#718090;font-size:10px}
-  .admin-student-meta{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}
-  .admin-student-meta>div{padding:9px 10px;border:1px solid #e7ebef;border-radius:12px;background:#fafbfd;min-width:0}
-  .admin-student-meta small{display:block;color:#7a8793;font-size:9px;text-transform:uppercase;font-weight:800;letter-spacing:.04em}
-  .admin-student-meta strong{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344150;font-size:11px}
-  .admin-student-card-actions{display:grid;grid-template-columns:1fr;gap:7px}
-  .admin-student-card-actions form{margin:0!important}
-  .admin-student-card-actions .btn{width:100%!important;min-height:42px!important;box-sizing:border-box!important}
-  .admin-students-empty{padding:22px;text-align:center;color:#687482}
-  @media(max-width:850px){
-    .admin-students-desktop{display:none!important}
-    .admin-students-mobile{display:grid!important;gap:10px!important}
-    .admin-students-page{padding-left:0!important;padding-right:0!important}
-    .admin-students-page .admin-page-head{display:block!important;margin-bottom:12px!important}
-    .admin-students-page .admin-page-head p{max-width:100%!important;font-size:13px!important;line-height:1.45!important}
-    .admin-students-page .admin-student-count{margin-top:10px!important}
-    .admin-students-page .admin-student-search{margin:10px 0 12px;padding:10px}
-    .admin-students-page .admin-student-search form{display:grid!important;grid-template-columns:1fr!important;gap:7px!important}
-    .admin-students-page .admin-student-search input,.admin-students-page .admin-student-search .btn{width:100%!important;box-sizing:border-box!important}
-    .admin-students-page .admin-student-actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
-    .admin-students-page .admin-student-actions>a,.admin-students-page .admin-student-actions>form{width:100%!important}
-    .admin-students-page .admin-student-actions .btn{width:100%!important}
-  }"""
+  .student-feature,.student-mini,.student-link,.home-action{box-shadow:0 3px 10px rgba(20,30,20,.04)!important}
+  .admin-students-desktop{display:none!important}
+  .admin-students-mobile{display:grid!important;gap:10px!important}
+  .admin-students-page .admin-student-card-actions{display:grid!important;grid-template-columns:1fr!important;gap:7px!important}
+  .admin-students-page .admin-student-card-actions .btn{width:100%!important;min-height:42px!important}
+  .admin-student-card,.settings-tile,.publisher-student-card,.ah-key,.ah-choice{content-visibility:auto;contain-intrinsic-size:72px}
+}
+@media(min-width:851px){
+  .card,.home-action,.home-update-panel,.admin-control-card,.admin-tool,.settings-tile,.publisher-student-card{animation:none!important}
+}
+"""
     admin_problem_alert_runtime = r"""
 <script>
 (function(){
   const bell=document.getElementById('vybeAdminProblemBell');
   const panel=document.getElementById('vybeAdminProblemPanel');
-  const list=document.getElementById('vybeAdminProblemList');
-  const countEl=document.getElementById('vybeAdminProblemCount');
-  if(!bell||!panel||!list)return;
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]})}
-  function render(data){
-    const items=data.items||[];
-    const n=Number(data.count||0);
-    const badge=bell.querySelector('.admin-problem-alert-count');
-    if(n>0){
-      if(badge){badge.textContent=n>99?'99+':String(n);}
-      else{const b=document.createElement('span');b.className='admin-problem-alert-count';b.textContent=n>99?'99+':String(n);bell.appendChild(b);}
-    }else if(badge){badge.remove();}
-    if(countEl)countEl.textContent=n+' open';
-    list.innerHTML=items.length?items.map(function(x){
-      return '<a class="admin-problem-alert-item" href="/admin/problems#problem-'+encodeURIComponent(x.id)+'"><span class="admin-problem-alert-dot">!</span><span class="admin-problem-alert-copy"><strong>'+esc(x.title)+'</strong><small>'+esc(x.name)+' · '+esc(x.category)+' · '+esc(x.created_at)+'</small><p>'+esc(x.description)+'</p></span><span class="admin-problem-alert-arrow">›</span></a>';
-    }).join(''):'<div class="admin-problem-alert-empty">No active student problems.</div>';
-  }
-  function refresh(){fetch('/admin/problem-alerts',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(function(d){if(d)render(d)}).catch(function(){});}
-  bell.addEventListener('click',function(e){e.stopPropagation();const open=!panel.hidden;panel.hidden=open;bell.setAttribute('aria-expanded',open?'false':'true');if(!open)refresh();});
-  document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap')){panel.hidden=true;bell.setAttribute('aria-expanded','false')}});
-  refresh();
-  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},60000);
+  if(!bell||!panel)return;
+  function closePanel(){panel.hidden=true;bell.setAttribute('aria-expanded','false');}
+  bell.addEventListener('click',function(e){e.stopPropagation();const open=panel.hidden;panel.hidden=!open;bell.setAttribute('aria-expanded',open?'true':'false');});
+  panel.addEventListener('click',function(e){e.stopPropagation();});
+  document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap'))closePanel();});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closePanel();});
 })();
 </script>
 """
@@ -4712,7 +4643,7 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
   // Chat pages keep their own realtime polling so an admin content sync never
   // interrupts an active conversation.
   if(!document.body.classList.contains('vybe-student-page') && !document.querySelector('.student-nav-compact')) return;
-  if(!document.querySelector('main.page-updates, main.page-announcements, main.page-events, main.page-timetable, main.page-community, main.page-dashboard, main.page-issues')) return;
+  if(!document.querySelector('main.page-updates, main.page-announcements, main.page-events, main.page-timetable, main.page-community, main.page-issues')) return;
   if(window.__vybeContentSyncStarted)return;
   window.__vybeContentSyncStarted=true;
   let lastVersion=null;
@@ -4753,8 +4684,7 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
     }}catch(_){{}}
     syncing=false;
   }}
-  setTimeout(check,5000);
-  setInterval(function(){{ if(document.visibilityState==='visible' && !scrolling) check(); }},90000);
+  setInterval(function(){{ if(document.visibilityState==='visible' && !scrolling) check(); }},180000);
 }})();</script></body></html>'''
 
 
@@ -8470,19 +8400,12 @@ def admin_publisher_access():
             if not student:
                 flash("Select a student who already has publisher access.")
                 return redirect(url_for("admin_publisher_access"))
-            action = request.form.get("action", "save").strip()
-            if action == "revoke":
-                set_setting(con, f"content_manager_{selected_sid}", "0")
-                set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps([]))
-                con.commit()
-                flash(f"Publisher access revoked from {student['name']}.")
-            else:
-                selected = [x for x in request.form.getlist("permissions") if x in allowed]
-                set_setting(con, f"content_manager_{selected_sid}", "1")
-                set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps(selected))
-                con.commit()
-                flash(f"Publisher controls updated for {student['name']}.")
-            return redirect(url_for("admin_publisher_access"))
+            selected = [x for x in request.form.getlist("permissions") if x in allowed]
+            set_setting(con, f"content_manager_{selected_sid}", "1")
+            set_setting(con, f"publisher_permissions_{selected_sid}", json.dumps(selected))
+            con.commit()
+            flash(f"Publisher controls updated for {student['name']}.")
+            return redirect(url_for("admin_publisher_access", student_id=selected_sid))
 
         # Query active publisher students directly from the relationship between
         # students and their content-manager setting. This avoids stale/incomplete
@@ -8542,7 +8465,7 @@ def admin_publisher_access():
             summary = '<div class="publisher-selected publisher-selected-empty"><strong>Choose a publisher above.</strong><small>Only students already granted publisher access from Students &amp; Access are listed here.</small></div>'
 
         disabled = " disabled" if not selected_student else ""
-        body = f'''{PUBLISHER_ACCESS_PICKER_CSS}<section class="section publisher-access-page"><div class="admin-page-head"><div><a href="/admin/students" class="admin-back">← Students / Access</a><span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Publisher controls.</h1><p>Choose a student who already has publisher access, then select exactly what they can publish.</p></div><div class="card publisher-access-note"><strong>{len(approved)}</strong><small>publisher students</small></div></div><div class="card publisher-picker-card"><span class="publisher-picker-label">PUBLISHER STUDENT</span><form method="get" class="publisher-picker-form"><select name="student_id" onchange="this.form.submit()">{"".join(options)}</select></form>{summary}</div><div class="card publisher-controls-card"><span class="publisher-picker-label">PUBLISHING CONTROLS</span><h2>What can this student publish?</h2><p>Select only the permissions you want this publisher to have.</p><form method="post" class="publisher-control-form"><input type="hidden" name="student_id" value="{selected_sid}"><div class="publisher-control-grid">{"".join(controls)}</div><div class="publisher-control-actions"><button class="btn accent" type="submit"{disabled}>Save selected controls</button><button class="btn danger" type="submit" name="action" value="revoke"{disabled} onclick="return confirm('Revoke publisher access from this student?')">Revoke access</button></div></form></div></section>'''
+        body = f'''{PUBLISHER_ACCESS_PICKER_CSS}<section class="section publisher-access-page"><div class="admin-page-head"><div><a href="/admin/students" class="admin-back">← Students / Access</a><span class="admin-page-kicker">PUBLISHER ACCESS</span><h1>Publisher controls.</h1><p>Choose a student who already has publisher access, then select exactly what they can publish.</p></div><div class="card publisher-access-note"><strong>{len(approved)}</strong><small>publisher students</small></div></div><div class="card publisher-picker-card"><span class="publisher-picker-label">PUBLISHER STUDENT</span><form method="get" class="publisher-picker-form"><select name="student_id" onchange="this.form.submit()">{"".join(options)}</select></form>{summary}</div><div class="card publisher-controls-card"><span class="publisher-picker-label">PUBLISHING CONTROLS</span><h2>What can this student publish?</h2><p>Select only the permissions you want this publisher to have.</p><form method="post" class="publisher-control-form"><input type="hidden" name="student_id" value="{selected_sid}"><div class="publisher-control-grid">{"".join(controls)}</div><div class="publisher-control-actions"><button class="btn accent" type="submit"{disabled}>Save selected controls</button></div></form></div></section>'''
         return layout("Publisher Access", body, admin=True)
     except Exception:
         try: con.rollback()
