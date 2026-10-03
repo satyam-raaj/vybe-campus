@@ -15,19 +15,17 @@ import zlib
 import zipfile
 import threading
 import time
-import socket
 import ipaddress
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
-from html.parser import HTMLParser
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse, urljoin, quote
+from urllib.parse import urlparse, quote
 from xml.etree import ElementTree as ET
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError
 
-from flask import Flask, request, redirect, url_for, session, flash, abort, send_from_directory, send_file, jsonify, render_template_string, g
+from flask import Flask, request, redirect, url_for, session, flash, abort, send_file, jsonify, g
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -41,14 +39,12 @@ except ImportError:
 
 GOOGLE_AUTH_IMPORT_ERROR = ""
 try:
-    from google.oauth2 import service_account as _google_service_account
     from google.oauth2.credentials import Credentials as GoogleOAuthCredentials
     from google.auth.transport.requests import Request as GoogleAuthRequest
     from google_auth_oauthlib.flow import Flow as GoogleOAuthFlow
     from cryptography.fernet import Fernet, InvalidToken as FernetInvalidToken
     GOOGLE_AUTH_AVAILABLE = True
 except Exception as _google_auth_exc:
-    _google_service_account = None
     GoogleOAuthCredentials = None
     GoogleAuthRequest = None
     GoogleOAuthFlow = None
@@ -98,7 +94,6 @@ PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERC
 PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
-VYBE_GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("VYBE_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
 VYBE_GOOGLE_OAUTH_CLIENT_ID = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_ID", "").strip()
 VYBE_GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 VYBE_GOOGLE_OAUTH_CLIENT_JSON = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_JSON", "").strip()
@@ -410,82 +405,6 @@ def set_setting(con, key, value):
         invalidate_vybe_online_cache()
 
 
-class _CampusPageParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True); self.parts=[]; self.links=[]; self.title_parts=[]; self.in_title=False; self.skip_depth=0
-    def handle_starttag(self, tag, attrs):
-        tag=tag.lower()
-        if tag in ('script','style','noscript','svg','canvas'): self.skip_depth += 1
-        if tag=='title': self.in_title=True
-        if tag=='a':
-            href=dict(attrs).get('href')
-            if href: self.links.append(href)
-    def handle_endtag(self, tag):
-        tag=tag.lower()
-        if tag=='title': self.in_title=False
-        if tag in ('script','style','noscript','svg','canvas') and self.skip_depth: self.skip_depth -= 1
-    def handle_data(self, data):
-        if self.skip_depth: return
-        text=re.sub(r'\s+',' ',data or '').strip()
-        if not text: return
-        if self.in_title: self.title_parts.append(text)
-        self.parts.append(text)
-
-def _normalize_public_url(value):
-    value=(value or '').strip()
-    if not value: return ''
-    if not re.match(r'^https?://',value,re.I): value='https://'+value
-    parsed=urlparse(value)
-    return value.rstrip('/') if parsed.scheme in ('http','https') and parsed.netloc else ''
-
-def _public_http_host(host):
-    """Reject loopback/private/reserved destinations for server-side crawling."""
-    host=(host or "").strip().lower().rstrip(".")
-    if not host or host in {"localhost", "localhost.localdomain"}:
-        return False
-    try:
-        addresses={info[4][0] for info in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)}
-        if not addresses:
-            return False
-        for addr in addresses:
-            ip=ipaddress.ip_address(addr)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
-                return False
-        return True
-    except Exception:
-        return False
-
-
-def _crawl_college_website(start_url,max_pages=25):
-    start=_normalize_public_url(start_url)
-    if not start: raise ValueError('Enter a valid http(s) college website URL.')
-    host=urlparse(start).hostname or ""
-    if not _public_http_host(host): raise ValueError("The college website must resolve to a public internet address.")
-    queue=[start]; seen=set(); pages=[]
-    blocked={'.jpg','.jpeg','.png','.gif','.webp','.svg','.zip','.mp4','.mp3','.doc','.docx','.xls','.xlsx','.ppt','.pptx'}
-    while queue and len(pages)<max_pages:
-        url=queue.pop(0).split('#',1)[0]; parsed=urlparse(url)
-        if url in seen or (parsed.hostname or "").lower()!=host.lower() or Path(parsed.path.lower()).suffix in blocked: continue
-        if parsed.scheme not in ("http","https") or not _public_http_host(parsed.hostname or ""): continue
-        seen.add(url)
-        try:
-            req=URLRequest(url,headers={'User-Agent':'VYBE-Campus-Assistant/1.0'})
-            with urlopen(req,timeout=7) as resp:
-                if 'text/html' not in (resp.headers.get('Content-Type') or '').lower(): continue
-                raw=resp.read(350000)
-            parser=_CampusPageParser(); parser.feed(raw.decode('utf-8','ignore'))
-            text=re.sub(r'\s+',' ',' '.join(parser.parts)).strip()
-            if len(text)>=40:
-                title=' '.join(parser.title_parts).strip()[:250] or parsed.path.strip('/') or 'College website'
-                pages.append((url,title,text[:18000]))
-            for href in parser.links:
-                nxt=urljoin(url,href).split('#',1)[0]; np=urlparse(nxt)
-                if np.scheme in ('http','https') and np.netloc.lower()==host and nxt not in seen and len(queue)<100: queue.append(nxt)
-        except Exception: continue
-    return pages
-
-
-
 def init_db():
     con = db()
     if con.is_pg:
@@ -595,17 +514,6 @@ def init_db():
                 event TEXT NOT NULL DEFAULT 'login',
                 ip_address TEXT,
                 user_agent TEXT
-            )""",
-            """CREATE TABLE IF NOT EXISTS login_security_blocks (
-                ip_address TEXT PRIMARY KEY, failed_attempts INTEGER NOT NULL DEFAULT 0,
-                first_failed_at DOUBLE PRECISION NOT NULL DEFAULT 0, blocked_until DOUBLE PRECISION NOT NULL DEFAULT 0,
-                last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '', last_area TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS vybe_security_alerts (
-                id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
-                name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
-                area TEXT NOT NULL DEFAULT '', blocked_until DOUBLE PRECISION, message TEXT NOT NULL DEFAULT '', read_at TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id BIGSERIAL PRIMARY KEY,
@@ -756,16 +664,6 @@ def init_db():
                 event TEXT NOT NULL DEFAULT 'login',
                 ip_address TEXT,
                 user_agent TEXT
-            )""",
-            """CREATE TABLE IF NOT EXISTS login_security_blocks (
-                ip_address TEXT PRIMARY KEY, failed_attempts INTEGER NOT NULL DEFAULT 0, first_failed_at REAL NOT NULL DEFAULT 0,
-                blocked_until REAL NOT NULL DEFAULT 0, last_name TEXT NOT NULL DEFAULT '', last_student_id TEXT NOT NULL DEFAULT '',
-                last_area TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS vybe_security_alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, alert_type TEXT NOT NULL,
-                name TEXT NOT NULL DEFAULT '', student_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL,
-                area TEXT NOT NULL DEFAULT '', blocked_until REAL, message TEXT NOT NULL DEFAULT '', read_at TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS password_reset_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -997,10 +895,24 @@ def init_db():
             set_setting(con, key, value)
 
     # Incremental chat polling uses id > after_id; keep that lookup indexed.
-    try:
-        con.execute("CREATE INDEX IF NOT EXISTS idx_community_messages_id ON community_messages(id)")
-    except Exception:
-        pass
+    # Hot-path indexes for the student library, notifications and admin queues.
+    # They are additive and safe for existing Neon/SQLite databases.
+    _ensure_password_reset_schema(con)
+    _ensure_password_reset_active_index(con)
+
+    for _idx in (
+        "CREATE INDEX IF NOT EXISTS idx_resources_type_semester_subject ON resources(resource_type, semester, subject)",
+        "CREATE INDEX IF NOT EXISTS idx_academic_updates_kind_id ON academic_updates(kind, id)",
+        "CREATE INDEX IF NOT EXISTS idx_student_notifications_recipient_id ON student_notifications(recipient_student_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_issues_status_id ON issues(status, id)",
+        "CREATE INDEX IF NOT EXISTS idx_issues_student_id ON issues(student_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_solutions_issue_id ON solutions(issue_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_problem_solutions_student_id ON admin_problem_solutions(student_id, id)",
+    ):
+        try:
+            con.execute(_idx)
+        except Exception:
+            pass
     con.commit()
     con.close()
 
@@ -3526,8 +3438,6 @@ def layout(title, body, admin=False):
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         try:
             _admin_alert_con = db()
-            _ensure_password_reset_schema(_admin_alert_con)
-            _admin_alert_con.commit()
             _admin_pending_password = int(_admin_alert_con.execute("SELECT COUNT(*) AS c FROM password_reset_requests WHERE status='pending'").fetchone()["c"])
             _admin_problem_rows = _admin_alert_con.execute(
                 "SELECT i.id,i.title,i.description,i.category,i.status,i.created_at,s.name,s.student_id "
@@ -3636,7 +3546,7 @@ def layout(title, body, admin=False):
   bell.addEventListener('click',function(e){e.stopPropagation();const open=!panel.hidden;panel.hidden=open;bell.setAttribute('aria-expanded',open?'false':'true');if(!open)refresh();});
   document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap')){panel.hidden=true;bell.setAttribute('aria-expanded','false')}});
   refresh();
-  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},5000);
+  setInterval(function(){{ if(document.visibilityState==='visible') refresh(); }},15000);
 })();
 </script>
 """
@@ -4426,7 +4336,7 @@ if(notificationBell){{
     }}
   }});
   refreshStudentNotifications();
-  notificationTimer=setInterval(refreshStudentNotifications,5000);
+  notificationTimer=setInterval(function(){{ if(document.visibilityState==='visible') refreshStudentNotifications(); }},30000);
 }}
 
 window.vybeToggleStudentMenu=function(e){{
@@ -4559,7 +4469,7 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
     syncing=false;
   }}
   check();
-  setInterval(function(){{ if(document.visibilityState==='visible') check(); }},5000);
+  setInterval(function(){{ if(document.visibilityState==='visible') check(); }},30000);
 }})();</script></body></html>'''
 
 
@@ -4892,7 +4802,7 @@ def _upcoming_events(con, limit=6):
 
 
 def _latest_timetables(con, limit=20):
-    return con.execute("SELECT * FROM timetables ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return con.execute("SELECT id,title,original_name,created_at,drive_file_id,drive_web_url FROM timetables ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
 
 def _decode_pdf_literal(value):
@@ -6023,7 +5933,7 @@ def academics():
     subject = request.args.get("subject", "").strip()[:100]
     resource_type = request.args.get("resource_type", "").strip()[:100]
     con = db()
-    sql = "SELECT * FROM resources WHERE 1=1"
+    sql = "SELECT id,title,resource_type,course,semester,subject,description,file_name,(file_data IS NOT NULL) AS has_local_file,drive_file_id,drive_web_url,created_at FROM resources WHERE 1=1"
     params = []
     if q:
         sql += " AND (title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)"
@@ -6036,18 +5946,22 @@ def academics():
         sql += " AND subject=?"; params.append(subject)
     if resource_type:
         sql += " AND resource_type=?"; params.append(resource_type)
-    sql += " ORDER BY id DESC"
-    rows = con.execute(sql, params).fetchall()
+    sql += " ORDER BY id DESC LIMIT 120"
+    show_resource_files = bool(q or subject or course or (semester and subject))
+    rows = con.execute(sql, params).fetchall() if show_resource_files else []
     courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE course<>'' ORDER BY course").fetchall()]
-    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' ORDER BY semester").fetchall()]
-    subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' ORDER BY subject").fetchall()]
+    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' AND semester NOT IN ('Uncategorized','All') ORDER BY semester").fetchall()]
+    if semester:
+        subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' AND semester=? AND subject NOT IN ('General','All') ORDER BY subject",(semester,)).fetchall()]
+    else:
+        subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' AND subject NOT IN ('General','All') ORDER BY subject").fetchall()]
     types = [r["resource_type"] for r in con.execute("SELECT DISTINCT resource_type FROM resources WHERE resource_type<>'' ORDER BY resource_type").fetchall()]
     _mark_all_page_items_seen(con, session["student_db_id"], "resource", "resources")
     con.commit()
     con.close()
     resource_cards = ""
     for r in rows:
-        has_file = bool(r["file_name"] or r["file_data"] is not None)
+        has_file = bool(r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"])
         if has_file:
             resource_cards += f'''<a class="academic-resource-card academic-resource-clickable" href="/resource/{r["id"]}" target="_blank" rel="noopener" aria-label="Open resource: {esc(r["title"])}"><div class="academic-card-top"><span class="academic-tag">{esc(r["resource_type"])}</span><span class="academic-open-pill">OPEN ↗</span></div><h3>{esc(r["title"])}</h3><p class="academic-subline">{esc(r["course"])}{(" · " + esc(r["subject"])) if r["subject"] else ""}</p><p>{esc(r["description"] or "Academic resource available in VYBE.")}</p><div class="academic-card-footer"><span>{esc(r["semester"] or "All semesters")}</span><span class="academic-file-label">Open file <b>↗</b></span></div></a>'''
         else:
@@ -6055,7 +5969,7 @@ def academics():
     selected = lambda value, current: "selected" if value == current else ""
     body=f'''<section class="academic-hub-page"><section class="academic-hero section"><div class="academic-kicker">ACADEMIC HUB</div><h1>Everything you need for campus study.</h1><p class="academic-lead">Notes, study material, previous-year papers and academic updates, organized in one place.</p><form class="academic-search" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search notes, papers, subjects, results..." aria-label="Search academic resources"><button type="submit">Search</button></form><div class="academic-quick-grid"><a href="/academic-hub/notes" class="academic-quick"><span class="academic-icon academic-icon-notes" aria-hidden="true"></span><strong>Study Notes</strong><small>Revision notes</small></a><a href="/academic-hub/pyq" class="academic-quick"><span class="academic-icon academic-icon-pyq" aria-hidden="true"></span><strong>PYQ Papers</strong><small>Previous-year papers</small></a><a href="/academic-hub/results" class="academic-quick academic-quick-green"><span class="academic-icon academic-icon-results" aria-hidden="true"></span><strong>Results</strong><small>Result updates</small></a><a href="/academic-hub/date-sheet" class="academic-quick"><span class="academic-icon academic-icon-date" aria-hidden="true"></span><strong>Date Sheet</strong><small>Exam schedules</small></a><a href="/academic-hub/admit-card" class="academic-quick"><span class="academic-icon academic-icon-admit" aria-hidden="true"></span><strong>Admit Card</strong><small>Exam documents</small></a><a href="/academic-hub/exam-forms" class="academic-quick"><span class="academic-icon academic-icon-forms" aria-hidden="true"></span><strong>Exam Forms</strong><small>Forms and notices</small></a></div></section>
 <section class="section academic-tools-section"><div class="academic-section-heading"><div><div class="academic-kicker">STUDY TOOLS</div><h2>Academic resources.</h2></div></div><div class="academic-tool-grid"><a class="academic-tool" href="/academic-hub/study-material"><span class="academic-tool-mark academic-tool-material" aria-hidden="true"></span><div><strong>Study Material</strong><p>Semester-wise files and reference material.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/notes"><span class="academic-tool-mark academic-tool-notes" aria-hidden="true"></span><div><strong>Notes</strong><p>Quick revision notes organized by subject.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/pyq"><span class="academic-tool-mark academic-tool-papers" aria-hidden="true"></span><div><strong>Previous Papers</strong><p>Practice with previous-year question papers.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/updates"><span class="academic-tool-mark academic-tool-updates" aria-hidden="true"></span><div><strong>Academic Updates</strong><p>Results, datesheets, forms and important notices.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/apps"><span class="academic-tool-mark academic-tool-apps" aria-hidden="true"></span><div><strong>Study Applications</strong><p>Useful student calculators and academic utilities.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/issues"><span class="academic-tool-mark academic-tool-help" aria-hidden="true"></span><div><strong>Student Helpdesk</strong><p>Get help with campus, exams and technical issues.</p></div><span class="academic-arrow">→</span></a></div></section>
-<section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">RESOURCE LIBRARY</div><h2>Find your material.</h2></div></div><div class="academic-filter-panel"><form class="academic-filter-form" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search by subject or PDF title"><select name="resource_type"><option value="">All resource types</option>{''.join(f'<option value="{esc(x)}" {selected(x,resource_type)}>{esc(x)}</option>' for x in types)}</select><select name="course"><option value="">All courses</option>{''.join(f'<option value="{esc(x)}" {selected(x,course)}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option value="{esc(x)}" {selected(x,semester)}>{esc(x)}</option>' for x in semesters)}</select><select name="subject"><option value="">All subjects</option>{''.join(f'<option value="{esc(x)}" {selected(x,subject)}>{esc(x)}</option>' for x in subjects)}</select><button type="submit">Apply filters</button><a class="academic-reset" href="/academics">Reset</a></form></div><div class="academic-resource-grid">{resource_cards or '<div class="academic-empty">No matching academic resources.</div>'}</div></section></section>'''
+<section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">RESOURCE LIBRARY</div><h2>Choose what you need.</h2></div></div><div class="academic-filter-panel"><form class="academic-filter-form" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search by subject or PDF title"><select name="resource_type"><option value="">All resource types</option>{''.join(f'<option value="{esc(x)}" {selected(x,resource_type)}>{esc(x)}</option>' for x in types)}</select><select name="course"><option value="">All courses</option>{''.join(f'<option value="{esc(x)}" {selected(x,course)}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option value="{esc(x)}" {selected(x,semester)}>{esc(x)}</option>' for x in semesters)}</select><select name="subject"><option value="">All subjects</option>{''.join(f'<option value="{esc(x)}" {selected(x,subject)}>{esc(x)}</option>' for x in subjects)}</select><button type="submit">Apply filters</button><a class="academic-reset" href="/academics">Reset</a></form></div><div class="academic-resource-grid">{resource_cards or '<div class="academic-empty">Choose a semester and subject, or search for something specific, to see matching resources. VYBE keeps the full library hidden until you ask for it.</div>'}</div></section></section>'''
     body = ACADEMIC_HUB_CSS + r"""<style>
 /* VYBE Academic Hub final alignment + interaction layer */
 .academic-hub-page{max-width:1180px!important;margin:0 auto!important;padding:24px 18px 50px!important;box-sizing:border-box}
@@ -6458,41 +6372,69 @@ def academics():
 ACADEMIC_COLLECTION_CSS = """
 <style>
 .ah-collection{max-width:1180px;margin:0 auto;padding:42px 0 90px}.ah-hero{padding:34px;border:1px solid #dfe5ea;border-radius:26px;background:linear-gradient(135deg,#fff,#f5f9ff 65%,#f4faed);box-shadow:0 14px 38px rgba(31,48,66,.06)}.ah-hero h1{margin:12px 0 8px;font-size:clamp(38px,5vw,60px);letter-spacing:-.055em;color:#17202b}.ah-hero p{max-width:720px;margin:0;color:#687482;line-height:1.65}.ah-filter{margin-top:20px;padding:13px;border:1px solid #e1e6eb;border-radius:17px;background:#fff;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px}.ah-filter input,.ah-filter select{min-height:43px;box-sizing:border-box}.ah-filter button{border:0;border-radius:11px;background:#2f6fca;color:#fff;font-weight:800;padding:0 17px;cursor:pointer}.ah-section{margin-top:28px}.ah-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;margin-bottom:11px}.ah-section-head h2{margin:0;color:#17202b;font-size:23px}.ah-section-head span{font-size:11px;color:#7c8893}.ah-subject{margin-top:14px}.ah-subject h3{margin:0 0 9px;font-size:14px;color:#52616e}.ah-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}.ah-card{display:flex;flex-direction:column;min-height:150px;padding:17px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 8px 22px rgba(31,48,66,.045);transition:.2s}.ah-card:hover{transform:translateY(-3px);border-color:#bfd5ec;box-shadow:0 15px 30px rgba(31,48,66,.09)}.ah-card .tag{display:inline-flex;width:max-content;padding:5px 8px;border-radius:999px;background:#edf4ff;color:#2f6fca;font-size:9px;font-weight:900}.ah-card h4{margin:12px 0 6px;font-size:15px}.ah-card p{margin:0;color:#778490;font-size:12px;line-height:1.45}.ah-card-foot{margin-top:auto;padding-top:14px;display:flex;justify-content:space-between;gap:8px;color:#8a96a0;font-size:10px}.ah-empty{padding:28px;border:1px dashed #cfd9e1;border-radius:18px;background:#fbfcfd;color:#71808c;text-align:center}.ah-update-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.ah-update{display:block;padding:19px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;text-decoration:none;color:#17202b;box-shadow:0 8px 24px rgba(31,48,66,.045)}.ah-update:hover{border-color:#bfd5ec;transform:translateY(-2px)}.ah-update .tag{color:#579c24;background:#edf8e6;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900}.ah-update h3{margin:12px 0 7px}.ah-update p{margin:0;color:#697783;line-height:1.5;font-size:12px}.ah-update-foot{margin-top:14px;color:#2f6fca;font-size:11px;font-weight:800}
-@media(max-width:850px){.ah-collection{padding:30px 14px 82px}.ah-hero{padding:23px 18px;border-radius:21px}.ah-filter{grid-template-columns:1fr}.ah-grid,.ah-update-grid{grid-template-columns:1fr}.ah-section-head{align-items:flex-start;flex-direction:column}.ah-card{min-height:130px}}
+.ah-browse-title{margin:26px 0 11px;font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#71808c}.ah-browse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ah-browse-card{display:flex;flex-direction:column;gap:6px;padding:19px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 8px 22px rgba(31,48,66,.045);transition:.18s}.ah-browse-card:hover{transform:translateY(-2px);border-color:#bfd5ec;box-shadow:0 13px 28px rgba(31,48,66,.08)}.ah-browse-card strong{font-size:15px}.ah-browse-card span{font-size:11px;color:#7a8792}.ah-reset{display:flex;align-items:center;justify-content:center;min-height:43px;padding:0 12px;border:1px solid #dfe5ea;border-radius:11px;color:#687482;text-decoration:none;font-size:12px;font-weight:800;background:#fff}
+@media(max-width:850px){.ah-collection{padding:30px 14px 82px}.ah-hero{padding:23px 18px;border-radius:21px}.ah-filter{grid-template-columns:1fr}.ah-grid,.ah-update-grid,.ah-browse-grid{grid-template-columns:1fr}.ah-section-head{align-items:flex-start;flex-direction:column}.ah-card{min-height:130px}}
 </style>
 """
 
 def _academic_resource_collection(resource_type, title, subtitle, kicker):
     con=db()
+    q=request.args.get("q","").strip()[:120]
     semester=request.args.get("semester","").strip()[:100]
     subject=request.args.get("subject","").strip()[:120]
     course=request.args.get("course","").strip()[:100]
     params=[resource_type]
     where=["resource_type=?"]
+    if q:
+        where.append("(title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)")
+        params += [f"%{q}%"] * 4
     if semester: where.append("semester=?"); params.append(semester)
     if subject: where.append("subject=?"); params.append(subject)
     if course: where.append("course=?"); params.append(course)
-    rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,drive_file_id,drive_web_url,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
-    semesters=[r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester<>'' ORDER BY semester",(resource_type,)).fetchall()]
-    subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND subject<>'' ORDER BY subject",(resource_type,)).fetchall()]
+    show_files=bool(q or subject or course or (semester and subject))
+    rows=[]
+    if show_files:
+        rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,drive_file_id,drive_web_url,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
+    semesters=[r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester<>'' AND semester NOT IN ('Uncategorized','All') ORDER BY semester",(resource_type,)).fetchall()]
+    if semester:
+        subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND semester=? AND subject<>'' AND subject NOT IN ('General','All') ORDER BY subject",(resource_type,semester)).fetchall()]
+    else:
+        subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND subject<>'' AND subject NOT IN ('General','All') ORDER BY subject",(resource_type,)).fetchall()]
     courses=[r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE resource_type=? AND course<>'' ORDER BY course",(resource_type,)).fetchall()]
     con.close()
     groups={}
     for r in rows:
-        groups.setdefault(r["semester"] or "All semesters",{}).setdefault(r["subject"] or "General",[]).append(r)
+        groups.setdefault(r["semester"] or "Uncategorized",{}).setdefault(r["subject"] or "General",[]).append(r)
     sections=[]
     for sem, subs in groups.items():
         subject_blocks=[]
         for sub, items in subs.items():
             cards=[]
             for r in items:
-                has_file=bool(r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"])
+                has_file=bool(r["file_name"] or r["drive_file_id"] or r["drive_web_url"])
                 href=f'/resource/{r["id"]}' if has_file else '#'
-                cards.append(f'''<a class="ah-card" href="{href}"{(' target="_blank" rel="noopener"' if has_file else '')}><span class="tag">{esc(resource_type)}</span><h4>{esc(r["title"])}</h4><p>{esc(r["description"] or "Open the uploaded academic resource.")}</p><div class="ah-card-foot"><span>{esc(r["course"] or "All courses")}</span><span>{"Open ↗" if has_file else "No file"}</span></div></a>''')
+                target=' target="_blank" rel="noopener"' if has_file else ''
+                cards.append(f'''<a class="ah-card" href="{href}"{target}><span class="tag">{esc(resource_type)}</span><h4>{esc(r["title"])}</h4><p>{esc(r["description"] or "Open the uploaded academic resource.")}</p><div class="ah-card-foot"><span>{esc(r["course"] or "All courses")}</span><span>{"Open ↗" if has_file else "No file"}</span></div></a>''')
             subject_blocks.append(f'<div class="ah-subject"><h3>{esc(sub)}</h3><div class="ah-grid">{"".join(cards)}</div></div>')
         sections.append(f'<section class="ah-section"><div class="ah-section-head"><h2>{esc(sem)}</h2><span>{sum(len(x) for x in subs.values())} item(s)</span></div>{"".join(subject_blocks)}</section>')
+    if not show_files:
+        if semester:
+            subject_cards=[]
+            for sub in subjects:
+                subject_cards.append(f'<a class="ah-browse-card" href="?semester={quote(semester)}&subject={quote(sub)}"><strong>{esc(sub)}</strong><span>Open {esc(semester)} resources →</span></a>')
+            browse_html=''.join(subject_cards) or '<div class="ah-empty">No subjects are available for this semester yet.</div>'
+            sections_html=f'<div class="ah-browse-title">Choose a subject</div><div class="ah-browse-grid">{browse_html}</div>'
+        else:
+            semester_cards=[]
+            for sem in semesters:
+                semester_cards.append(f'<a class="ah-browse-card" href="?semester={quote(sem)}"><strong>{esc(sem)}</strong><span>Browse subjects →</span></a>')
+            browse_html=''.join(semester_cards) or '<div class="ah-empty">No semester folders are available yet.</div>'
+            sections_html=f'<div class="ah-browse-title">Choose a semester</div><div class="ah-browse-grid">{browse_html}</div>'
+    else:
+        sections_html=''.join(sections) if sections else '<div class="ah-empty" style="margin-top:22px">No matching resources were found.</div>'
     opts=lambda values,current: ''.join(f'<option value="{esc(x)}" {"selected" if x==current else ""}>{esc(x)}</option>' for x in values)
-    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-filter" method="get"><select name="semester"><option value="">All semesters</option>{opts(semesters,semester)}</select><select name="subject"><option value="">All subjects</option>{opts(subjects,subject)}</select><select name="course"><option value="">All courses</option>{opts(courses,course)}</select><button type="submit">Apply filters</button></form></section>{''.join(sections) if sections else '<div class="ah-empty" style="margin-top:22px">No resources have been uploaded for this collection yet.</div>'}</section>'''
+    reset_href=f'/academic-hub/{"notes" if resource_type=="Notes" else "study-material" if resource_type=="Study material" else "pyq"}'
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-filter" method="get"><input name="q" value="{esc(q)}" placeholder="Search this section…" aria-label="Search this section"><select name="semester"><option value="">Choose semester</option>{opts(semesters,semester)}</select><select name="subject"><option value="">Choose subject</option>{opts(subjects,subject)}</select><select name="course"><option value="">All courses</option>{opts(courses,course)}</select><button type="submit">Show resources</button><a class="ah-reset" href="{reset_href}">Reset</a></form></section>{sections_html}</section>'''
     return layout(title,body)
 
 @app.route("/academic-hub/notes")
@@ -6511,11 +6453,11 @@ def academic_hub_pyq():
     return _academic_resource_collection("Previous Year Questions","PYQ Papers","Previous-year question papers grouped by semester and subject.","PYQ PAPERS")
 
 def _academic_update_collection(kind, title, subtitle, kicker):
-    con=db(); rows=con.execute("SELECT * FROM academic_updates WHERE kind=? ORDER BY id DESC",(kind,)).fetchall(); con.close()
+    con=db(); rows=con.execute("SELECT id,kind,title,description,event_date,external_url,file_name,(file_data IS NOT NULL) AS has_local_file,drive_file_id,drive_web_url,created_at FROM academic_updates WHERE kind=? ORDER BY id DESC",(kind,)).fetchall(); con.close()
     cards=[]
     for r in rows:
-        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"] else "View update ↗")
-        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["file_data"] is not None or r["drive_file_id"] or r["drive_web_url"] else f'/academic-update/{r["id"]}')
+        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"] else "View update ↗")
+        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["drive_file_id"] or r["drive_web_url"] else f'/academic-update/{r["id"]}')
         cards.append(f'''<a class="ah-update" href="{esc(href)}" target="_blank" rel="noopener noreferrer"><span class="tag">{esc(kind)}</span><h3>{esc(r["title"])}</h3><p>{esc(r["description"])}</p><div class="ah-update-foot">{esc(r["event_date"] or r["created_at"])} · {action}</div></a>''')
     body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></section><section class="ah-section"><div class="ah-update-grid">{"".join(cards) or '<div class="ah-empty">Nothing has been published here yet.</div>'}</div></section></section>'''
     return layout(title,body)
@@ -6565,10 +6507,10 @@ ACADEMIC_DIRECT_CARD_CSS = """
 def academic_updates():
     allowed_kinds=("Result","Date Sheet","Exam Notice","Admit Card")
     kind=request.args.get("kind","").strip()[:80]; q=request.args.get("q","").strip()[:120]
-    con=db(); sql="SELECT * FROM academic_updates WHERE kind IN (?,?,?,?)"; params=list(allowed_kinds)
+    con=db(); sql="SELECT id,kind,title,description,event_date,external_url,file_name,original_name,created_at,drive_file_id,drive_web_url FROM academic_updates WHERE kind IN (?,?,?,?)"; params=list(allowed_kinds)
     if kind in allowed_kinds: sql+=" AND kind=?"; params.append(kind)
     if q: sql+=" AND (title LIKE ? OR description LIKE ? OR subject LIKE ?)"; params += [f"%{q}%"]*3
-    sql+=" ORDER BY id DESC"; rows=con.execute(sql,params).fetchall()
+    sql+=" ORDER BY id DESC LIMIT 120"; rows=con.execute(sql,params).fetchall()
     # Do not mark every academic update as viewed merely because the student
     # opened the Academic Updates page. The bell is an unread inbox: only the
     # specific update the student opens should disappear from it.
@@ -6580,7 +6522,7 @@ def academic_updates():
         if r["external_url"]:
             parsed=urlparse(r["external_url"])
             if parsed.scheme in ("http","https") and parsed.netloc: external_target=r["external_url"]
-        file_available=bool(r["file_name"] or r["file_data"] is not None or r["drive_web_url"])
+        file_available=bool(r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"])
         if external_target:
             final_target=external_target; card_target=' target="_blank" rel="noopener noreferrer"'; action_text="Open official link"
         elif file_available:
@@ -8617,7 +8559,7 @@ window.vybeDriveUpload = async function(file,status,category){
   const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';
   async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}
   const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:category,name:file.name,mimeType:file.type||'application/octet-stream',size:file.size})});
-  const direct=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable&&status)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%';};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'));}catch(_){reject(new Error('Drive returned an invalid upload response.'));}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'));};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=0;x.responseType='json';x.send(file);});
+  const direct=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable&&status)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%';};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'));}catch(_){reject(new Error('Drive returned an invalid upload response.'));}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'));};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file);});
   try{return await direct();}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);if(status)status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata;}if(!done||!done.id)throw new Error('Google Drive did not return the uploaded file.');return done;}
 };
 </script>'''
@@ -8651,7 +8593,7 @@ def admin_timetable():
             flash("Could not save the timetable. Please try again. The error has been logged.")
         finally: con.close()
         return redirect(url_for("admin_timetable"))
-    rows=con.execute("SELECT * FROM timetables ORDER BY id DESC").fetchall(); con.close()
+    rows=con.execute("SELECT id,title,original_name,created_at,drive_file_id,drive_web_url FROM timetables ORDER BY id DESC").fetchall(); con.close()
     html_rows="".join(f'''<tr><td><strong>{esc(r["title"])}</strong><br><span class="small">{esc(r["original_name"])}</span></td><td>{esc(r["created_at"])}</td><td><a class="btn dark" href="/timetable-file/{r["id"]}" target="_blank" rel="noopener">View</a> <form style="display:inline" method="post" action="/admin/timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this timetable?')"><button class="btn danger">Delete</button></form></td></tr>''' for r in rows)
     body=f'''<section class="section"><div class="badge">CAMPUS TIMETABLE</div><h1>Timetable.</h1><div class="grid2"><div class="card"><h2>Post timetable</h2><form id="adminTimetableDriveForm" class="form" onsubmit="return false"><input name="title" maxlength="160" placeholder="Timetable title" required><input id="adminTimetableDriveFile" type="file" name="file" required><div id="adminTimetableDriveStatus" class="small">Any file type can be uploaded. The file is sent directly to Google Drive.</div><button class="btn accent" type="submit">Post timetable →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_TIMETABLE_FORM_JS}</div><div class="card"><h2>Student access</h2><p class="muted">Students can open the latest timetable from the Timetable button. Approved Publishers can also post new timetable versions, but only admins can delete them.</p></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Timetable</th><th>Posted</th><th>Actions</th></tr>{html_rows or '<tr><td colspan="3">No timetables posted yet.</td></tr>'}</table></div></section>'''
     return layout("Timetable",body,admin=True)
@@ -8701,8 +8643,8 @@ def admin_academic_updates():
             con.rollback(); con.close(); app.logger.exception("Academic update Drive upload failed")
             flash(f"Could not publish the academic update to Google Drive: {type(exc).__name__}: {exc}")
             return redirect(url_for("admin_academic_updates"))
-    rows=con.execute("SELECT * FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
-    table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["file_data"] is not None else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
+    rows=con.execute("SELECT id,kind,title,event_date,external_url,file_name,original_name,(file_data IS NOT NULL) AS has_local_file,created_at,drive_file_id,drive_web_url FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
+    table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"] else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
     body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices and Admit Cards. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form id="adminAcademicDriveForm" class="form" onsubmit="return false"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" type="url" placeholder="Direct official website link (required for Result and Admit Card)"><input id="adminAcademicDriveFile" type="file"><div id="adminAcademicDriveStatus" class="small">Add a file, a website link, or both. Files go directly to Google Drive.</div><button class="btn accent" type="submit">Publish update →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_ACADEMIC_UPDATE_FORM_JS}</div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
     return layout("Academic Updates",body,admin=True)
 
@@ -8715,7 +8657,7 @@ ACADEMIC_HUB_ADMIN_CSS = """
 
 
 AH_DIRECT_UPLOAD_JS = r'''
-<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=0;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status);await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description')})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
+<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status,semester,subject){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size,semester:(semester||'').toString().trim(),subject:(subject||'').toString().trim()})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');meta.__vybe_folder_id=init.folder_id||'';return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status,(data.get('semester')||'').toString().trim(),(data.get('subject')||'').toString().trim());await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description'),folder_id:meta.__vybe_folder_id||''})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
 '''
 
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
@@ -8809,32 +8751,17 @@ def admin_academic_hub_delete_resource(rid):
 @app.route("/admin/resources")
 @admin_required
 def admin_resources():
-    con = db(); resources = con.execute("SELECT * FROM resources ORDER BY id DESC").fetchall(); con.close()
-    rows = "".join(f'<tr><td>{esc(r["title"])}</td><td>{esc(r["resource_type"])}</td><td>{esc(r["course"])} · {esc(r["semester"])} · {esc(r["subject"])}</td><td>{esc(r["created_at"])}</td><td><form method="post" action="/admin/resource/{r["id"]}/delete" onsubmit="return confirm(\'Delete this resource?\')"><button class="btn danger">Delete</button></form></td></tr>' for r in resources)
-    body = f'''<section class="section"><h1>Resources.</h1><div class="two"><div class="card"><h2>Add resource</h2><form id="adminResourceFileForm" class="form" method="post" action="/admin/resource" enctype="multipart/form-data"><input name="title" placeholder="Title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="course" placeholder="Course" required><input name="semester" placeholder="Semester" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description"></textarea><input id="adminResourceFile" type="file" name="file"><input id="adminResourceText" type="hidden" name="assistant_text"><div id="adminResourceStatus" class="small">PDF / Word / PowerPoint text is indexed automatically. Images are read before upload.</div><button class="btn accent">Add resource</button></form>{_resource_ocr_script("adminResourceFileForm","adminResourceFile","adminResourceText","adminResourceStatus")}</div><div class="card"><h2>Academic folder</h2><p class="muted">Students see the live Drive folder inside Academics.</p><a class="btn dark" href="/admin/settings">Configure Drive / WhatsApp →</a></div></div><div class="section card tablewrap"><table><tr><th>Title</th><th>Type</th><th>Course / term / subject</th><th>Created</th><th>Action</th></tr>{rows or '<tr><td colspan="5">No resources.</td></tr>'}</table></div></section>'''
-    return layout("Resources", body, admin=True)
+    # Legacy resource manager retained as a compatibility URL. All new uploads
+    # use the resumable, direct-to-Drive Academic Hub uploader.
+    return redirect(url_for("admin_academic_hub", section="notes"))
 
 
 @app.route("/admin/resource", methods=["POST"])
 @admin_required
 def add_resource():
-    title=request.form.get("title","").strip()[:150]; typ=request.form.get("resource_type","Study material")[:80]; course=request.form.get("course","").strip()[:100]; sem=request.form.get("semester","").strip()[:100]; subject=request.form.get("subject","").strip()[:100]; desc=request.form.get("description","").strip()[:1000]
-    f=request.files.get("file"); filename=None; original_name=None; mime_type=None; file_data=None; assistant_text=request.form.get("assistant_text","").strip()[:50000]
-    if f and f.filename:
-        suffix=Path(f.filename).suffix.lower()
-        if suffix not in ALLOWED_EXT: flash("That file type is not allowed."); return redirect(url_for("admin_resources"))
-        original_name=Path(f.filename).name[:240]
-        mime_type=f.mimetype or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
-        file_data=f.read()
-        if len(file_data)>20*1024*1024: flash("Resource files must be 20 MB or smaller."); return redirect(url_for("admin_resources"))
-        if not assistant_text: assistant_text=_extract_doc_text(file_data,suffix,50000)
-    con=db()
-    try:
-        _drive_store_resource(con,title=title,resource_type=typ,course=course,semester=sem,subject=subject,description=desc,original_name=original_name,mime_type=mime_type,data=file_data,assistant_text=assistant_text) if f and f.filename else con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(title,typ,course,sem,subject,desc,None,None,None,None,assistant_text,now()))
-        con.commit()
-    except Exception:
-        con.rollback(); app.logger.exception("Resource Drive upload failed"); con.close(); flash("Could not upload the resource to Google Drive. No resource was published."); return redirect(url_for("admin_resources"))
-    con.close(); flash("Resource added to Google Drive and indexed for Ask VYBE."); return redirect(url_for("admin_resources"))
+    # Older forms/bookmarks should never send large files through Vercel.
+    flash("Please use the VYBE Academic Hub upload center; files are uploaded directly to Google Drive.")
+    return redirect(url_for("admin_academic_hub", section="notes"))
 
 @app.route("/admin/resource/<int:rid>/delete", methods=["POST"])
 @admin_required
@@ -9376,7 +9303,10 @@ def admin_drive_oauth_callback():
 @app.route("/admin/drive/disconnect", methods=["POST"])
 @admin_required
 def admin_drive_disconnect():
+    global _DRIVE_CREDS_CACHE
     con=db(); con.execute("DELETE FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)); con.commit(); con.close()
+    with _DRIVE_CREDS_CACHE_LOCK:
+        _DRIVE_CREDS_CACHE = None
     flash("Google Drive connection removed from VYBE. Your files remain in Google Drive.")
     return redirect(url_for("admin_drive"))
 
@@ -9388,19 +9318,55 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester" value="All"><input name="subject" placeholder="Subject" value="General"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE creates Academic Hub → Notes / Study Material / Previous Year Questions / Syllabus / Assignments; Academic Updates → Results / Date Sheets / Exam Forms & Notices / Admit Cards; Timetable.</p></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=2*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (required for academic resources)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Organizing existing Academic Hub files by semester and subject…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=(d.moved||0)+' file(s) moved into semester / subject folders.'+(d.skipped?' '+d.skipped+' file(s) left at their current location.':'');}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=2*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
+
+@app.route("/admin/drive/organize-subjects", methods=["POST"])
+@admin_required
+def admin_drive_organize_subjects():
+    """Move existing Drive-backed Academic Hub resources into subject folders."""
+    moved=0; skipped=0; errors=[]
+    con=db()
+    try:
+        rows=con.execute("SELECT id,resource_type,semester,subject,drive_file_id FROM resources WHERE drive_file_id IS NOT NULL AND COALESCE(subject,'')<>'' ORDER BY id DESC LIMIT 1000").fetchall()
+        for row in rows:
+            subject=str(row["subject"] or "").strip()[:120]
+            category=_drive_category_for_resource_type(row["resource_type"] or "Study material")
+            if not subject or subject.lower() in {"general","subject","all"}:
+                skipped+=1; continue
+            try:
+                meta=_drive_file_meta(str(row["drive_file_id"]))
+                target=_drive_category_folder(category,True,semester=str(row["semester"] or ""),subject=subject)
+                if _drive_move_file_to_folder(str(row["drive_file_id"]),target,meta.get("parents")):
+                    moved+=1
+                    con.execute("UPDATE resources SET drive_folder_id=? WHERE id=?",(target,row["id"]))
+                else:
+                    skipped+=1
+            except Exception as exc:
+                errors.append(f"{row['id']}: {exc}")
+        con.commit()
+    finally:
+        con.close()
+    if errors:
+        return jsonify(moved=moved,skipped=skipped,errors=errors,message=f"Moved {moved} file(s); {len(errors)} file(s) could not be organized. Check the server log for details.")
+    return jsonify(moved=moved,skipped=skipped,message=f"Moved {moved} file(s) into subject folders.")
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
 @admin_required
 def admin_drive_upload_session():
+    data=request.get_json(force=True) or {}; category=str(data.get("category") or "").strip(); name=Path(str(data.get("name") or "uploaded-file")).name[:240]
+    semester=str(data.get("semester") or "").strip()[:100]
+    subject=str(data.get("subject") or "").strip()[:120]
+    if category not in DRIVE_CATEGORY_MAP: return jsonify(error="Choose a valid VYBE Drive section."),400
+    if DRIVE_CATEGORY_MAP[category][2]=="resource" and (not semester or not subject):
+        return jsonify(error="Semester and subject are required for academic resource uploads."),400
     try:
         _drive_credentials()
-    except Exception as e:
-        return jsonify(error=str(e), connect_url=url_for("admin_drive_connect")),503
-    data=request.get_json(force=True) or {}; category=str(data.get("category") or "").strip(); name=Path(str(data.get("name") or "uploaded-file")).name[:240]
-    if category not in DRIVE_CATEGORY_MAP: return jsonify(error="Choose a valid VYBE Drive section."),400
-    try: return jsonify(upload_url=_drive_start_resumable(name,str(data.get("mimeType") or "application/octet-stream"),_drive_category_folder(category,True),int(data.get("size") or 0)))
+        size=int(data.get("size") or 0)
+        if size < 0: return jsonify(error="Invalid upload size."),400
+        folder=_drive_category_folder(category,True,semester=semester,subject=subject)
+        upload_url=_drive_start_resumable(name,str(data.get("mimeType") or "application/octet-stream"),folder,size)
+        return jsonify(upload_url=upload_url,folder_id=folder)
     except Exception as e: return jsonify(error=str(e)),502
 
 def _drive_validate_session_url(session_url):
@@ -9514,11 +9480,39 @@ def admin_drive_upload_chunk():
 @app.route("/admin/drive/register", methods=["POST"])
 @admin_required
 def admin_drive_register():
-    data=request.get_json(force=True) or {}; category=str(data.get("category") or "").strip(); fid=str(data.get("file_id") or "").strip()
+    data=request.get_json(force=True) or {}
+    category=str(data.get("category") or "").strip(); fid=str(data.get("file_id") or "").strip()
     if category not in DRIVE_CATEGORY_MAP or not fid: return jsonify(error="Missing Drive file/category."),400
+    semester=str(data.get("semester") or "").strip()[:100]
+    subject=str(data.get("subject") or "").strip()[:120]
+    if DRIVE_CATEGORY_MAP[category][2]=="resource" and (not semester or not subject):
+        return jsonify(error="Semester and subject are required for academic resource uploads."),400
+    con=None
     try:
-        _drive_make_public(fid); meta=_drive_file_meta(fid); con=db(); _drive_record_file(con,category,meta,title=str(data.get("title") or "").strip()[:150] or None,course=str(data.get("course") or "All")[:100],semester=str(data.get("semester") or "All")[:100],subject=str(data.get("subject") or "General")[:100],description=str(data.get("description") or "")[:1000]); con.commit(); con.close(); return jsonify(message="File uploaded to Drive and published in VYBE.")
-    except Exception as e: return jsonify(error=str(e)),502
+        meta=_drive_file_meta(fid)
+        if not meta or meta.get("trashed"):
+            raise RuntimeError("The uploaded Drive file could not be found.")
+        if DRIVE_CATEGORY_MAP[category][2]=="resource":
+            requested_folder=str(data.get("folder_id") or "").strip()
+            parents=[str(x) for x in (meta.get("parents") or []) if x]
+            target=requested_folder if requested_folder and requested_folder in parents else _drive_category_folder(category,True,semester=semester,subject=subject)
+            if target not in parents:
+                _drive_move_file_to_folder(fid,target,parents)
+                meta=_drive_file_meta(fid)
+        _drive_make_public(fid)
+        con=db()
+        created=_drive_record_file(con,category,meta,title=str(data.get("title") or "").strip()[:150] or None,course=str(data.get("course") or "All")[:100],semester=semester or "Uncategorized",subject=subject or "General",description=str(data.get("description") or "")[:1000])
+        con.commit()
+        return jsonify(message="File uploaded to Drive and published in VYBE.",already_published=not created)
+    except Exception as e:
+        if con:
+            try: con.rollback()
+            except Exception: pass
+        return jsonify(error=str(e)),502
+    finally:
+        if con:
+            try: con.close()
+            except Exception: pass
 
 @app.route("/admin/drive/register-resource", methods=["POST"])
 @admin_required
@@ -9528,14 +9522,26 @@ def admin_drive_register_resource():
     fid=str(data.get("file_id") or "").strip()
     if category not in {"Notes","Study Material","Previous Year Questions","Syllabus","Assignments"} or not fid:
         return jsonify(error="Missing Drive file or resource category."),400
+    semester=str(data.get("semester") or "").strip()[:100]
+    subject=str(data.get("subject") or "").strip()[:120]
+    if not semester or not subject:
+        return jsonify(error="Semester and subject are required for academic resource uploads."),400
     try:
-        _drive_make_public(fid)
         meta=_drive_file_meta(fid)
+        if not meta or meta.get("trashed"):
+            raise RuntimeError("The uploaded Drive file could not be found.")
         mapped={"Notes":"Notes","Study Material":"Study material","Previous Year Questions":"Previous Year Questions","Syllabus":"Syllabus","Assignments":"Assignments"}[category]
+        requested_folder=str(data.get("folder_id") or "").strip()
+        parents=[str(x) for x in (meta.get("parents") or []) if x]
+        target=requested_folder if requested_folder and requested_folder in parents else _drive_category_folder(category,True,semester=semester,subject=subject)
+        if target not in parents:
+            _drive_move_file_to_folder(fid,target,parents)
+            meta=_drive_file_meta(fid)
+        _drive_make_public(fid)
         con=db()
         if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone():
             con.close(); return jsonify(message="File is already published in VYBE.",metadata=meta)
-        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(str(data.get("title") or Path(meta.get("name") or "Drive file").stem)[:150],mapped,str(data.get("course") or "All")[:100],str(data.get("semester") or "All")[:100],str(data.get("subject") or "General")[:100],str(data.get("description") or "")[:1000],None,meta.get("name"),meta.get("mimeType"),None,str(data.get("assistant_text") or "")[:50000],now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink")))
+        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(str(data.get("title") or Path(meta.get("name") or "Drive file").stem)[:150],mapped,str(data.get("course") or "All")[:100],semester,subject,str(data.get("description") or "")[:1000],None,meta.get("name"),meta.get("mimeType"),None,str(data.get("assistant_text") or "")[:50000],now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink")))
         con.commit(); con.close()
         return jsonify(message="File uploaded to Drive and published in VYBE.",metadata=meta)
     except Exception as e:
@@ -9928,8 +9934,6 @@ def admin_community_chat():
 @admin_required
 def admin_password_requests():
     con = db()
-    _ensure_password_reset_schema(con)
-    con.commit()
     rows = con.execute("SELECT r.*, s.name AS student_name, s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id ORDER BY r.id DESC").fetchall()
     con.close()
     html_rows=[]
@@ -10054,6 +10058,8 @@ def _drive_oauth_client_config():
 
 DRIVE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive"]
 DRIVE_OAUTH_TOKEN_SETTING = "google_drive_oauth_credentials"
+_DRIVE_CREDS_CACHE_LOCK = threading.Lock()
+_DRIVE_CREDS_CACHE = None
 
 
 def _drive_oauth_redirect_uri():
@@ -10072,6 +10078,7 @@ def _drive_oauth_fernet():
 
 
 def _drive_save_oauth_credentials(creds):
+    global _DRIVE_CREDS_CACHE
     payload = json.loads(creds.to_json())
     if not payload.get("refresh_token"):
         # Preserve an existing refresh token when Google omits it on a subsequent authorization.
@@ -10080,15 +10087,39 @@ def _drive_save_oauth_credentials(creds):
             payload["refresh_token"] = existing.refresh_token
     encrypted = _drive_oauth_fernet().encrypt(json.dumps(payload).encode("utf-8")).decode("ascii")
     con = db()
-    set_setting(con, DRIVE_OAUTH_TOKEN_SETTING, encrypted)
-    con.commit()
-    con.close()
+    try:
+        set_setting(con, DRIVE_OAUTH_TOKEN_SETTING, encrypted)
+        con.commit()
+    finally:
+        con.close()
+    with _DRIVE_CREDS_CACHE_LOCK:
+        _DRIVE_CREDS_CACHE = creds
+
+
+def _drive_cached_credentials_valid(creds):
+    if not creds or not creds.token or not creds.valid:
+        return False
+    expiry=getattr(creds,"expiry",None)
+    if expiry is None:
+        return True
+    try:
+        return expiry.timestamp() > time.time()+60
+    except Exception:
+        return True
 
 
 def _drive_load_oauth_credentials(*, raise_if_missing=True):
+    global _DRIVE_CREDS_CACHE
+    with _DRIVE_CREDS_CACHE_LOCK:
+        cached=_DRIVE_CREDS_CACHE
+    if _drive_cached_credentials_valid(cached):
+        return cached
+
     con = db()
-    row = con.execute("SELECT value FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)).fetchone()
-    con.close()
+    try:
+        row = con.execute("SELECT value FROM settings WHERE key=?", (DRIVE_OAUTH_TOKEN_SETTING,)).fetchone()
+    finally:
+        con.close()
     if not row or not row["value"]:
         if raise_if_missing:
             raise RuntimeError(
@@ -10116,8 +10147,9 @@ def _drive_load_oauth_credentials(*, raise_if_missing=True):
         raise RuntimeError(
             "Google Drive authorization is not active. Reconnect Google Drive from VYBE Admin → Drive Library."
         )
+    with _DRIVE_CREDS_CACHE_LOCK:
+        _DRIVE_CREDS_CACHE = creds
     return creds
-
 
 def _drive_credentials():
     """Return user OAuth credentials for the owner's normal My Drive."""
@@ -10161,6 +10193,28 @@ def _drive_api(method, path, query=None, body=None):
         url += "?"+urlencode(query)
     return _drive_http(method,url,body=body)
 
+_DRIVE_FOLDER_CACHE_LOCK = threading.Lock()
+_DRIVE_FOLDER_CACHE = {}
+_DRIVE_FOLDER_CACHE_TTL = 120.0
+
+def _drive_folder_cache_get(key):
+    now_m=time.monotonic()
+    with _DRIVE_FOLDER_CACHE_LOCK:
+        item=_DRIVE_FOLDER_CACHE.get(key)
+        if item and item[0] > now_m:
+            return item[1]
+        if item:
+            _DRIVE_FOLDER_CACHE.pop(key,None)
+    return None
+
+def _drive_folder_cache_set(key, folder_id):
+    with _DRIVE_FOLDER_CACHE_LOCK:
+        _DRIVE_FOLDER_CACHE[key]=(time.monotonic()+_DRIVE_FOLDER_CACHE_TTL,str(folder_id))
+        if len(_DRIVE_FOLDER_CACHE)>1000:
+            now_m=time.monotonic()
+            for k,(expires,_) in list(_DRIVE_FOLDER_CACHE.items()):
+                if expires<=now_m: _DRIVE_FOLDER_CACHE.pop(k,None)
+
 def _drive_list_children(parent_id):
     q=f"'{parent_id}' in parents and trashed=false"
     files=[]; token=None
@@ -10173,16 +10227,28 @@ def _drive_list_children(parent_id):
     return files
 
 def _drive_find_or_create_folder(parent_id,name):
-    safe=name.replace("'","\'")
+    # Google Drive query strings require a backslash-escaped apostrophe.
+    safe=str(name).replace("\\","\\\\").replace("'","\\'")
     q=f"'{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and name='{safe}'"
     _,_,data=_drive_api("GET","files",query={"q":q,"pageSize":10,"fields":"files(id,name)"})
     if data.get("files"): return data["files"][0]["id"]
     _,_,created=_drive_api("POST","files",query={"fields":"id,name"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
     return created["id"]
 
-def _drive_category_folder(category,create=True):
-    top,sub,_,_=DRIVE_CATEGORY_MAP[category]; parent=VYBE_DRIVE_ROOT_FOLDER_ID
-    if create: parent=_drive_find_or_create_folder(parent,top)
+def _drive_category_folder(category,create=True,semester=None,subject=None):
+    """Return the Drive folder for a VYBE category using Semester -> Subject hierarchy."""
+    top,sub,kind,_=DRIVE_CATEGORY_MAP[category]
+    semester_name=str(semester or "").strip()[:100] if semester is not None else None
+    subject_name=str(subject or "").strip()[:120] if subject is not None else None
+    if semester_name is not None and semester_name.lower() in {"","all","general","semester","semesters"}: semester_name="Uncategorized"
+    if subject_name is not None and subject_name.lower() in {"","all","general","subject","subjects"}: subject_name="General"
+    key=(category,semester_name,subject_name)
+    if create:
+        cached=_drive_folder_cache_get(key)
+        if cached: return cached
+    parent=VYBE_DRIVE_ROOT_FOLDER_ID
+    if create:
+        parent=_drive_find_or_create_folder(parent,top)
     else:
         found=[x for x in _drive_list_children(parent) if x.get("name")==top and x.get("mimeType")=="application/vnd.google-apps.folder"]
         if not found: return None
@@ -10193,7 +10259,31 @@ def _drive_category_folder(category,create=True):
             found=[x for x in _drive_list_children(parent) if x.get("name")==sub and x.get("mimeType")=="application/vnd.google-apps.folder"]
             if not found: return None
             parent=found[0]["id"]
+    if kind=="resource" and (semester is not None or subject is not None):
+        if create:
+            parent=_drive_find_or_create_folder(parent,semester_name)
+            parent=_drive_find_or_create_folder(parent,subject_name)
+        else:
+            found=[x for x in _drive_list_children(parent) if x.get("name")==semester_name and x.get("mimeType")=="application/vnd.google-apps.folder"]
+            if not found: return None
+            parent=found[0]["id"]
+            found=[x for x in _drive_list_children(parent) if x.get("name")==subject_name and x.get("mimeType")=="application/vnd.google-apps.folder"]
+            if not found: return None
+            parent=found[0]["id"]
+    if create: _drive_folder_cache_set(key,parent)
     return parent
+
+def _drive_move_file_to_folder(file_id,target_folder_id,current_parents=None):
+    if not file_id or not target_folder_id:
+        return False
+    parents=[str(x) for x in (current_parents or []) if x]
+    if str(target_folder_id) in parents and len(parents)==1:
+        return False
+    remove=','.join(x for x in parents if x and str(x)!=str(target_folder_id))
+    query={"addParents":str(target_folder_id),"fields":"id,parents"}
+    if remove: query["removeParents"]=remove
+    _drive_api("PATCH",f"files/{file_id}",query=query,body={})
+    return True
 
 def _drive_delete_file(file_id):
     if not file_id:
@@ -10273,7 +10363,7 @@ def _drive_metadata_values(meta):
 def _drive_store_resource(con, *, title, resource_type, course, semester, subject,
                           description, original_name, mime_type, data, assistant_text):
     category = _drive_category_for_resource_type(resource_type)
-    folder = _drive_category_folder(category, create=True)
+    folder = _drive_category_folder(category, create=True, semester=semester, subject=subject)
     meta = _drive_upload_bytes(original_name, mime_type, folder, data)
     fid, folder_id, web = _drive_metadata_values(meta)
     con.execute(
@@ -10309,33 +10399,75 @@ def _drive_store_timetable(con, *, title, original_name, mime_type, data, assist
     return meta
 
 def _drive_record_file(con, category, meta, title=None, course="All", semester="All", subject="General", description="", assistant_text=""):
+    """Index one Drive file; return True only when a new DB record is created."""
     _,_,kind,mapped=DRIVE_CATEGORY_MAP[category]
     fid=meta.get("id"); name=meta.get("name") or title or "Drive file"; web=meta.get("webContentLink") or meta.get("webViewLink")
+    if not fid:
+        return False
     if kind=="resource":
-        if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone(): return
-        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,mapped,course,semester,subject,description,None,name,meta.get("mimeType"),None,assistant_text,now(),fid,(meta.get("parents") or [None])[0],web)); return
+        if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone(): return False
+        subject=str(subject or "General").strip()[:120] or "General"
+        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,mapped,course,semester,subject,description,None,name,meta.get("mimeType"),None,assistant_text,now(),fid,(meta.get("parents") or [None])[0],web))
+        return True
     if kind=="update":
-        if con.execute("SELECT id FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone(): return
-        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(mapped,"Examination" if mapped!="Result" else "Results",title or Path(name).stem,description,course,semester,subject,"","",None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web)); return
-    if con.execute("SELECT id FROM timetables WHERE drive_file_id=?",(fid,)).fetchone(): return
+        if con.execute("SELECT id FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone(): return False
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(mapped,"Examination" if mapped!="Result" else "Results",title or Path(name).stem,description,course,semester,subject,"","",None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web))
+        return True
+    if con.execute("SELECT id FROM timetables WHERE drive_file_id=?",(fid,)).fetchone(): return False
     con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,name,name,meta.get("mimeType") or "application/octet-stream",None,now(),fid,(meta.get("parents") or [None])[0],web))
+    return True
 
 def drive_sync_all():
-    if False: return {"ok":False,"skipped":True,"message":"Drive not configured"}
+    """Synchronize Drive folders without per-file metadata/permission API calls.
+
+    Drive list responses already contain the metadata VYBE needs. Only newly
+    indexed files receive a public-reader permission, which keeps scheduled
+    syncs fast even when the library contains many files.
+    """
     total=0; errors=[]; con=db()
     try:
         for category in DRIVE_CATEGORY_MAP:
             try:
-                folder=_drive_category_folder(category,create=True)
-                for meta in _drive_list_children(folder):
-                    if meta.get("mimeType")=="application/vnd.google-apps.folder" or meta.get("trashed"): continue
-                    fid=meta.get("id")
+                root=_drive_category_folder(category,create=True)
+                items=_drive_list_children(root)
+                kind=DRIVE_CATEGORY_MAP[category][2]
+                if kind=="resource":
+                    for sem_item in items:
+                        if sem_item.get("trashed"): continue
+                        if sem_item.get("mimeType")!="application/vnd.google-apps.folder":
+                            fid=sem_item.get("id")
+                            if not fid: continue
+                            if _drive_record_file(con,category,sem_item,semester="Uncategorized",subject="General"):
+                                _drive_make_public(fid); total+=1
+                            continue
+                        semester=str(sem_item.get("name") or "").strip()[:100] or "Uncategorized"
+                        subject_items=_drive_list_children(sem_item.get("id"))
+                        for sub_item in subject_items:
+                            if sub_item.get("trashed"): continue
+                            if sub_item.get("mimeType")=="application/vnd.google-apps.folder":
+                                subject=str(sub_item.get("name") or "").strip()[:120] or "General"
+                                file_items=_drive_list_children(sub_item.get("id"))
+                            else:
+                                subject="General"; file_items=[sub_item]
+                            for meta0 in file_items:
+                                if meta0.get("mimeType")=="application/vnd.google-apps.folder" or meta0.get("trashed"): continue
+                                fid=meta0.get("id")
+                                if not fid: continue
+                                if _drive_record_file(con,category,meta0,semester=semester,subject=subject):
+                                    _drive_make_public(fid); total+=1
+                    continue
+                # Non-resource sections keep their existing single-level layout.
+                for item in items:
+                    if item.get("trashed") or item.get("mimeType")=="application/vnd.google-apps.folder": continue
+                    fid=item.get("id")
                     if not fid: continue
-                    _drive_make_public(fid); meta=_drive_file_meta(fid); before=con.execute("SELECT 1 FROM resources WHERE drive_file_id=?",(fid,)).fetchone() if DRIVE_CATEGORY_MAP[category][2]=="resource" else (con.execute("SELECT 1 FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone() if DRIVE_CATEGORY_MAP[category][2]=="update" else con.execute("SELECT 1 FROM timetables WHERE drive_file_id=?",(fid,)).fetchone())
-                    _drive_record_file(con,category,meta); total += 0 if before else 1
-            except Exception as e: errors.append(f"{category}: {e}")
+                    if _drive_record_file(con,category,item):
+                        _drive_make_public(fid); total+=1
+            except Exception as e:
+                errors.append(f"{category}: {e}")
         con.commit()
-    finally: con.close()
+    finally:
+        con.close()
     return {"ok":not errors,"synced":total,"errors":errors}
 
 def init_drive_db():
@@ -10349,6 +10481,13 @@ def init_drive_db():
                 cols={r["name"] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
                 for col in ("drive_file_id","drive_folder_id","drive_web_url"):
                     if col not in cols: con.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        for _idx in (
+            "CREATE INDEX IF NOT EXISTS idx_resources_drive_file ON resources(drive_file_id)",
+            "CREATE INDEX IF NOT EXISTS idx_academic_updates_drive_file ON academic_updates(drive_file_id)",
+            "CREATE INDEX IF NOT EXISTS idx_timetables_drive_file ON timetables(drive_file_id)",
+        ):
+            try: con.execute(_idx)
+            except Exception: pass
         con.commit()
     finally: con.close()
 
