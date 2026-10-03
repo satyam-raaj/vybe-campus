@@ -5883,44 +5883,101 @@ def academics():
 
 ACADEMIC_COLLECTION_CSS = """
 <style>
-.ah-collection{max-width:920px;margin:0 auto;padding:34px 16px 80px;color:#17202b}.ah-filter-head{text-align:center;padding:22px 0 18px}.ah-filter-head h1{margin:7px 0 7px;font-size:clamp(30px,5vw,46px);letter-spacing:-.045em}.ah-filter-head p{margin:0 auto;color:#74808b;font-size:13px;max-width:620px;line-height:1.5}.ah-filter{margin:18px auto 0;max-width:820px;padding:14px;border:1px solid #dce3e8;border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(31,48,66,.05)}.ah-filter-grid{display:grid;grid-template-columns:1fr 1fr 1.25fr auto;gap:9px;align-items:end}.ah-filter label{display:grid;gap:5px;font-size:10px;font-weight:800;color:#697682;text-transform:uppercase;letter-spacing:.06em}.ah-filter select,.ah-filter input{width:100%;height:46px;box-sizing:border-box;border:1px solid #d8e0e6;border-radius:11px;background:#fff;color:#17202b;padding:0 12px;outline:none;font-size:13px}.ah-filter select:focus,.ah-filter input:focus{border-color:#8eb6dc;box-shadow:0 0 0 3px rgba(47,111,202,.08)}.ah-filter button{height:46px;padding:0 17px;border:0;border-radius:11px;background:#2f6fca;color:#fff;font-weight:800;cursor:pointer;white-space:nowrap}.ah-filter-reset{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 12px;border-radius:11px;border:1px solid #d8e0e6;color:#596773;text-decoration:none;font-size:12px;font-weight:700}.ah-filter-actions{display:flex;gap:7px}.ah-results{margin-top:20px}.ah-result{display:flex;align-items:center;gap:14px;padding:14px 15px;margin-bottom:8px;border:1px solid #e0e6eb;border-radius:14px;background:#fff;color:#17202b;text-decoration:none}.ah-result:hover{border-color:#b8d0e7}.ah-result-main{min-width:0;flex:1}.ah-result-title{display:block;font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ah-result-meta{display:block;margin-top:4px;color:#7a8792;font-size:11px}.ah-result-open{font-size:11px;font-weight:800;color:#2f6fca;white-space:nowrap}.ah-empty{text-align:center;padding:28px 12px;color:#7a8792;font-size:12px}.ah-count{text-align:center;color:#87929c;font-size:11px;margin-bottom:10px}.ah-hub-home{max-width:900px;margin:0 auto;padding:42px 18px 80px}.ah-hub-head{text-align:center;padding:10px 0 22px}.ah-hub-head h1{margin:8px 0;font-size:clamp(38px,6vw,56px);letter-spacing:-.055em}.ah-hub-head p{margin:0 auto;max-width:620px;color:#7a8792;font-size:14px;line-height:1.5}.ah-key-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ah-key{display:flex;align-items:center;gap:13px;min-height:78px;padding:14px 15px;border:1px solid #dfe6eb;border-radius:17px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 5px 18px rgba(31,48,66,.035);transition:border-color .15s ease,transform .15s ease}.ah-key:hover{border-color:#b8d0e7;transform:translateY(-1px)}.ah-key-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:12px;background:#eef5fb;color:#2f6fca;font-weight:900}.ah-key span:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}.ah-key strong{font-size:14px}.ah-key small{font-size:11px;color:#7a8792;line-height:1.35}.ah-key b{font-size:21px;color:#7c92a8;font-weight:500}@media(max-width:760px){.ah-filter-grid{grid-template-columns:1fr 1fr}.ah-filter-search{grid-column:1/-1}.ah-filter-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr auto;gap:8px}.ah-filter-actions button{width:100%}.ah-key-grid{grid-template-columns:1fr}.ah-hub-home{padding:28px 12px 70px}.ah-collection{padding:26px 12px 70px}.ah-filter-head{padding:12px 0 14px}.ah-filter-head h1{font-size:32px}.ah-result{padding:13px 12px}.ah-result-open{font-size:10px}}
+.ah-collection{max-width:980px;margin:0 auto;padding:30px 16px 82px;color:#17202b}
+.ah-filter-head{text-align:center;padding:18px 0 20px}
+.ah-filter-head h1{margin:7px 0 8px;font-size:clamp(31px,5vw,46px);letter-spacing:-.045em;line-height:1.02}
+.ah-filter-head p{margin:0 auto;max-width:620px;color:#74808b;font-size:13px;line-height:1.55}
+.ah-choice-panel{margin:18px auto 0;padding:16px;border:1px solid #dfe6eb;border-radius:20px;background:#fff;box-shadow:0 8px 24px rgba(31,48,66,.045)}
+.ah-step{margin-bottom:17px}.ah-step:last-child{margin-bottom:0}
+.ah-step-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.ah-step-title{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#61717f}
+.ah-step-current{font-size:11px;color:#2f6fca;font-weight:800}
+.ah-choice-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px}
+.ah-choice{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:50px;padding:10px 12px;border:1px solid #d9e2e8;border-radius:13px;background:#fff;color:#17202b;text-decoration:none;font-size:12px;font-weight:800;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.ah-choice:hover{border-color:#a9c8e8;background:#f8fbff;transform:translateY(-1px)}
+.ah-choice.active{border-color:#6ea4d8;background:#eef6ff;color:#1f5f9f;box-shadow:0 0 0 2px rgba(47,111,202,.07)}
+.ah-choice-arrow{font-size:15px;color:#8b9aaa;font-weight:500}.ah-choice.active .ah-choice-arrow{color:#2f6fca}
+.ah-back{display:inline-flex;align-items:center;gap:6px;margin-bottom:13px;color:#647482;text-decoration:none;font-size:11px;font-weight:800}.ah-back:hover{color:#2f6fca}
+.ah-results{margin-top:18px}.ah-results-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:9px}.ah-results-title{font-size:13px;font-weight:900}.ah-count{color:#87929c;font-size:10px;font-weight:700}
+.ah-result{display:flex;align-items:center;gap:13px;padding:13px 14px;margin-bottom:8px;border:1px solid #e0e6eb;border-radius:14px;background:#fff;color:#17202b;text-decoration:none;transition:border-color .15s ease,transform .15s ease}.ah-result:hover{border-color:#b8d0e7;transform:translateY(-1px)}
+.ah-result-main{min-width:0;flex:1}.ah-result-title{display:block;font-size:13px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ah-result-meta{display:block;margin-top:4px;color:#7a8792;font-size:10px}.ah-result-open{font-size:10px;font-weight:900;color:#2f6fca;white-space:nowrap}.ah-empty{text-align:center;padding:30px 14px;color:#7a8792;font-size:12px;border:1px dashed #d3dce3;border-radius:14px;background:#fff}
+.ah-hub-home{max-width:900px;margin:0 auto;padding:42px 18px 80px}.ah-hub-head{text-align:center;padding:10px 0 22px}.ah-hub-head h1{margin:8px 0;font-size:clamp(38px,6vw,56px);letter-spacing:-.055em}.ah-hub-head p{margin:0 auto;max-width:620px;color:#7a8792;font-size:14px;line-height:1.5}.ah-key-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ah-key{display:flex;align-items:center;gap:13px;min-height:78px;padding:14px 15px;border:1px solid #dfe6eb;border-radius:17px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 5px 18px rgba(31,48,66,.035);transition:border-color .15s ease,transform .15s ease}.ah-key:hover{border-color:#b8d0e7;transform:translateY(-1px)}.ah-key-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:12px;background:#eef5fb;color:#2f6fca;font-weight:900}.ah-key span:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}.ah-key strong{font-size:14px}.ah-key small{font-size:11px;color:#7a8792;line-height:1.35}.ah-key b{font-size:21px;color:#7c92a8;font-weight:500}
+@media(max-width:760px){.ah-collection{padding:24px 12px 70px}.ah-filter-head{text-align:left;padding:10px 0 15px}.ah-filter-head h1{font-size:32px}.ah-choice-panel{padding:13px;border-radius:17px}.ah-choice-grid{grid-template-columns:1fr 1fr;gap:8px}.ah-choice{min-height:48px;padding:9px 10px}.ah-result{padding:12px}.ah-result-open{font-size:9px}.ah-key-grid{grid-template-columns:1fr}.ah-hub-home{padding:28px 12px 70px}}
+@media(max-width:430px){.ah-choice-grid{grid-template-columns:1fr}.ah-choice-arrow{display:none}}
+@media(prefers-reduced-motion:reduce){.ah-choice,.ah-result,.ah-key{transition:none!important}}
 </style>
 """
 
 def _academic_resource_collection(resource_type, title, subtitle, kicker):
-    """Show a clean filter first; load resource rows only after a semester is selected."""
+    """Choice-first academic resource browser: semester -> subject -> files."""
     con=db()
     semester=" ".join(request.args.get("semester","").strip().split())[:100]
     subject=" ".join(request.args.get("subject","").strip().split())[:120]
-    q=" ".join(request.args.get("q","").strip().split())[:120]
-    semesters=con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester IS NOT NULL AND TRIM(semester)<>'' ORDER BY semester",(resource_type,)).fetchall()
+
+    # Only lightweight metadata is read. File contents are never fetched until a
+    # student has explicitly selected both a semester and subject.
+    sem_rows=con.execute(
+        "SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester IS NOT NULL AND TRIM(semester)<>''",
+        (resource_type,)
+    ).fetchall()
+    semesters=[str(r["semester"]).strip() for r in sem_rows if str(r["semester"] or "").strip()]
+    import re as _re
+    def _sem_sort(value):
+        m=_re.search(r"(\d+)", value or "")
+        return (int(m.group(1)) if m else 999, value.casefold())
+    semesters=sorted(set(semesters), key=_sem_sort)
+
+    subjects=[]
     if semester:
-        subjects=con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND semester=? AND subject IS NOT NULL AND TRIM(subject)<>'' ORDER BY subject",(resource_type,semester)).fetchall()
-    else:
-        subjects=[]
+        subject_rows=con.execute(
+            "SELECT DISTINCT subject FROM resources WHERE resource_type=? AND semester=? AND subject IS NOT NULL AND TRIM(subject)<>''",
+            (resource_type,semester)
+        ).fetchall()
+        subjects=sorted({str(r["subject"]).strip() for r in subject_rows if str(r["subject"] or "").strip()}, key=str.casefold)
+
     rows=[]
-    if semester:
-        clauses=["resource_type=?","semester=?"]
-        params=[resource_type,semester]
-        if subject:
-            clauses.append("subject=?"); params.append(subject)
-        if q:
-            like=f"%{q}%"; clauses.append("(title LIKE ? OR subject LIKE ? OR original_name LIKE ? OR course LIKE ?)"); params.extend([like,like,like,like])
-        rows=con.execute("SELECT id,title,course,semester,subject,original_name,drive_file_id,drive_web_url FROM resources WHERE " + " AND ".join(clauses) + " ORDER BY id DESC LIMIT 80",tuple(params)).fetchall()
+    if semester and subject:
+        rows=con.execute(
+            "SELECT id,title,course,semester,subject,original_name,drive_file_id,drive_web_url FROM resources WHERE resource_type=? AND semester=? AND subject=? ORDER BY id DESC LIMIT 80",
+            (resource_type,semester,subject)
+        ).fetchall()
     con.close()
-    sem_opts=''.join(f'<option value="{esc(r["semester"])}"{" selected" if r["semester"]==semester else ""}>{esc(r["semester"])}</option>' for r in semesters)
-    sub_opts=''.join(f'<option value="{esc(r["subject"])}"{" selected" if r["subject"]==subject else ""}>{esc(r["subject"])}</option>' for r in subjects)
-    if semester:
+
+    def choice_link(name, selected, param):
+        if param=="semester":
+            href=f"{request.path}?semester={quote(name)}"
+        else:
+            href=f"{request.path}?semester={quote(semester)}&subject={quote(name)}"
+        active=" active" if selected else ""
+        return f'<a class="ah-choice{active}" href="{esc(href)}"><span>{esc(name)}</span><span class="ah-choice-arrow">→</span></a>'
+
+    semester_choices="".join(choice_link(item, item==semester, "semester") for item in semesters)
+    subject_choices="".join(choice_link(item, item==subject, "subject") for item in subjects)
+
+    if not semesters:
+        selector='<div class="ah-empty">No semesters are available for this section yet.</div>'
+    else:
+        subject_panel=""
+        if semester:
+            subject_panel=f'''<div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">2 · Choose subject</span><span class="ah-step-current">{esc(semester)}</span></div><div class="ah-choice-grid">{subject_choices or '<div class="ah-empty" style="grid-column:1/-1">No subjects are available for this semester yet.</div>'}</div></div>'''
+        selector=f'''<div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Choose semester</span><span class="ah-step-current">{esc(semester) if semester else "Select one"}</span></div><div class="ah-choice-grid">{semester_choices}</div></div>{subject_panel}'''
+
+    if semester and subject:
         items=[]
         for r in rows:
-            if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]): continue
+            if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]):
+                continue
             meta=" · ".join(x for x in (r["semester"],r["subject"],r["course"]) if x)
             items.append(f'<a class="ah-result" href="/resource/{r["id"]}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"] or r["original_name"] or "Resource")}</span><span class="ah-result-meta">{esc(meta or r["original_name"] or "Academic resource")}</span></span><span class="ah-result-open">Open ↗</span></a>')
-        results="".join(items) or '<div class="ah-empty">No material matches those filters.</div>'
-        count=f'<div class="ah-count">{len(items)} matching file(s)</div>' if items else ''
+        results="".join(items) or '<div class="ah-empty">No files are available for this subject yet.</div>'
+        result_block=f'''<div class="ah-results"><div class="ah-results-head"><span class="ah-results-title">{esc(subject)}</span><span class="ah-count">{len(items)} file(s)</span></div>{results}</div>'''
+        back=f'<a class="ah-back" href="{request.path}?semester={quote(semester)}">← Change subject</a>'
+    elif semester:
+        result_block='<div class="ah-empty">Choose a subject above to see its files.</div>'; back=''
     else:
-        results='<div class="ah-empty">Choose a semester and subject above to view the material.</div>'; count=''
-    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></div><form class="ah-filter" method="get" autocomplete="off"><div class="ah-filter-grid"><label>Semester<select name="semester" required><option value="">Choose semester</option>{sem_opts}</select></label><label>Subject<select name="subject" {"" if semester else "disabled"}><option value="">All subjects</option>{sub_opts}</select></label><label class="ah-filter-search">Search (optional)<input type="search" name="q" value="{esc(q)}" placeholder="File name or keyword"></label><div class="ah-filter-actions"><button type="submit">Show material</button><a class="ah-filter-reset" href="{request.path}">Clear</a></div></div></form><div class="ah-results">{count}{results}</div></section>'''
+        result_block='<div class="ah-empty">Choose a semester to continue.</div>'; back=''
+
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></div><div class="ah-choice-panel">{back}{selector}</div>{result_block}</section>'''
     return layout(title,body)
 
 @app.route("/academic-hub/notes")
