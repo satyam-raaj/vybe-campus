@@ -3504,8 +3504,7 @@ def layout(title, body, admin=False):
             for x in _admin_problem_rows
         ) or '<div class="admin-problem-alert-empty">No active student problems.</div>'
         admin_problem_alert = f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminProblemBell" type="button" aria-label="Reported student problems" aria-expanded="false" aria-controls="vybeAdminProblemPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>{_problem_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminProblemPanel" hidden><div class="admin-problem-alert-head"><div><strong>Reported Problems</strong><small>Student reports needing admin attention</small></div><span id="vybeAdminProblemCount">{_problem_count} open</span></div><div class="admin-problem-alert-list" id="vybeAdminProblemList">{_problem_items}</div><a class="admin-problem-alert-all" href="/admin/problems">Open Problems &amp; Solutions →</a></div></div>"""
-        theme_toggle = '<button class="vybe-theme-toggle" id="vybeThemeToggle" type="button" aria-label="Switch VYBE theme" aria-pressed="false" title="Switch to light theme"><span class="vybe-theme-icon" aria-hidden="true">☀</span><span class="vybe-theme-label">Light</span></button>'
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{theme_toggle}{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -3535,7 +3534,7 @@ def layout(title, body, admin=False):
             )
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">No new updates.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><button class="vybe-theme-toggle" id="vybeThemeToggle" type="button" aria-label="Switch VYBE theme" aria-pressed="false" title="Switch to light theme"><span class="vybe-theme-icon" aria-hidden="true">☀</span><span class="vybe-theme-label">Light</span></button><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
@@ -3761,7 +3760,7 @@ body{background-attachment:scroll!important}
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><script>(function(){{try{{var t=localStorage.getItem("vybe-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.setAttribute("data-vybe-theme",t);}}catch(e){{document.documentElement.setAttribute("data-vybe-theme","dark");}}}})();</script><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}{performance_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}{performance_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -4317,128 +4316,10 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
 @media(prefers-reduced-motion:reduce){{*,*::before,*::after{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}
 
 
-/* ===== VYBE THEME TOGGLE ===== */
-.vybe-theme-toggle{{
-  height:38px;min-width:38px;padding:0 11px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  border:1px solid rgba(88,151,205,.28);border-radius:11px;background:rgba(8,30,52,.72);color:#eef7ff;
-  font:inherit;font-size:11px;font-weight:850;cursor:pointer;white-space:nowrap;touch-action:manipulation;
-  -webkit-tap-highlight-color:transparent;box-shadow:none;transition:background .12s ease,border-color .12s ease,transform .08s ease;
-}}
-.vybe-theme-toggle:hover{{background:rgba(20,67,101,.84);border-color:rgba(103,181,239,.48)}}
-.vybe-theme-toggle:active{{transform:scale(.97)}}
-.vybe-theme-icon{{font-size:15px;line-height:1}}.vybe-theme-label{{line-height:1}}
-@media(max-width:850px){{.vybe-theme-toggle{{width:39px;min-width:39px;height:36px;padding:0;border-radius:10px}}.vybe-theme-label{{display:none}}}}
-html[data-vybe-theme="light"] body{{background:#f4f8fb!important;color:#17202b!important}}
-html[data-vybe-theme="light"] .nav{{background:#fff!important;border-color:#dfe7df!important;box-shadow:0 2px 10px rgba(20,35,28,.06)!important}}
-html[data-vybe-theme="light"] .brandtext{{background:none!important;color:#17202b!important;-webkit-text-fill-color:#17202b!important}}
-html[data-vybe-theme="light"] .student-desktop-links>a,html[data-vybe-theme="light"] .navlinks>a,html[data-vybe-theme="light"] .admin-navlinks>a{{background:#fff!important;color:#17202b!important;border-color:#cfd7de!important}}
-html[data-vybe-theme="light"] .student-header-updates,html[data-vybe-theme="light"] .vybe-header-alert,html[data-vybe-theme="light"] .nav-toggle,html[data-vybe-theme="light"] .admin-menu-toggle{{background:#fff!important;color:#17202b!important;border-color:#cfd7de!important;box-shadow:none!important}}
-html[data-vybe-theme="light"] .vybe-theme-toggle{{background:#f7fafc!important;color:#17202b!important;border-color:#cfd7de!important}}
-html[data-vybe-theme="light"] .card,html[data-vybe-theme="light"] .section,html[data-vybe-theme="light"] .profile-card,html[data-vybe-theme="light"] .id-card-panel,html[data-vybe-theme="light"] .admin-ah-card,html[data-vybe-theme="light"] .admin-list-card,html[data-vybe-theme="light"] .admin-contact-card,html[data-vybe-theme="light"] .settings-tile,html[data-vybe-theme="light"] .publisher-student-card{{background:#fff!important;color:#17202b!important;border-color:#dfe5ea!important;box-shadow:0 5px 16px rgba(31,48,66,.05)!important}}
-html[data-vybe-theme="light"] h1,html[data-vybe-theme="light"] h2,html[data-vybe-theme="light"] h3,html[data-vybe-theme="light"] strong,html[data-vybe-theme="light"] b{{color:#17202b!important}}
-html[data-vybe-theme="light"] .muted,html[data-vybe-theme="light"] p,html[data-vybe-theme="light"] small{{color:#687482!important}}
-html[data-vybe-theme="light"] input,html[data-vybe-theme="light"] textarea,html[data-vybe-theme="light"] select{{background:#fff!important;color:#17202b!important;border-color:#cfd7de!important;box-shadow:none!important}}
-html[data-vybe-theme="light"] input::placeholder,html[data-vybe-theme="light"] textarea::placeholder{{color:#8a96a2!important}}
-html[data-vybe-theme="light"] .student-control,html[data-vybe-theme="light"] .student-search input{{background:#fff!important;color:#17202b!important;border-color:#cfd7de!important;box-shadow:none!important}}
-html[data-vybe-theme="light"] .student-feature,html[data-vybe-theme="light"] .student-mini,html[data-vybe-theme="light"] .student-wide-link,html[data-vybe-theme="light"] .campus-tool,html[data-vybe-theme="light"] .ah-key,html[data-vybe-theme="light"] .ah-choice,html[data-vybe-theme="light"] .ah-result{{background:#fff!important;color:#17202b!important;border-color:#d7e0e7!important;box-shadow:0 4px 13px rgba(31,48,66,.055)!important}}
-html[data-vybe-theme="light"] .student-feature-copy small,html[data-vybe-theme="light"] .student-feature-copy em,html[data-vybe-theme="light"] .student-wide-link small,html[data-vybe-theme="light"] .campus-tool small{{color:#687482!important}}
-html[data-vybe-theme="light"] .student-bottom-nav{{background:rgba(255,255,255,.97)!important;border-color:#dfe5ea!important;box-shadow:0 -3px 12px rgba(20,35,28,.07)!important}}
-html[data-vybe-theme="light"] .student-bottom-nav>a,html[data-vybe-theme="light"] .student-bottom-nav>button{{background:#fff!important;color:#687482!important;border-color:#d5dde4!important}}
-html[data-vybe-theme="light"] .student-bottom-nav>.mobile-home-nav.active{{background:#edf5ff!important;color:#2f6fca!important;border-color:#b8d2ec!important}}
-html[data-vybe-theme="light"] .mobile-nav.open,html[data-vybe-theme="light"] .admin-mobile-menu{{background:#fff!important;color:#17202b!important;border-color:#dfe5ea!important;box-shadow:0 12px 32px rgba(20,35,55,.14)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="light"] .mobile-nav a,html[data-vybe-theme="light"] .admin-mobile-menu>a{{background:#fff!important;color:#17202b!important;border-color:#d8e0e6!important}}
-html[data-vybe-theme="light"] .vybe-header-alert-panel,html[data-vybe-theme="light"] .admin-problem-alert-panel,html[data-vybe-theme="light"] .vybe-assistant-panel{{background:#fff!important;color:#17202b!important;border-color:#dfe5ea!important;box-shadow:0 14px 38px rgba(20,37,55,.14)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="light"] .vybe-header-alert-head,html[data-vybe-theme="light"] .admin-problem-alert-head{{border-color:#edf0f3!important}}
-html[data-vybe-theme="light"] .vybe-header-alert-head strong,html[data-vybe-theme="light"] .admin-problem-alert-head strong,html[data-vybe-theme="light"] .vybe-alert-copy strong,html[data-vybe-theme="light"] .admin-problem-alert-copy strong{{color:#17202b!important}}
-html[data-vybe-theme="light"] .vybe-header-alert-item,html[data-vybe-theme="light"] .admin-problem-alert-item{{background:#f8fbff!important;color:#17202b!important}}
-html[data-vybe-theme="light"] .btn.dark{{background:#172033!important;color:#fff!important}}
-html[data-vybe-theme="light"] th,html[data-vybe-theme="light"] td{{border-color:#e6ebef!important;color:#17202b!important}}
-@media(max-width:850px){{html[data-vybe-theme="light"] .nav:has(.student-nav-compact){{background:#fff!important}}html[data-vybe-theme="light"] .student-bottom-nav{{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}}}
-
-html[data-vybe-theme="dark"] body{{background:#020a16!important;color:#eef6ff!important}}
-html[data-vybe-theme="dark"] .nav{{background:rgba(2,9,18,.96)!important;border-color:rgba(50,135,205,.20)!important;box-shadow:0 2px 12px rgba(0,0,0,.24)!important}}
-html[data-vybe-theme="dark"] .brandtext{{background:linear-gradient(180deg,#fff,#b7cce0)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important;-webkit-text-fill-color:transparent!important}}
-html[data-vybe-theme="dark"] .student-desktop-links>a,html[data-vybe-theme="dark"] .navlinks>a,html[data-vybe-theme="dark"] .admin-navlinks>a{{background:#101a28!important;color:#eaf4ff!important;border-color:#2e455d!important}}
-html[data-vybe-theme="dark"] .student-header-updates,html[data-vybe-theme="dark"] .vybe-header-alert,html[data-vybe-theme="dark"] .nav-toggle,html[data-vybe-theme="dark"] .admin-menu-toggle{{background:#17283c!important;color:#eef7ff!important;border-color:#35516e!important;box-shadow:none!important}}
-html[data-vybe-theme="dark"] .vybe-theme-toggle{{background:#17283c!important;color:#eef7ff!important;border-color:#35516e!important}}
-html[data-vybe-theme="dark"] .card,html[data-vybe-theme="dark"] .section,html[data-vybe-theme="dark"] .profile-card,html[data-vybe-theme="dark"] .id-card-panel,html[data-vybe-theme="dark"] .admin-ah-card,html[data-vybe-theme="dark"] .admin-list-card,html[data-vybe-theme="dark"] .admin-contact-card,html[data-vybe-theme="dark"] .settings-tile,html[data-vybe-theme="dark"] .publisher-student-card{{background:linear-gradient(145deg,#0a1a2b,#06101b)!important;color:#eef6ff!important;border-color:#23425e!important;box-shadow:0 5px 18px rgba(0,0,0,.20)!important}}
-html[data-vybe-theme="dark"] h1,html[data-vybe-theme="dark"] h2,html[data-vybe-theme="dark"] h3,html[data-vybe-theme="dark"] strong,html[data-vybe-theme="dark"] b{{color:#eef6ff!important}}
-html[data-vybe-theme="dark"] .muted,html[data-vybe-theme="dark"] p,html[data-vybe-theme="dark"] small{{color:#a5bad0!important}}
-html[data-vybe-theme="dark"] input,html[data-vybe-theme="dark"] textarea,html[data-vybe-theme="dark"] select{{background:#071726!important;color:#eef6ff!important;border-color:#294967!important;box-shadow:none!important}}
-html[data-vybe-theme="dark"] input::placeholder,html[data-vybe-theme="dark"] textarea::placeholder{{color:#7890a8!important}}
-html[data-vybe-theme="dark"] .student-control,html[data-vybe-theme="dark"] .student-search input{{background:#071726!important;color:#eef6ff!important;border-color:#294967!important;box-shadow:none!important}}
-html[data-vybe-theme="dark"] .student-feature,html[data-vybe-theme="dark"] .student-mini,html[data-vybe-theme="dark"] .student-wide-link,html[data-vybe-theme="dark"] .campus-tool,html[data-vybe-theme="dark"] .ah-key,html[data-vybe-theme="dark"] .ah-choice,html[data-vybe-theme="dark"] .ah-result{{background:linear-gradient(135deg,#0b2136,#06111d)!important;color:#eef6ff!important;border-color:#264764!important;box-shadow:0 4px 13px rgba(0,0,0,.20)!important}}
-html[data-vybe-theme="dark"] .student-feature-copy small,html[data-vybe-theme="dark"] .student-feature-copy em,html[data-vybe-theme="dark"] .student-wide-link small,html[data-vybe-theme="dark"] .campus-tool small{{color:#a5bad0!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav{{background:rgba(2,11,20,.98)!important;border-color:#29425b!important;box-shadow:0 -3px 12px rgba(0,0,0,.28)!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav>a,html[data-vybe-theme="dark"] .student-bottom-nav>button{{background:#101c2b!important;color:#b5c8da!important;border-color:#344c65!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav>.mobile-home-nav.active{{background:#173957!important;color:#69c9ff!important;border-color:#3c8ec4!important}}
-html[data-vybe-theme="dark"] .mobile-nav.open,html[data-vybe-theme="dark"] .admin-mobile-menu{{background:#081727!important;color:#eef6ff!important;border-color:#2c4963!important;box-shadow:0 14px 38px rgba(0,0,0,.36)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] .mobile-nav a,html[data-vybe-theme="dark"] .admin-mobile-menu>a{{background:#0f2135!important;color:#eef6ff!important;border-color:#2f4c68!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-panel,html[data-vybe-theme="dark"] .admin-problem-alert-panel,html[data-vybe-theme="dark"] .vybe-assistant-panel{{background:#081727!important;color:#eef6ff!important;border-color:#2c4963!important;box-shadow:0 14px 38px rgba(0,0,0,.36)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-head,html[data-vybe-theme="dark"] .admin-problem-alert-head{{border-color:#20384f!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-head strong,html[data-vybe-theme="dark"] .admin-problem-alert-head strong,html[data-vybe-theme="dark"] .vybe-alert-copy strong,html[data-vybe-theme="dark"] .admin-problem-alert-copy strong{{color:#eef6ff!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-item,html[data-vybe-theme="dark"] .admin-problem-alert-item{{background:#102236!important;color:#eef6ff!important}}
-html[data-vybe-theme="dark"] .btn.dark{{background:#102238!important;color:#eef7ff!important;border-color:#2e4962!important}}
-html[data-vybe-theme="dark"] th,html[data-vybe-theme="dark"] td{{border-color:#20384f!important;color:#eaf4ff!important}}
-@media(max-width:850px){{html[data-vybe-theme="dark"] .nav:has(.student-nav-compact){{background:#081727!important;box-shadow:0 2px 10px rgba(0,0,0,.28)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}}}
-
-/* VYBE Midnight theme polish: a restrained blue-black surface with clear hierarchy. */
-html[data-vybe-theme="dark"] body{{background:radial-gradient(900px 420px at 50% -180px,rgba(31,116,179,.16),transparent 65%),linear-gradient(180deg,#030b15 0%,#05111d 48%,#020812 100%)!important;color:#edf6ff!important}}
-html[data-vybe-theme="dark"] .wrap{{background:transparent!important}}
-html[data-vybe-theme="dark"] .card,html[data-vybe-theme="dark"] .profile-card,html[data-vybe-theme="dark"] .id-card-panel,html[data-vybe-theme="dark"] .admin-ah-card,html[data-vybe-theme="dark"] .admin-list-card,html[data-vybe-theme="dark"] .admin-contact-card,html[data-vybe-theme="dark"] .settings-tile,html[data-vybe-theme="dark"] .publisher-student-card{{background:linear-gradient(145deg,#0b1c2d 0%,#071320 100%)!important;border-color:#234560!important;color:#edf6ff!important;box-shadow:0 8px 24px rgba(0,0,0,.22)!important}}
-html[data-vybe-theme="dark"] .student-feature,html[data-vybe-theme="dark"] .student-mini,html[data-vybe-theme="dark"] .student-wide-link,html[data-vybe-theme="dark"] .campus-tool,html[data-vybe-theme="dark"] .ah-key,html[data-vybe-theme="dark"] .ah-choice,html[data-vybe-theme="dark"] .ah-result{{background:linear-gradient(145deg,#0c2237 0%,#071420 100%)!important;border-color:#28506d!important;box-shadow:0 4px 14px rgba(0,0,0,.18)!important}}
-html[data-vybe-theme="dark"] .student-feature-copy small,html[data-vybe-theme="dark"] .student-feature-copy em,html[data-vybe-theme="dark"] .student-wide-link small,html[data-vybe-theme="dark"] .campus-tool small,html[data-vybe-theme="dark"] .small,html[data-vybe-theme="dark"] .muted{{color:#9fb6c9!important}}
-html[data-vybe-theme="dark"] .badge,html[data-vybe-theme="dark"] .pill{{background:#0e2235!important;border-color:#2a4c67!important;color:#b8cee0!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] input,html[data-vybe-theme="dark"] textarea,html[data-vybe-theme="dark"] select{{background:#081826!important;border-color:#2b4d67!important;color:#eef7ff!important}}
-html[data-vybe-theme="dark"] input:focus,html[data-vybe-theme="dark"] textarea:focus,html[data-vybe-theme="dark"] select:focus{{border-color:#4f9bc8!important;box-shadow:0 0 0 3px rgba(53,151,204,.12)!important}}
-html[data-vybe-theme="dark"] .btn{{box-shadow:none!important}}
-html[data-vybe-theme="dark"] .btn.accent{{background:linear-gradient(180deg,#72c9ff,#3e9fd7)!important;color:#06121e!important;border-color:#72c9ff!important}}
-html[data-vybe-theme="dark"] .btn.dark{{background:#10263a!important;color:#e9f6ff!important;border-color:#31536d!important}}
-html[data-vybe-theme="dark"] .btn.good{{background:#123127!important;color:#8ee3a7!important;border-color:#27583e!important}}
-html[data-vybe-theme="dark"] .btn.danger{{background:#341b23!important;color:#ffb3bd!important;border-color:#6b3541!important}}
-html[data-vybe-theme="dark"] .flash{{background:#0b1d2c!important;border-color:#27465f!important;color:#e8f3fb!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] .tablewrap{{background:#07131f!important;border-color:#24445d!important}}
-html[data-vybe-theme="dark"] th,html[data-vybe-theme="dark"] td{{color:#d8e9f5!important;border-color:#1d3a51!important}}
-html[data-vybe-theme="dark"] .vybe-theme-toggle{{background:linear-gradient(145deg,#17334b,#0d2235)!important;color:#ecf7ff!important;border-color:#3c6580!important;box-shadow:0 3px 10px rgba(0,0,0,.15)!important}}
-html[data-vybe-theme="dark"] .vybe-theme-toggle:hover{{background:linear-gradient(145deg,#1d4160,#102b42)!important;border-color:#5b98bd!important}}
-html[data-vybe-theme="dark"] .student-header-updates,html[data-vybe-theme="dark"] .vybe-header-alert,html[data-vybe-theme="dark"] .nav-toggle,html[data-vybe-theme="dark"] .admin-menu-toggle{{background:#11273b!important;border-color:#355673!important;color:#eaf6ff!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav{{background:rgba(5,16,28,.98)!important;border-color:#28475f!important;box-shadow:0 -4px 16px rgba(0,0,0,.30)!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav>a,html[data-vybe-theme="dark"] .student-bottom-nav>button{{background:#102337!important;border-color:#31516b!important;color:#b8cfdf!important}}
-html[data-vybe-theme="dark"] .student-bottom-nav>.mobile-home-nav.active{{background:#123a59!important;color:#70ccff!important;border-color:#3985b4!important}}
-html[data-vybe-theme="dark"] .mobile-nav.open,html[data-vybe-theme="dark"] .admin-mobile-menu{{background:#081827!important;border-color:#2d4f68!important;box-shadow:0 18px 44px rgba(0,0,0,.38)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] .mobile-nav a,html[data-vybe-theme="dark"] .admin-mobile-menu>a{{background:#0e2235!important;color:#e9f5fc!important;border-color:#2b4c66!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-panel,html[data-vybe-theme="dark"] .admin-problem-alert-panel,html[data-vybe-theme="dark"] .vybe-assistant-panel{{background:#081827!important;border-color:#2d4f68!important;box-shadow:0 18px 44px rgba(0,0,0,.38)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-item,html[data-vybe-theme="dark"] .admin-problem-alert-item{{background:#0d2133!important;color:#e8f4fb!important;border-color:#24455f!important}}
-html[data-vybe-theme="dark"] .vybe-header-alert-empty,html[data-vybe-theme="dark"] .admin-problem-alert-empty{{color:#93abc0!important}}
-html[data-vybe-theme="dark"] .id-card-current,html[data-vybe-theme="dark"] .profile-solution-item{{background:#081724!important;border-color:#24465f!important}}
-html[data-vybe-theme="dark"] .upload-file{{background:#0a1b2b!important;border-color:#38627d!important;color:#77cfff!important}}
-html[data-vybe-theme="dark"] .profile-page .profile-delete{{color:#ff9eab!important}}
-html[data-vybe-theme="dark"]{{color-scheme:dark}}
-html[data-vybe-theme="light"]{{color-scheme:light}}
-html[data-vybe-theme="dark"] .profile-page .id-upload-status{{display:block!important;min-height:16px!important;margin-top:7px!important;color:#84abc5!important;font-size:11px!important}}
 </style></head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
 <script>(function(){{
-const themeButton=document.getElementById("vybeThemeToggle");
-function applyTheme(theme,save){{
-  const t=theme==="light"?"light":"dark";
-  document.documentElement.setAttribute("data-vybe-theme",t);
-  if(save){{try{{localStorage.setItem("vybe-theme",t);}}catch(e){{}}}}
-  if(themeButton){{
-    const icon=themeButton.querySelector(".vybe-theme-icon");
-    const label=themeButton.querySelector(".vybe-theme-label");
-    const light=t==="light";
-    if(icon)icon.textContent=light?"☾":"☀";
-    if(label)label.textContent=light?"Dark":"Light";
-    themeButton.setAttribute("aria-pressed",light?"true":"false");
-    themeButton.setAttribute("title",light?"Switch to dark theme":"Switch to light theme");
-  }}
-}}
-const initial=document.documentElement.getAttribute("data-vybe-theme")||"dark";
-applyTheme(initial,false);
-if(themeButton)themeButton.addEventListener("click",function(e){{e.preventDefault();e.stopPropagation();const next=document.documentElement.getAttribute("data-vybe-theme")==="light"?"dark":"light";applyTheme(next,true);}});
-}})();</script><script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
 const menu=document.getElementById("vybeMobileNav");
 const bottomMenu=document.querySelector(".mobile-menu-nav");
@@ -5857,36 +5738,36 @@ def profile():
     sid=session["student_db_id"]
     if request.method=="POST":
         action=request.form.get("action","")
-        if action in {"id_card","admit_card"}:
-            f=request.files.get("id_card") or request.files.get("admit_card")
+        if action == "id_card":
+            f=request.files.get("id_card")
             if not f or not f.filename:
                 con.close(); flash("Choose your ID card file first."); return redirect(url_for("profile"))
             original=Path(f.filename).name[:240]
             suffix=Path(original).suffix.lower()
             if suffix not in {".pdf",".jpg",".jpeg",".png",".webp"}:
                 con.close(); flash("ID card must be a PDF, JPG, JPEG, PNG or WEBP file."); return redirect(url_for("profile"))
-            data=f.read(6*1024*1024+1)
+            data=f.read(3*1024*1024+1)
             if not data:
                 con.close(); flash("The selected ID card is empty. Choose another file."); return redirect(url_for("profile"))
-            if len(data)>6*1024*1024:
-                con.close(); flash("ID card must be 6 MB or smaller."); return redirect(url_for("profile"))
+            if len(data)>3*1024*1024:
+                con.close(); flash("ID card must be 3 MB or smaller."); return redirect(url_for("profile"))
             mime=f.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
             stored=secrets.token_hex(16)+suffix
             try:
-                con.execute("UPDATE students SET id_card_file_name=?,id_card_original_name=?,id_card_mime_type=?,id_card_file_data=?,admit_card_file_name=?,admit_card_original_name=?,admit_card_mime_type=?,admit_card_file_data=? WHERE id=?",(stored,original,mime,data,stored,original,mime,data,sid))
+                con.execute("UPDATE students SET id_card_file_name=?,id_card_original_name=?,id_card_mime_type=?,id_card_file_data=? WHERE id=?",(stored,original,mime,data,sid))
                 con.commit()
             except Exception:
                 try: con.rollback()
                 except Exception: pass
                 app.logger.exception("Student profile ID card upload failed")
-                con.close(); flash("Could not save your ID card. Please try again with a PDF or image up to 6 MB."); return redirect(url_for("profile"))
+                con.close(); flash("Could not save your ID card. Please try again with a PDF or image up to 3 MB."); return redirect(url_for("profile"))
             con.close(); flash("ID card saved privately to your VYBE profile."); return redirect(url_for("profile"))
-        if action in {"delete_id_card","delete_admit_card"}:
-            con.execute("UPDATE students SET id_card_file_name=NULL,id_card_original_name=NULL,id_card_mime_type=NULL,id_card_file_data=NULL,admit_card_file_name=NULL,admit_card_original_name=NULL,admit_card_mime_type=NULL,admit_card_file_data=NULL WHERE id=?",(sid,))
+        if action == "delete_id_card":
+            con.execute("UPDATE students SET id_card_file_name=NULL,id_card_original_name=NULL,id_card_mime_type=NULL,id_card_file_data=NULL WHERE id=?",(sid,))
             con.commit(); con.close(); flash("ID card removed from your profile."); return redirect(url_for("profile"))
         con.close(); return redirect(url_for("profile"))
 
-    st=con.execute("SELECT name,student_id,reputation_points,helpful_answers,accepted_solutions,COALESCE(id_card_original_name,admit_card_original_name) AS id_card_original_name FROM students WHERE id=?",(sid,)).fetchone()
+    st=con.execute("SELECT name,student_id,reputation_points,helpful_answers,accepted_solutions,id_card_original_name FROM students WHERE id=?",(sid,)).fetchone()
     accepted=con.execute("SELECT issue_title,solution_text,solver_name,accepted_at FROM accepted_solutions WHERE student_id=? ORDER BY id DESC LIMIT 30",(sid,)).fetchall()
     given=con.execute("SELECT s.id,i.title AS issue_title,s.text AS solution_text,s.created_at,COALESCE(i.status,'') AS issue_status FROM solutions s LEFT JOIN issues i ON i.id=s.issue_id WHERE s.student_id=? ORDER BY s.id DESC LIMIT 50",(sid,)).fetchall()
     con.close()
@@ -5932,7 +5813,7 @@ if(idForm)idForm.addEventListener('submit',()=>{if(idButton){idButton.disabled=t
 @student_required
 def profile_id_card():
     con=db()
-    r=con.execute("SELECT COALESCE(id_card_file_data,admit_card_file_data) AS file_data, COALESCE(id_card_mime_type,admit_card_mime_type) AS mime_type, COALESCE(id_card_original_name,admit_card_original_name) AS original_name FROM students WHERE id=?",(session["student_db_id"],)).fetchone()
+    r=con.execute("SELECT id_card_file_data AS file_data, id_card_mime_type AS mime_type, id_card_original_name AS original_name FROM students WHERE id=?",(session["student_db_id"],)).fetchone()
     con.close()
     if not r or not r["file_data"]: abort(404)
     return send_file(io.BytesIO(bytes(r["file_data"])),mimetype=r["mime_type"] or "application/octet-stream",as_attachment=False,download_name=r["original_name"] or "id-card")
