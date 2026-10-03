@@ -3614,6 +3614,9 @@ body{background-attachment:scroll!important}
 .student-feature,.student-mini,.student-link,.home-action,.home-update-panel{box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
 .student-feature:hover,.student-mini:hover,.student-link:hover,.home-action:hover{transform:none!important;box-shadow:0 4px 14px rgba(20,30,20,.045)!important}
 
+.admin-students-desktop{display:block!important}
+.admin-students-mobile{display:none!important}
+
 @media(max-width:850px){
   body{background:#f4f8fb!important}
   .page-home .home-live-glow{display:none!important}
@@ -3698,86 +3701,40 @@ body{background-attachment:scroll!important}
   }
   .page-home .home-update>b{font-size:18px!important}
 
-  /* Admin Students: desktop table becomes readable stacked student cards. */
-  .admin-students-page .tablewrap{
-    overflow:visible!important;
-    background:transparent!important;
-    border:0!important;
-    box-shadow:none!important;
-    padding:0!important;
-  }
-  .admin-students-page table,
-  .admin-students-page tbody,
-  .admin-students-page tr,
-  .admin-students-page td{
-    display:block!important;
-    width:100%!important;
-    min-width:0!important;
-    max-width:100%!important;
-    box-sizing:border-box!important;
-  }
-  .admin-students-page thead{display:none!important}
-  .admin-students-page tbody{display:grid!important;gap:12px!important}
-  .admin-students-page tr{
-    margin:0!important;
-    padding:13px 14px!important;
-    border:1px solid #dfe5ea!important;
-    border-radius:18px!important;
-    background:#fff!important;
-    box-shadow:0 3px 10px rgba(20,30,20,.045)!important;
-  }
-  .admin-students-page td{
-    display:flex!important;
-    align-items:flex-start!important;
-    justify-content:space-between!important;
-    gap:12px!important;
-    padding:9px 0!important;
-    border-bottom:1px solid #edf0f2!important;
-    overflow-wrap:anywhere!important;
-  }
-  .admin-students-page td:before{
-    flex:0 0 84px!important;
-    color:#7a8793!important;
-    font-size:10px!important;
-    font-weight:800!important;
-    text-transform:uppercase!important;
-    letter-spacing:.05em!important;
-  }
-  .admin-students-page td:nth-child(1):before{content:"Student"}
-  .admin-students-page td:nth-child(2):before{content:"Student ID"}
-  .admin-students-page td:nth-child(3):before{content:"Status"}
-  .admin-students-page td:nth-child(4):before{content:"Registered"}
-  .admin-students-page td:nth-child(5):before{content:"Actions"}
-  .admin-students-page td:last-child{
-    display:block!important;
-    border-bottom:0!important;
-    padding-bottom:2px!important;
-  }
-  .admin-students-page td:last-child:before{
-    display:block!important;
-    margin-bottom:8px!important;
-  }
-  .admin-students-page .student-presence{
-    min-width:0!important;
-    max-width:calc(100% - 96px)!important;
-    overflow:hidden!important;
-    text-overflow:ellipsis!important;
-  }
-  .admin-students-page td:last-child .actions{
-    display:grid!important;
-    grid-template-columns:1fr!important;
-    gap:7px!important;
-    margin:0!important;
-  }
-  .admin-students-page td:last-child .actions form{margin:0!important}
-  .admin-students-page td:last-child .actions .btn{
-    width:100%!important;
-    min-height:42px!important;
-    box-sizing:border-box!important;
-  }
-  .admin-students-page td:last-child>div[style]{margin-top:8px!important}
-}
-"""
+  /* Admin Students: keep desktop as a table, use compact cards on phones. */
+  .admin-students-desktop{overflow:auto!important}
+  .admin-students-page .admin-student-actions{display:flex!important;gap:9px!important;flex-wrap:wrap!important;align-items:center!important}
+  .admin-students-page .admin-student-actions form{margin:0!important}
+  .admin-students-page .admin-student-actions .btn{min-height:42px!important}
+  .admin-students-page .admin-student-count{display:flex!important;align-items:center!important;gap:7px!important;width:max-content!important;padding:7px 10px!important;border:1px solid #dfe5ea!important;border-radius:11px!important;background:#fff!important}
+  .admin-students-page .admin-student-count strong{font-size:16px!important}
+  .admin-students-page .admin-student-count small{font-size:9px!important;color:#7a8793!important;text-transform:uppercase!important}
+  .admin-students-page .admin-students-warning{margin:10px 0;padding:11px 12px;border:1px solid #efd0d3;border-radius:12px;background:#fff7f8;color:#9f4a51;font-size:12px}
+  .admin-student-card{padding:14px;border:1px solid #dfe5ea;border-radius:17px;background:#fff;box-shadow:0 3px 10px rgba(20,30,20,.045)}
+  .admin-student-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .admin-student-person{display:flex;align-items:flex-start;gap:9px;min-width:0}
+  .admin-student-person>div{min-width:0}
+  .admin-student-person strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#17202b;font-size:14px}
+  .admin-student-person small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#718090;font-size:10px}
+  .admin-student-meta{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}
+  .admin-student-meta>div{padding:9px 10px;border:1px solid #e7ebef;border-radius:12px;background:#fafbfd;min-width:0}
+  .admin-student-meta small{display:block;color:#7a8793;font-size:9px;text-transform:uppercase;font-weight:800;letter-spacing:.04em}
+  .admin-student-meta strong{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344150;font-size:11px}
+  .admin-student-card-actions{display:grid;grid-template-columns:1fr;gap:7px}
+  .admin-student-card-actions form{margin:0!important}
+  .admin-student-card-actions .btn{width:100%!important;min-height:42px!important;box-sizing:border-box!important}
+  .admin-students-empty{padding:22px;text-align:center;color:#687482}
+  @media(max-width:850px){
+    .admin-students-desktop{display:none!important}
+    .admin-students-mobile{display:grid!important;gap:10px!important}
+    .admin-students-page{padding-left:0!important;padding-right:0!important}
+    .admin-students-page .admin-page-head{display:block!important;margin-bottom:12px!important}
+    .admin-students-page .admin-page-head p{max-width:100%!important;font-size:13px!important;line-height:1.45!important}
+    .admin-students-page .admin-student-count{margin-top:10px!important}
+    .admin-students-page .admin-student-actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+    .admin-students-page .admin-student-actions>a,.admin-students-page .admin-student-actions>form{width:100%!important}
+    .admin-students-page .admin-student-actions .btn{width:100%!important}
+  }"""
     admin_problem_alert_runtime = r"""
 <script>
 (function(){
@@ -8016,39 +7973,75 @@ def admin_status():
 @app.route("/admin/students")
 @admin_required
 def admin_students():
-    con = db()
-    students = con.execute("SELECT id,name,student_id,status,created_at,last_login,last_seen FROM students ORDER BY id DESC LIMIT 300").fetchall()
-    # Load publisher access in one query instead of opening a DB connection per student.
-    access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
-    con.close()
-    publisher_by_student = {
-        str(r["key"])[len("content_manager_"):]: (r["value"] == "1")
-        for r in access_rows
-        if str(r["key"]).startswith("content_manager_")
-    }
-    rows = ""
-    for s in students:
-        if s["status"] == "pending": action = f'<form method="post" action="/admin/student/{s["id"]}/approve"><button class="btn good">Approve</button></form>'
-        elif s["status"] == "approved": action = f'<form method="post" action="/admin/student/{s["id"]}/block"><button class="btn danger">Block</button></form>'
-        else: action = f'<form method="post" action="/admin/student/{s["id"]}/unblock"><button class="btn good">Unblock</button></form>'
-        online = student_is_online(s["last_seen"]) if s["status"] == "approved" else False
-        dot_class = "is-online" if online else "is-offline"
-        dot_title = "Online" if online else "Offline"
-        presence = f'<span class="presence-dot {dot_class}" title="{dot_title}"></span>'
-        sid_num = s["id"]
-        student_name = esc(s["name"])
-        student_sid = esc(s["student_id"])
-        student_status = esc(s["status"])
-        created_at = esc(s["created_at"])
-        publisher = bool(publisher_by_student.get(str(sid_num), False))
-        if s["status"] == "approved":
-            access_action = (f'<form method="post" action="/admin/content-access/{sid_num}/revoke"><button class="btn" onclick="return confirm(\'Remove publisher access from this student?\')">Revoke publisher</button></form>' if publisher else f'<form method="post" action="/admin/content-access/{sid_num}/grant"><button class="btn accent">Give publisher access</button></form>')
+    # Lightweight, schema-tolerant Students & Access management page.
+    students = []
+    publisher_by_student = {}
+    db_error = None
+    con = None
+    try:
+        con = db()
+        try:
+            raw_students = con.execute(
+                "SELECT id,name,student_id,status,created_at FROM students ORDER BY id DESC LIMIT 300"
+            ).fetchall()
+        except Exception:
+            raw_students = con.execute(
+                "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
+            ).fetchall()
+        try:
+            access_rows = con.execute(
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'"
+            ).fetchall()
+        except Exception:
+            access_rows = []
+        publisher_by_student = {
+            str(r["key"])[len("content_manager_"):]: str(r["value"]) == "1"
+            for r in access_rows
+            if str(r["key"]).startswith("content_manager_")
+        }
+        for row in raw_students:
+            students.append({
+                "id": int(row["id"]),
+                "name": str(row["name"] or "Unnamed student"),
+                "student_id": str(row["student_id"] or ""),
+                "status": str(row["status"] or "pending") if "status" in row.keys() else "pending",
+                "created_at": str(row["created_at"] or "") if "created_at" in row.keys() else "",
+            })
+    except Exception as exc:
+        db_error = exc
+    finally:
+        if con is not None:
+            try: con.close()
+            except Exception: pass
+
+    card_rows=[]
+    desktop_rows=[]
+    for srow in students:
+        sid=srow["id"]
+        status=srow["status"] if srow["status"] in {"pending","approved","blocked"} else "pending"
+        publisher=publisher_by_student.get(str(sid),False)
+        if status=="pending":
+            state=f'<form method="post" action="/admin/student/{sid}/approve"><button class="btn good" type="submit">Approve</button></form>'
+        elif status=="approved":
+            state=f'<form method="post" action="/admin/student/{sid}/block"><button class="btn danger" type="submit">Block</button></form>'
         else:
-            access_action = '<span class="small muted">Approve first</span>'
-        access_label = '<span class="pill">Publisher</span>' if publisher else '<span class="small muted">Student</span>'
-        rows += f'<tr><td><span class="student-presence">{presence}{student_name}</span></td><td>{student_sid}</td><td><span class="pill">{student_status}</span></td><td>{created_at}</td><td><div class="actions">{action}{access_action}<form method="post" action="/admin/student/{sid_num}/delete" onsubmit="return confirm(&quot;Delete this student and all dependent records?&quot;)"><button class="btn danger">Delete</button></form></div><div style="margin-top:6px">{access_label}</div></td></tr>'
-    body = f'''<section class="section admin-students-page" id="pending"><h1>Students.</h1><p class="muted">Approve or block students, or give a trusted student limited Publisher access. Publisher access allows creating announcements and upcoming events only; deleting them remains admin-only.</p><div class="actions"><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger">Delete all students</button></form></div><div class="card tablewrap"><table><thead><tr><th>Name / Presence</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>{rows or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div></section>'''
-    return layout("Students", body, admin=True)
+            state=f'<form method="post" action="/admin/student/{sid}/unblock"><button class="btn good" type="submit">Unblock</button></form>'
+        if status=="approved":
+            access=(f'<form method="post" action="/admin/content-access/{sid}/revoke"><button class="btn" type="submit">Revoke publisher</button></form>' if publisher else f'<form method="post" action="/admin/content-access/{sid}/grant"><button class="btn accent" type="submit">Give publisher access</button></form>')
+        else:
+            access='<span class="small muted">Approve first</span>'
+        delete=f'<form method="post" action="/admin/student/{sid}/delete" onsubmit="return confirm(\'Delete this student and all dependent records?\')"><button class="btn danger" type="submit">Delete</button></form>'
+        dot='is-online' if status=="approved" else 'is-offline'
+        card_rows.append(f'<article class="admin-student-card"><div class="admin-student-card-head"><div class="admin-student-person"><span class="presence-dot {dot}"></span><div><strong>{esc(srow["name"])}</strong><small>{esc(srow["student_id"]) or "No Student ID"}</small></div></div><span class="pill">{esc(status)}</span></div><div class="admin-student-meta"><div><small>Registered</small><strong>{esc(srow["created_at"]) or "—"}</strong></div><div><small>Access</small><strong>{"Publisher" if publisher else "Student"}</strong></div></div><div class="admin-student-card-actions">{state}{access}{delete}</div></article>')
+        desktop_rows.append(f'<tr><td><span class="student-presence"><span class="presence-dot {dot}"></span>{esc(srow["name"])}</span></td><td>{esc(srow["student_id"])}</td><td><span class="pill">{esc(status)}</span></td><td>{esc(srow["created_at"])}</td><td><div class="actions">{state}{access}{delete}</div></td></tr>')
+
+    warning='<div class="admin-students-warning">Students could not be loaded right now. Please refresh once the database connection is available.</div>' if db_error else ''
+    body=f'''<section class="section admin-students-page" id="pending"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">STUDENTS / ACCESS</span><h1>Students.</h1><p class="muted">Approve students, block or unblock access, and manage limited publisher access.</p></div><div class="admin-student-count"><strong>{len(students)}</strong><small>students shown</small></div></div>{warning}<div class="admin-student-actions"><a class="btn" href="/admin/publisher-access">Manage Publisher Access →</a><form method="post" action="/admin/students/delete-all" onsubmit="return confirm('Delete ALL students and their dependent records?')"><button class="btn danger" type="submit">Delete all students</button></form></div><div class="admin-students-desktop card tablewrap"><table><thead><tr><th>Name</th><th>Student ID</th><th>Status</th><th>Registered</th><th>Access / Actions</th></tr></thead><tbody>{''.join(desktop_rows) or '<tr><td colspan="5">No students.</td></tr>'}</tbody></table></div><div class="admin-students-mobile">{''.join(card_rows) or '<div class="card admin-students-empty">No students.</div>'}</div></section>'''
+    try:
+        return layout("Students & Access", body, admin=True)
+    except Exception:
+        app.logger.exception("Students & Access layout failed")
+        return f'''<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Students & Access · VYBE</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#f3f7fb;color:#17202b;font-family:system-ui,sans-serif}}main{{max-width:1000px;margin:auto;padding:16px 12px 60px}}a,.btn{{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 14px;border:1px solid #d6e0e8;border-radius:12px;background:#fff;color:#17202b;text-decoration:none;font-weight:700}}.toolbar{{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}}.student{{padding:14px;border:1px solid #dfe5ea;border-radius:17px;background:#fff;margin-bottom:10px}}.student strong,.student small{{display:block}}.student small{{margin-top:4px;color:#718090;font-size:11px}}.actions{{display:grid;gap:7px;margin-top:12px}}.danger{{color:#a33f48;border-color:#efc8cc;background:#fff7f7}}.good{{color:#3d814a;background:#f3fbf5;border-color:#cfe6d4}}.accent{{background:#2f6fca;color:#fff;border-color:#2f6fca}}@media(min-width:701px){{.mobile-only{{display:none}}.toolbar{{max-width:650px}}}}@media(max-width:700px){{main{{padding:12px 10px 80px}}.toolbar{{grid-template-columns:1fr}}}}</style></head><body><main><a href="/admin/panel">← Dashboard</a><h1>Students.</h1><p>Approve students, block or unblock access, and manage limited publisher access.</p><div class="toolbar"><a href="/admin/publisher-access">Manage Publisher Access →</a><form method="post" action="/admin/students/delete-all"><button class="btn danger" type="submit">Delete all students</button></form></div>{''.join(card_rows) or '<div class="student">No students.</div>'}</main></body></html>'''
 
 @app.route("/admin/student/<int:sid>/<action>", methods=["POST"])
 @admin_required
@@ -8353,7 +8346,6 @@ def admin_publisher_access():
 
     approved = con.execute("SELECT id,name,student_id,status FROM students WHERE status='approved' ORDER BY LOWER(name), id LIMIT 300").fetchall()
     setting_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'").fetchall()
-    con.close()
     setting_map = {str(r["key"]): r["value"] for r in setting_rows}
     rows=[]
     allowed={k for k,_,_ in PUBLISHER_PERMISSION_CATALOG}
