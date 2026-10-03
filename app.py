@@ -135,6 +135,39 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
+_DB_LOCAL = threading.local()
+
+
+def _warm_database_connection():
+    """Reuse one database connection per warm worker/thread.
+
+    The old implementation opened a brand-new PostgreSQL TLS connection for
+    every HTTP request. On serverless/mobile traffic that connection setup can
+    dominate the actual page query time. A warm connection is rolled back at
+    the end of each request and reused safely by the next request handled by
+    the same worker. Broken/closed connections are discarded automatically.
+    """
+    cached = getattr(_DB_LOCAL, "connection", None)
+    if cached is not None:
+        try:
+            if not bool(getattr(cached, "closed", False)) and not bool(getattr(cached, "broken", False)):
+                return cached
+        except Exception:
+            pass
+        try:
+            cached.close()
+        except Exception:
+            pass
+        _DB_LOCAL.connection = None
+
+    pg_url = DATABASE_URL
+    if _PRODUCTION and "sslmode=" not in pg_url.lower():
+        pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+    conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
+    _DB_LOCAL.connection = conn
+    return conn
+
+
 class DB:
     """Tiny database abstraction for SQLite and PostgreSQL.
 
@@ -144,16 +177,14 @@ class DB:
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
         self._request_scoped = False
+        self._persistent = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            # psycopg uses the DATABASE_URL supplied by the managed database.
-            # Enforce TLS unless the URL explicitly requests a local/insecure
-            # connection (useful only for local development).
-            pg_url = DATABASE_URL
-            if _PRODUCTION and "sslmode=" not in pg_url.lower():
-                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
-            self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
+            # Reuse a warm connection instead of paying a PostgreSQL/TLS
+            # connection handshake on every request.
+            self.conn = _warm_database_connection()
+            self._persistent = True
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -209,10 +240,13 @@ def _close_request_db(_exc=None):
             con.conn.rollback()
         except Exception:
             pass
-        try:
-            con.conn.close()
-        except Exception:
-            pass
+        # Keep the warm PostgreSQL connection for the next request handled by
+        # this worker. SQLite remains request-scoped as before.
+        if not getattr(con, "_persistent", False):
+            try:
+                con.conn.close()
+            except Exception:
+                pass
 
 
 def now():
@@ -1033,6 +1067,37 @@ def _student_status_cached(sid):
     return status
 
 _HEADER_CACHE_TTL = 30.0
+_DASHBOARD_CACHE_TTL = 8.0
+def _dashboard_snapshot_cached(sid):
+    """Short-lived dashboard data cache to avoid repeated mobile page queries."""
+    sid = int(sid)
+    key = ("dashboard_snapshot", sid)
+    now_m = time.monotonic()
+    with _AUTHZ_CACHE_LOCK:
+        item = _AUTHZ_CACHE.get(key)
+        if item and item[0] > now_m:
+            return item[1]
+
+    con = db()
+    try:
+        student = con.execute("SELECT name FROM students WHERE id=?", (sid,)).fetchone()
+        permissions = publisher_permissions(sid, con=con)
+        anns = [dict(row) for row in _active_announcements(con, 4)]
+        evs = [dict(row) for row in _upcoming_events(con, 4)]
+        value = {
+            "name": str(student["name"] if student else "Student"),
+            "publisher_enabled": bool(permissions),
+            "announcements": anns,
+            "events": evs,
+        }
+    finally:
+        con.close()
+
+    with _AUTHZ_CACHE_LOCK:
+        _AUTHZ_CACHE[key] = (now_m + _DASHBOARD_CACHE_TTL, value)
+    return value
+
+
 def _student_header_updates_cached(sid):
     key=("header_updates",int(sid))
     now_m=time.monotonic()
@@ -1501,7 +1566,8 @@ def _security_successful_login(con, area, student_id):
         device_hash = _security_device_hash()
         account_key = hashlib.sha256((str(area).lower() + "|" + str(student_id).lower()).encode("utf-8")).hexdigest()
         con.execute("DELETE FROM vybe_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area))
-        con.commit()
+        # The caller commits the login transaction together with last_login/
+        # last_seen. Avoid a second PostgreSQL round-trip here.
     except Exception:
         try: con.rollback()
         except Exception: pass
@@ -1725,7 +1791,7 @@ def global_online_gate():
     # making the admin Online/Offline switch propagate quickly.
     global _VYBE_ONLINE_CACHE
     now_m = time.monotonic()
-    if now_m - _VYBE_ONLINE_CACHE["at"] >= 1.5:
+    if now_m - _VYBE_ONLINE_CACHE["at"] >= 10.0:
         try:
             con = db()
             _VYBE_ONLINE_CACHE["value"] = setting(con, "vybe_online", "1") == "1"
@@ -6087,14 +6153,11 @@ def assistant():
 @app.route("/dashboard")
 @student_required
 def dashboard():
-    con = db()
-    s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    publisher_enabled = publisher_is_active(session["student_db_id"], con=con)
-    if publisher_enabled:
-        publisher_enabled = bool(publisher_permissions(session["student_db_id"], con=con))
-    anns = _active_announcements(con, 4)
-    evs = _upcoming_events(con, 4)
-    con.close()
+    snapshot = _dashboard_snapshot_cached(session["student_db_id"])
+    name = snapshot["name"]
+    publisher_enabled = snapshot["publisher_enabled"]
+    anns = snapshot["announcements"]
+    evs = snapshot["events"]
     ann_html="".join(f'<a class="home-update" href="/announcements"><span class="home-update-icon"></span><span><strong>{esc(a["title"])}</strong><small>{esc(a["message"][:140])}</small></span><b>›</b></a>' for a in anns)
     event_html="".join(f'<a class="home-update" href="/events"><span class="home-update-icon"></span><span><strong>{esc(e["title"])}</strong><small>{esc(e["event_date"])} · {esc(e["event_time"] or "TBA")}</small></span><b>›</b></a>' for e in evs)
     if not ann_html:
@@ -6104,7 +6167,7 @@ def dashboard():
     body = f'''<section class="student-home clean-home live-home">
 <div class="home-live-hero">
   <div class="home-live-glow home-live-glow-one"></div><div class="home-live-glow home-live-glow-two"></div>
-  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(s["name"])}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a></div></div>
+  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(name)}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a></div></div>
   <div class="home-live-orbit"><span class="orbit-dot orbit-dot-a"></span><span class="orbit-dot orbit-dot-b"></span><div class="orbit-core">V</div></div>
 </div>
 <div class="home-section-label">QUICK ACCESS</div>
