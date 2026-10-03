@@ -3483,8 +3483,12 @@ def layout(title, body, admin=False):
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
         header=f'''<div class=\"navin student-nav-compact\">{header_lead}<nav class=\"student-desktop-links\" aria-label=\"Student navigation\"><a href=\"/dashboard\">Home</a><a href=\"/academics\">Academics</a><a href=\"/community\">Community</a><a href=\"/issues\">Help Desk</a><a href=\"/events\">Events</a></nav><div class=\"student-header-tools\"><a class=\"student-header-updates\" href=\"/updates\">Updates</a><div class=\"vybe-header-alert-wrap\"><button class=\"vybe-header-alert\" id=\"vybeHeaderAlertButton\" type=\"button\" aria-label=\"New admin updates\" aria-expanded=\"false\" aria-controls=\"vybeHeaderAlertPanel\"><span class=\"vybe-header-alert-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9\"></path><path d=\"M10 21h4\"></path></svg></span><span class=\"vybe-header-alert-label\">New</span>{_count_badge}</button><div class=\"vybe-header-alert-panel\" id=\"vybeHeaderAlertPanel\" hidden><div class=\"vybe-header-alert-head\"><div><strong>New from VYBE</strong><small>Only items you have not opened yet</small></div><span>{_unread_count} new</span></div><div class=\"vybe-header-alert-list\">{_alert_panel}</div><a class=\"vybe-header-alert-all\" href=\"/updates\">Open all updates →</a></div></div><button class=\"nav-toggle student-menu\" id=\"vybeNavToggle\" type=\"button\" aria-label=\"Open menu\" aria-expanded=\"false\">Menu</button></div></div>\n
 
-<div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Study+material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academics?resource_type=Notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
+<div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
+        # Academic library pages have their own single clean search bar; remove the global campus search there.
+        if request.path == "/academics" or request.path.startswith("/academic-hub/"):
+            header=re.sub(r'<div class="student-control-row">.*?</form></div>', '', header, count=1, flags=re.S)
+
 
     else:
         links = '<a href="/login">Student Login</a><a href="/register">Register</a><a href="/admin">Admin Login</a>'
@@ -3500,26 +3504,36 @@ def layout(title, body, admin=False):
             _ai_enabled = True
             _ai_selected = ["study_material", "admit_card", "date_sheets", "previous_papers", "timetable", "updates"]
         _ai_catalog = {
-            "study_material": ("Study Material", "/academics?resource_type=Study+material"),
+            "study_material": ("Study Material", "/academic-hub/study-material"),
             "admit_card": ("Admit Card", "/academic-hub/admit-card"),
             "date_sheets": ("Date Sheets", "/updates?category=Examination"),
             "previous_papers": ("Previous Papers", "/papers"),
             "timetable": ("Timetable", "/timetable"),
             "updates": ("Results & Updates", "/updates"),
-            "notes": ("Notes", "/academics?resource_type=Notes"),
-            "syllabus": ("Syllabus", "/academics?resource_type=Syllabus"),
-            "assignments": ("Assignments", "/academics?resource_type=Assignments"),
+            "notes": ("Notes", "/academic-hub/notes"),
+            "syllabus": ("Syllabus", "/academic-hub/syllabus"),
+            "assignments": ("Assignments", "/academic-hub/assignments"),
             "helpdesk": ("Help Desk", "/issues"),
             "announcements": ("Announcements", "/announcements"),
             "events": ("Events", "/events"),
             "community": ("Community", "/community"),
             "profile": ("My Profile", "/profile"),
         }
-        if _ai_enabled:
+        if _ai_enabled and not request.path.startswith("/academic-hub/") and request.path != "/academics":
             _ai_links = "".join(f'<a class="vybe-assistant-suggestion" href="{url}">{esc(label)}</a>' for key,(label,url) in _ai_catalog.items() if key in _ai_selected)
             if not _ai_links:
                 _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
             assistant_widget = f"""<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus shortcuts</small></div></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions">{_ai_links}</div></div></section>"""
+    performance_css = """<style>
+@media(max-width:900px){
+  *,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}
+  .nav,.card,.flash,.badge,.pill,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+@media(min-width:901px){
+  .card{animation:none!important}
+  .nav,.card,.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+</style>"""
     admin_problem_alert_runtime = r"""
 <script>
 (function(){
@@ -3660,7 +3674,7 @@ def layout(title, body, admin=False):
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}{performance_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -4238,8 +4252,8 @@ function setMenu(open){{
 (function(){{
   const forms=document.querySelectorAll('.student-search');
   const items=[
-    {{label:'Study Material',hint:'Academics',url:'/academics?resource_type=Study+material'}},
-    {{label:'Notes',hint:'Study Notes',url:'/academics?resource_type=Notes'}},
+    {{label:'Study Material',hint:'Academics',url:'/academic-hub/study-material'}},
+    {{label:'Notes',hint:'Study Notes',url:'/academic-hub/notes'}},
     {{label:'Timetable',hint:'Campus timetable',url:'/timetable'}},
     {{label:'Previous Papers',hint:'PYQ Papers',url:'/papers'}},
     {{label:'Admit Card',hint:'Exam updates',url:'/updates?kind=Admit%20Card'}},
@@ -5837,604 +5851,59 @@ def dashboard():
     return layout("Dashboard", body)
 
 
-ACADEMIC_HUB_CSS = """<style>
-/* ===== VYBE relevant icon system across student + admin pages ===== */
-.home-action-icon,.home-update-icon,.academic-icon,.academic-tool-mark,.timetable-icon,.id-card-icon,.id-file-icon,.admin-home-icon,.admin-side-icon,.vybe-show-icon{font-family:"Segoe UI Symbol","Apple Symbols","Noto Sans Symbols 2",sans-serif!important;font-weight:800!important;text-align:center!important;line-height:1!important;-webkit-font-smoothing:antialiased}
-@media(max-width:700px){.home-action-icon,.academic-icon,.academic-tool-mark,.timetable-icon,.id-card-icon,.id-file-icon,.admin-home-icon,.admin-side-icon,.vybe-show-icon{font-size:16px!important}}
-
-/* ===== Publisher dashboard access ===== */
-.home-action-publisher{border-color:#cfe5bc!important;background:linear-gradient(135deg,#ffffff 0%,#f4faee 100%)!important}
-.home-action-publisher .home-action-icon{background:#edf8e6!important;color:#57952a!important;border-color:#d5e9c4!important}
-.home-action-publisher:hover{border-color:#9fcd7f!important;box-shadow:0 14px 30px rgba(92,145,48,.12)!important}
-/* ===== VYBE Academic Hub redesign ===== */
-.academic-hub-page{display:block}
-.academic-hub-page .academic-hero{max-width:1180px;margin:0 auto;padding:46px 34px 30px;border-radius:28px;background:linear-gradient(135deg,#ffffff 0%,#f5f9ff 62%,#f4faed 100%);border:1px solid #e1e6df;box-shadow:0 16px 42px rgba(31,48,66,.07);text-align:left;position:relative;overflow:hidden}
-.academic-hub-page .academic-hero:after{content:"";position:absolute;right:-90px;top:-120px;width:300px;height:300px;border-radius:50%;background:rgba(47,111,202,.06);pointer-events:none}
-.academic-hub-page .academic-hero h1{max-width:780px;margin:12px 0 10px;font-size:clamp(38px,5vw,64px);line-height:.98;letter-spacing:-.055em;color:#17202b;position:relative;z-index:1}
-.academic-hub-page .academic-lead{max-width:720px;margin:0 0 24px;color:#687482;font-size:15px;line-height:1.65;position:relative;z-index:1}
-.academic-hub-page .academic-search{max-width:760px;margin:20px 0 0;position:relative;z-index:2}
-.academic-hub-page .academic-search input{border-radius:13px!important}
-.academic-hub-page .academic-quick-grid{max-width:none;margin:24px 0 0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;position:relative;z-index:2}
-.academic-hub-page .academic-quick{min-height:112px;padding:14px;border-radius:16px;background:rgba(255,255,255,.88);border:1px solid #dfe5ea;color:#17202b;box-shadow:0 6px 18px rgba(31,48,66,.045);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
-.academic-hub-page .academic-quick:hover{transform:translateY(-4px);border-color:#bfd5ec;box-shadow:0 14px 28px rgba(31,48,66,.10)}
-.academic-hub-page .academic-icon{background:#edf4ff;border-color:#d6e4f7;color:#2f6fca;border-radius:10px}
-.academic-hub-page .academic-quick-green .academic-icon{background:#edf8e6;border-color:#d5e9c4;color:#4f861e}
-.academic-hub-page .academic-tools-section{background:transparent!important}
-.academic-hub-page .academic-section-heading{margin-bottom:14px}
-.academic-hub-page .academic-section-heading h2{font-size:29px}
-.academic-hub-page .academic-tool-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.academic-hub-page .academic-tool{background:#fff!important;border:1px solid #dfe5ea!important;border-radius:17px!important;box-shadow:0 7px 22px rgba(31,48,66,.055)!important;padding:17px!important;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
-.academic-hub-page .academic-tool:hover{transform:translateY(-3px);border-color:#bfd5ec!important;box-shadow:0 15px 32px rgba(31,48,66,.10)!important}
-.academic-hub-page .academic-filter-panel{border-radius:17px!important;padding:12px!important}
-.academic-hub-page .academic-resource-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
-.academic-hub-page .academic-resource-card{position:relative;min-height:245px;padding:18px!important;border-radius:19px!important;background:#fff!important;border:1px solid #dfe5ea!important;box-shadow:0 8px 25px rgba(31,48,66,.055)!important;color:#17202b!important;text-decoration:none!important;display:flex;flex-direction:column;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
-.academic-hub-page .academic-resource-clickable{cursor:pointer}
-.academic-hub-page .academic-resource-clickable:hover{transform:translateY(-5px);border-color:#bcd3ec!important;box-shadow:0 19px 40px rgba(31,48,66,.12)!important}
-.academic-hub-page .academic-resource-clickable:active{transform:translateY(-1px) scale(.995)}
-.academic-hub-page .academic-resource-clickable:focus-visible{outline:3px solid rgba(47,111,202,.2);outline-offset:3px}
-.academic-hub-page .academic-resource-card h3{font-size:19px;line-height:1.25;margin:16px 0 7px;color:#17202b}
-.academic-hub-page .academic-resource-card p{color:#687482!important;font-size:13px;line-height:1.55}
-.academic-hub-page .academic-card-top{align-items:center}
-.academic-hub-page .academic-open-pill{display:inline-flex;align-items:center;padding:5px 8px;border-radius:999px;background:#edf4ff;border:1px solid #d6e4f7;color:#2f6fca;font-size:9px;font-weight:900;letter-spacing:.04em}
-.academic-hub-page .academic-open-pill.muted-pill{background:#f3f5f6;border-color:#e1e5e8;color:#7b858e}
-.academic-hub-page .academic-card-footer{margin-top:auto;padding-top:14px;border-top:1px solid #edf0f2;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#89939f}
-.academic-hub-page .academic-file-label{display:inline-flex;align-items:center;gap:5px;padding:8px 10px;border-radius:9px;background:#f2f7ff;border:1px solid #d9e6f4;color:#2f6fca;font-weight:900;transition:.18s ease}
-.academic-hub-page .academic-resource-clickable:hover .academic-file-label{background:#2f6fca;border-color:#2f6fca;color:#fff}
-.academic-hub-page .academic-resource-unavailable{opacity:.82}
-.academic-hub-page .academic-update-card{border-radius:17px!important}
-@media(max-width:1050px){.academic-hub-page .academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.academic-hub-page .academic-tool-grid,.academic-hub-page .academic-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.academic-hub-page .academic-hero{padding:30px 20px 22px;border-radius:22px}.academic-hub-page .academic-hero h1{font-size:40px}.academic-hub-page .academic-lead{font-size:14px}.academic-hub-page .academic-quick-grid,.academic-hub-page .academic-tool-grid,.academic-hub-page .academic-resource-grid{grid-template-columns:1fr}.academic-hub-page .academic-quick{min-height:88px}.academic-hub-page .academic-resource-card{min-height:220px;padding:16px!important}.academic-hub-page .academic-card-footer{padding-top:12px}.academic-hub-page .academic-file-label{padding:9px 11px}}
-
-/* ===== Academic Hub: relevant visual icons instead of alphabet badges ===== */
-.academic-hub-page .academic-icon,
-.academic-hub-page .academic-tool-mark{
-  position:relative;flex:0 0 auto;display:grid;place-items:center;
-  font-size:0!important;line-height:1;border-radius:11px!important;
-}
-.academic-hub-page .academic-icon::before,
-.academic-hub-page .academic-tool-mark::before{
-  font-family:"Segoe UI Symbol","Noto Sans Symbols 2",sans-serif;
-  font-size:18px;font-weight:700;line-height:1;
-}
-.academic-hub-page .academic-icon::after,
-.academic-hub-page .academic-tool-mark::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 rgba(255,255,255,.72);pointer-events:none}
-.academic-hub-page .academic-icon-notes::before,.academic-hub-page .academic-tool-notes::before{content:"✎"}
-.academic-hub-page .academic-icon-pyq::before,.academic-hub-page .academic-tool-papers::before{content:"▤"}
-.academic-hub-page .academic-icon-results::before{content:"✓"}
-.academic-hub-page .academic-icon-date::before{content:"▦"}
-.academic-hub-page .academic-icon-admit::before{content:"▣"}
-.academic-hub-page .academic-icon-forms::before{content:"☷"}
-.academic-hub-page .academic-tool-material::before{content:"▥"}
-.academic-hub-page .academic-tool-updates::before{content:"⚑"}
-.academic-hub-page .academic-tool-apps::before{content:"∑"}
-.academic-hub-page .academic-tool-help::before{content:"?"}
-.academic-hub-page .academic-quick:nth-child(3) .academic-icon{background:#edf8e6!important;color:#4f861e!important;border-color:#d5e9c4!important}
-.academic-hub-page .academic-quick:nth-child(4) .academic-icon{background:#fff6e8!important;color:#a96b16!important;border-color:#f0ddbd!important}
-.academic-hub-page .academic-quick:nth-child(5) .academic-icon{background:#f3efff!important;color:#7050b7!important;border-color:#ded3f5!important}
-.academic-hub-page .academic-quick:nth-child(6) .academic-icon{background:#fff0f0!important;color:#bd5151!important;border-color:#f0d0d0!important}
-.academic-hub-page .academic-tool:nth-child(4) .academic-tool-mark{background:#edf8e6!important;color:#4f861e!important;border-color:#d5e9c4!important}
-.academic-hub-page .academic-tool:nth-child(5) .academic-tool-mark{background:#f3efff!important;color:#7050b7!important;border-color:#ded3f5!important}
-.academic-hub-page .academic-tool:nth-child(6) .academic-tool-mark{background:#fff3eb!important;color:#b66a2b!important;border-color:#efd9c7!important}
-@media(max-width:700px){
-  .academic-hub-page .academic-icon{width:36px!important;height:36px!important}
-  .academic-hub-page .academic-tool-mark{width:44px!important;height:44px!important}
-  .academic-hub-page .academic-icon::before{font-size:19px}
-  .academic-hub-page .academic-tool-mark::before{font-size:20px}
-}
-</style>"""
-
 @app.route("/academics")
 @student_required
 def academics():
-    """VYBE Academic Hub: resources, papers and university academic updates."""
-    q = request.args.get("q", "").strip()[:120]
-    course = request.args.get("course", "").strip()[:100]
-    semester = request.args.get("semester", "").strip()[:100]
-    subject = request.args.get("subject", "").strip()[:100]
-    resource_type = request.args.get("resource_type", "").strip()[:100]
-    con = db()
-    sql = "SELECT id,title,resource_type,course,semester,subject,description,file_name,(file_data IS NOT NULL) AS has_local_file,drive_file_id,drive_web_url,created_at FROM resources WHERE 1=1"
-    params = []
+    """Clean academic search page. The library stays hidden until the student searches."""
+    legacy_type={"Notes":"/academic-hub/notes","Study material":"/academic-hub/study-material","Previous Year Questions":"/academic-hub/pyq","Syllabus":"/academic-hub/syllabus","Assignments":"/academic-hub/assignments"}.get(request.args.get("resource_type","" ).strip())
+    if legacy_type and not request.args.get("q"):
+        return redirect(legacy_type)
+    con=db(); q=" ".join(request.args.get("q","").strip().split())[:120]; rows=[]
     if q:
-        sql += " AND (title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)"
-        params += [f"%{q}%"] * 4
-    if course:
-        sql += " AND course=?"; params.append(course)
-    if semester:
-        sql += " AND semester=?"; params.append(semester)
-    if subject:
-        sql += " AND subject=?"; params.append(subject)
-    if resource_type:
-        sql += " AND resource_type=?"; params.append(resource_type)
-    sql += " ORDER BY id DESC LIMIT 120"
-    show_resource_files = bool(q or subject or course or (semester and subject))
-    rows = con.execute(sql, params).fetchall() if show_resource_files else []
-    courses = [r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE course<>'' ORDER BY course").fetchall()]
-    semesters = [r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE semester<>'' AND semester NOT IN ('Uncategorized','All') ORDER BY semester").fetchall()]
-    if semester:
-        subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' AND semester=? AND subject NOT IN ('General','All') ORDER BY subject",(semester,)).fetchall()]
-    else:
-        subjects = [r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE subject<>'' AND subject NOT IN ('General','All') ORDER BY subject").fetchall()]
-    types = [r["resource_type"] for r in con.execute("SELECT DISTINCT resource_type FROM resources WHERE resource_type<>'' ORDER BY resource_type").fetchall()]
-    _mark_all_page_items_seen(con, session["student_db_id"], "resource", "resources")
-    con.commit()
-    con.close()
-    resource_cards = ""
+        like=f"%{q}%"
+        rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,drive_file_id,drive_web_url FROM resources WHERE title LIKE ? OR resource_type LIKE ? OR course LIKE ? OR semester LIKE ? OR subject LIKE ? OR original_name LIKE ? ORDER BY id DESC LIMIT 100",(like,like,like,like,like,like)).fetchall()
+    con.close(); items=[]
     for r in rows:
-        has_file = bool(r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"])
-        if has_file:
-            resource_cards += f'''<a class="academic-resource-card academic-resource-clickable" href="/resource/{r["id"]}" target="_blank" rel="noopener" aria-label="Open resource: {esc(r["title"])}"><div class="academic-card-top"><span class="academic-tag">{esc(r["resource_type"])}</span><span class="academic-open-pill">OPEN ↗</span></div><h3>{esc(r["title"])}</h3><p class="academic-subline">{esc(r["course"])}{(" · " + esc(r["subject"])) if r["subject"] else ""}</p><p>{esc(r["description"] or "Academic resource available in VYBE.")}</p><div class="academic-card-footer"><span>{esc(r["semester"] or "All semesters")}</span><span class="academic-file-label">Open file <b>↗</b></span></div></a>'''
-        else:
-            resource_cards += f'''<article class="academic-resource-card academic-resource-unavailable"><div class="academic-card-top"><span class="academic-tag">{esc(r["resource_type"])}</span><span class="academic-open-pill muted-pill">INFO</span></div><h3>{esc(r["title"])}</h3><p class="academic-subline">{esc(r["course"])}{(" · " + esc(r["subject"])) if r["subject"] else ""}</p><p>{esc(r["description"] or "Academic resource available in VYBE.")}</p><div class="academic-card-footer"><span>{esc(r["semester"] or "All semesters")}</span><span class="academic-meta">No file attached</span></div></article>'''
-    selected = lambda value, current: "selected" if value == current else ""
-    body=f'''<section class="academic-hub-page"><section class="academic-hero section"><div class="academic-kicker">ACADEMIC HUB</div><h1>Everything you need for campus study.</h1><p class="academic-lead">Notes, study material, previous-year papers and academic updates, organized in one place.</p><form class="academic-search" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search notes, papers, subjects, results..." aria-label="Search academic resources"><button type="submit">Search</button></form><div class="academic-quick-grid"><a href="/academic-hub/notes" class="academic-quick"><span class="academic-icon academic-icon-notes" aria-hidden="true"></span><strong>Study Notes</strong><small>Revision notes</small></a><a href="/academic-hub/pyq" class="academic-quick"><span class="academic-icon academic-icon-pyq" aria-hidden="true"></span><strong>PYQ Papers</strong><small>Previous-year papers</small></a><a href="/academic-hub/results" class="academic-quick academic-quick-green"><span class="academic-icon academic-icon-results" aria-hidden="true"></span><strong>Results</strong><small>Result updates</small></a><a href="/academic-hub/date-sheet" class="academic-quick"><span class="academic-icon academic-icon-date" aria-hidden="true"></span><strong>Date Sheet</strong><small>Exam schedules</small></a><a href="/academic-hub/admit-card" class="academic-quick"><span class="academic-icon academic-icon-admit" aria-hidden="true"></span><strong>Admit Card</strong><small>Exam documents</small></a><a href="/academic-hub/exam-forms" class="academic-quick"><span class="academic-icon academic-icon-forms" aria-hidden="true"></span><strong>Exam Forms</strong><small>Forms and notices</small></a></div></section>
-<section class="section academic-tools-section"><div class="academic-section-heading"><div><div class="academic-kicker">STUDY TOOLS</div><h2>Academic resources.</h2></div></div><div class="academic-tool-grid"><a class="academic-tool" href="/academic-hub/study-material"><span class="academic-tool-mark academic-tool-material" aria-hidden="true"></span><div><strong>Study Material</strong><p>Semester-wise files and reference material.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/notes"><span class="academic-tool-mark academic-tool-notes" aria-hidden="true"></span><div><strong>Notes</strong><p>Quick revision notes organized by subject.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/academic-hub/pyq"><span class="academic-tool-mark academic-tool-papers" aria-hidden="true"></span><div><strong>Previous Papers</strong><p>Practice with previous-year question papers.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/updates"><span class="academic-tool-mark academic-tool-updates" aria-hidden="true"></span><div><strong>Academic Updates</strong><p>Results, datesheets, forms and important notices.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/apps"><span class="academic-tool-mark academic-tool-apps" aria-hidden="true"></span><div><strong>Study Applications</strong><p>Useful student calculators and academic utilities.</p></div><span class="academic-arrow">→</span></a><a class="academic-tool" href="/issues"><span class="academic-tool-mark academic-tool-help" aria-hidden="true"></span><div><strong>Student Helpdesk</strong><p>Get help with campus, exams and technical issues.</p></div><span class="academic-arrow">→</span></a></div></section>
-<section class="section"><div class="academic-section-heading"><div><div class="academic-kicker">RESOURCE LIBRARY</div><h2>Choose what you need.</h2></div></div><div class="academic-filter-panel"><form class="academic-filter-form" method="get" action="/academics"><input name="q" value="{esc(q)}" placeholder="Search by subject or PDF title"><select name="resource_type"><option value="">All resource types</option>{''.join(f'<option value="{esc(x)}" {selected(x,resource_type)}>{esc(x)}</option>' for x in types)}</select><select name="course"><option value="">All courses</option>{''.join(f'<option value="{esc(x)}" {selected(x,course)}>{esc(x)}</option>' for x in courses)}</select><select name="semester"><option value="">All semesters</option>{''.join(f'<option value="{esc(x)}" {selected(x,semester)}>{esc(x)}</option>' for x in semesters)}</select><select name="subject"><option value="">All subjects</option>{''.join(f'<option value="{esc(x)}" {selected(x,subject)}>{esc(x)}</option>' for x in subjects)}</select><button type="submit">Apply filters</button><a class="academic-reset" href="/academics">Reset</a></form></div><div class="academic-resource-grid">{resource_cards or '<div class="academic-empty">Choose a semester and subject, or search for something specific, to see matching resources. VYBE keeps the full library hidden until you ask for it.</div>'}</div></section></section>'''
-    body = ACADEMIC_HUB_CSS + r"""<style>
-/* VYBE Academic Hub final alignment + interaction layer */
-.academic-hub-page{max-width:1180px!important;margin:0 auto!important;padding:24px 18px 50px!important;box-sizing:border-box}
-.academic-hub-page *{box-sizing:border-box}
-.academic-hub-page .academic-hero{margin:0 0 22px!important;padding:34px!important;border-radius:26px!important;background:linear-gradient(135deg,#ffffff 0%,#f5f9ff 58%,#f4faee 100%)!important;border:1px solid #dfe7ed!important;box-shadow:0 14px 38px rgba(31,48,66,.07)!important}
-.academic-hub-page .academic-hero h1{max-width:760px!important;font-size:clamp(38px,5vw,60px)!important;line-height:1.02!important;letter-spacing:-.045em!important;margin:10px 0 10px!important;color:#17202b!important}
-.academic-hub-page .academic-lead{max-width:700px!important;color:#687482!important;line-height:1.65!important}
-.academic-hub-page .academic-search{display:grid!important;grid-template-columns:minmax(0,1fr) 120px!important;gap:10px!important;max-width:720px!important;margin:24px 0 22px!important}
-.academic-hub-page .academic-search input{height:48px!important;border:1px solid #d8e0e7!important;border-radius:13px!important;background:#fff!important;color:#17202b!important;padding:0 15px!important;outline:none!important}
-.academic-hub-page .academic-search input:focus{border-color:#9dbfe5!important;box-shadow:0 0 0 4px rgba(47,111,202,.08)!important}
-.academic-hub-page .academic-search button,.academic-hub-page .academic-filter-form button{height:48px!important;border:0!important;border-radius:13px!important;background:#2f6fca!important;color:#fff!important;font-weight:800!important;cursor:pointer!important;box-shadow:0 7px 16px rgba(47,111,202,.18)!important}
-.academic-hub-page .academic-quick-grid{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:10px!important;margin:0!important}
-.academic-hub-page .academic-quick{min-width:0!important;min-height:104px!important;padding:14px!important;border:1px solid #dfe5ea!important;border-radius:16px!important;background:#fff!important;color:#17202b!important;text-decoration:none!important;display:flex!important;flex-direction:column!important;justify-content:center!important;align-items:flex-start!important;gap:6px!important;box-shadow:0 6px 18px rgba(31,48,66,.045)!important;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease!important}
-.academic-hub-page .academic-quick:hover{transform:translateY(-3px)!important;border-color:#bcd3ec!important;box-shadow:0 14px 28px rgba(31,48,66,.10)!important}
-.academic-hub-page .academic-quick:active{transform:scale(.98)!important}
-.academic-hub-page .academic-quick strong{font-size:13px!important;line-height:1.2!important}
-.academic-hub-page .academic-quick small{font-size:10px!important;color:#7b8792!important;line-height:1.3!important}
-.academic-hub-page .academic-icon,.academic-hub-page .academic-tool-mark{width:34px!important;height:34px!important;display:grid!important;place-items:center!important;flex:0 0 34px!important;border-radius:10px!important;background:#edf4ff!important;color:#2f6fca!important;border:1px solid #d6e4f7!important;font-size:11px!important;font-weight:900!important}
-.academic-hub-page .academic-section-heading{display:flex!important;align-items:end!important;justify-content:space-between!important;gap:16px!important;margin:0 0 13px!important}
-.academic-hub-page .academic-section-heading h2{margin:3px 0 0!important;font-size:28px!important;letter-spacing:-.025em!important;color:#17202b!important}
-.academic-hub-page .academic-outline{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:38px!important;padding:0 13px!important;border:1px solid #d7e0e7!important;border-radius:10px!important;background:#fff!important;color:#2f6fca!important;text-decoration:none!important;font-size:11px!important;font-weight:800!important;white-space:nowrap!important}
-.academic-hub-page .academic-tool-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important}
-.academic-hub-page .academic-tool{min-width:0!important;min-height:105px!important;padding:16px!important;display:grid!important;grid-template-columns:36px minmax(0,1fr) 20px!important;align-items:center!important;gap:11px!important;background:#fff!important;color:#17202b!important;border:1px solid #dfe5ea!important;border-radius:16px!important;box-shadow:0 7px 20px rgba(31,48,66,.045)!important;text-decoration:none!important;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease!important}
-.academic-hub-page .academic-tool:hover{transform:translateY(-3px)!important;border-color:#bcd3ec!important;box-shadow:0 14px 30px rgba(31,48,66,.10)!important}
-.academic-hub-page .academic-tool strong{font-size:14px!important}.academic-hub-page .academic-tool p{margin:4px 0 0!important;color:#7a8590!important;font-size:11px!important;line-height:1.4!important}.academic-hub-page .academic-arrow{color:#87929d!important;font-size:20px!important}
-.academic-hub-page .academic-filter-panel{padding:12px!important;background:#fff!important;border:1px solid #dfe5ea!important;border-radius:16px!important;box-shadow:0 7px 20px rgba(31,48,66,.045)!important;margin-bottom:14px!important}
-.academic-hub-page .academic-filter-form{display:grid!important;grid-template-columns:2fr repeat(4,1fr) auto auto!important;gap:8px!important;align-items:center!important}
-.academic-hub-page .academic-filter-form input,.academic-hub-page .academic-filter-form select{width:100%!important;height:42px!important;min-width:0!important;border:1px solid #d9e1e7!important;border-radius:10px!important;background:#fff!important;color:#17202b!important;padding:0 10px!important}
-.academic-hub-page .academic-filter-form button{height:42px!important;padding:0 13px!important;white-space:nowrap!important}.academic-hub-page .academic-reset{height:42px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:0 12px!important;border:1px solid #d9e1e7!important;border-radius:10px!important;color:#687482!important;background:#fff!important;text-decoration:none!important;font-size:11px!important;font-weight:700!important;white-space:nowrap!important}
-.academic-hub-page .academic-resource-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:14px!important;align-items:stretch!important}
-.academic-hub-page .academic-resource-card{min-width:0!important;min-height:235px!important;margin:0!important;padding:17px!important;display:flex!important;flex-direction:column!important;position:relative!important;background:#fff!important;border:1px solid #dfe5ea!important;border-radius:17px!important;color:#17202b!important;text-decoration:none!important;box-shadow:0 7px 21px rgba(31,48,66,.05)!important;overflow:hidden!important}
-.academic-hub-page .academic-resource-clickable{cursor:pointer!important}.academic-hub-page .academic-resource-clickable:hover{transform:translateY(-4px)!important;border-color:#bcd3ec!important;box-shadow:0 17px 34px rgba(31,48,66,.11)!important}.academic-hub-page .academic-resource-clickable:active{transform:scale(.99)!important}
-.academic-hub-page .academic-card-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important}.academic-hub-page .academic-resource-card h3{margin:14px 0 6px!important;font-size:18px!important;line-height:1.25!important;color:#17202b!important}.academic-hub-page .academic-resource-card p{margin:0 0 7px!important;font-size:12px!important;line-height:1.55!important;color:#687482!important}.academic-hub-page .academic-subline{font-weight:700!important;color:#53616e!important}.academic-hub-page .academic-open-pill{display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:5px 8px!important;border-radius:999px!important;background:#edf4ff!important;border:1px solid #d6e4f7!important;color:#2f6fca!important;font-size:9px!important;font-weight:900!important;white-space:nowrap!important}.academic-hub-page .academic-card-footer{margin-top:auto!important;padding-top:12px!important;border-top:1px solid #edf0f2!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;color:#7d8893!important;font-size:10px!important}.academic-hub-page .academic-file-label{display:inline-flex!important;align-items:center!important;gap:4px!important;padding:7px 9px!important;border-radius:9px!important;background:#f2f7ff!important;border:1px solid #d9e6f4!important;color:#2f6fca!important;font-weight:900!important}.academic-hub-page .academic-resource-clickable:hover .academic-file-label{background:#2f6fca!important;color:#fff!important;border-color:#2f6fca!important}
-.academic-hub-page .academic-resource-unavailable{opacity:.78!important}
-@media(max-width:1100px){.academic-hub-page .academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-hub-page .academic-filter-form{grid-template-columns:repeat(3,minmax(0,1fr))!important}.academic-hub-page .academic-filter-form input{grid-column:1/-1}.academic-hub-page .academic-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
-@media(max-width:720px){.academic-hub-page{padding:12px 12px 35px!important}.academic-hub-page .academic-hero{padding:24px 18px!important;border-radius:20px!important}.academic-hub-page .academic-hero h1{font-size:36px!important}.academic-hub-page .academic-search{grid-template-columns:1fr!important}.academic-hub-page .academic-search button{width:100%!important}.academic-hub-page .academic-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.academic-hub-page .academic-quick{min-height:96px!important}.academic-hub-page .academic-tool-grid,.academic-hub-page .academic-resource-grid{grid-template-columns:1fr!important}.academic-hub-page .academic-filter-form{grid-template-columns:1fr!important}.academic-hub-page .academic-filter-form input{grid-column:auto}.academic-hub-page .academic-filter-form button,.academic-hub-page .academic-reset{width:100%!important}.academic-hub-page .academic-section-heading{align-items:flex-start!important}.academic-hub-page .academic-section-heading h2{font-size:24px!important}.academic-hub-page .academic-outline{min-height:34px!important}}
-</style>""" + r"""<style>
-/* Final desktop alignment pass — scoped only to Academic Hub */
-.academic-hub-page{
-  width:min(calc(100% - 48px),1180px)!important;
-  max-width:1180px!important;
-  margin-left:auto!important;
-  margin-right:auto!important;
-  padding:0 0 52px!important;
-  box-sizing:border-box!important;
-}
-.academic-hub-page > .academic-hero{
-  width:100%!important;
-  max-width:none!important;
-  margin:0 0 26px!important;
-  padding:42px 42px 30px!important;
-  text-align:center!important;
-  box-sizing:border-box!important;
-}
-.academic-hub-page > .academic-hero .academic-kicker{
-  display:block!important;
-  text-align:center!important;
-}
-.academic-hub-page > .academic-hero h1{
-  max-width:900px!important;
-  margin:12px auto 12px!important;
-  text-align:center!important;
-}
-.academic-hub-page > .academic-hero .academic-lead{
-  max-width:780px!important;
-  margin:0 auto!important;
-  text-align:center!important;
-}
-.academic-hub-page > .academic-hero .academic-search{
-  width:100%!important;
-  max-width:860px!important;
-  margin:28px auto 24px!important;
-  grid-template-columns:minmax(0,1fr) 150px!important;
-  align-items:center!important;
-}
-.academic-hub-page > .academic-hero .academic-search input,
-.academic-hub-page > .academic-hero .academic-search button{
-  width:100%!important;
-  min-width:0!important;
-}
-.academic-hub-page > .academic-hero .academic-quick-grid{
-  width:100%!important;
-  max-width:none!important;
-  margin:0 auto!important;
-  grid-template-columns:repeat(6,minmax(0,1fr))!important;
-  gap:14px!important;
-  text-align:left!important;
-}
-.academic-hub-page > .academic-hero .academic-quick{
-  min-height:118px!important;
-  padding:16px!important;
-  justify-content:center!important;
-}
-.academic-hub-page > .academic-hero .academic-quick strong{font-size:14px!important}
-.academic-hub-page > .academic-hero .academic-quick small{font-size:11px!important}
-.academic-hub-page > .academic-tools-section{
-  width:100%!important;
-  max-width:none!important;
-  margin:0!important;
-  padding:0!important;
-}
-@media(max-width:1100px){
-  .academic-hub-page{width:min(calc(100% - 32px),100%)!important}
-  .academic-hub-page > .academic-hero .academic-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
-}
-@media(max-width:720px){
-  .academic-hub-page{width:calc(100% - 24px)!important;padding:0 0 35px!important}
-  .academic-hub-page > .academic-hero{padding:28px 18px 22px!important;margin-bottom:20px!important}
-  .academic-hub-page > .academic-hero h1{font-size:36px!important}
-  .academic-hub-page > .academic-hero .academic-search{grid-template-columns:1fr!important;margin:22px auto 20px!important}
-  .academic-hub-page > .academic-hero .academic-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
-  .academic-hub-page > .academic-hero .academic-quick{min-height:100px!important}
-}
-</style>""" + r"""<style>
-/* ===== Academic Hub phone navigation polish ===== */
-@media (max-width:850px){
-  /* Give the page breathing room above the floating navigation. */
-  .page-academics{
-    padding-bottom:92px!important;
-  }
-
-  /* Floating, compact bottom navigation instead of three boxed buttons. */
-  .student-bottom-nav{
-    position:fixed!important;
-    left:12px!important;
-    right:12px!important;
-    bottom:10px!important;
-    width:auto!important;
-    height:66px!important;
-    min-height:66px!important;
-    padding:6px!important;
-    margin:0!important;
-    display:grid!important;
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-    align-items:stretch!important;
-    gap:5px!important;
-    box-sizing:border-box!important;
-    border:1px solid rgba(130,170,205,.30)!important;
-    border-radius:22px!important;
-    background:rgba(20,31,45,.90)!important;
-    background-image:none!important;
-    box-shadow:0 12px 35px rgba(15,30,48,.28),0 2px 8px rgba(15,30,48,.12),inset 0 1px rgba(255,255,255,.10)!important;
-    backdrop-filter:blur(22px) saturate(145%)!important;
-    -webkit-backdrop-filter:blur(22px) saturate(145%)!important;
-    z-index:6800!important;
-  }
-
-  .student-bottom-nav > .mobile-menu-nav,
-  .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav{
-    position:relative!important;
-    width:100%!important;
-    height:100%!important;
-    min-height:0!important;
-    max-width:none!important;
-    margin:0!important;
-    padding:5px 4px!important;
-    display:flex!important;
-    flex-direction:column!important;
-    align-items:center!important;
-    justify-content:center!important;
-    gap:3px!important;
-    box-sizing:border-box!important;
-    border:1px solid transparent!important;
-    border-radius:16px!important;
-    background:transparent!important;
-    color:#c8d3df!important;
-    box-shadow:none!important;
-    font-size:11px!important;
-    font-weight:700!important;
-    line-height:1!important;
-    text-decoration:none!important;
-    transition:background .18s ease,color .18s ease,transform .18s ease,border-color .18s ease!important;
-    -webkit-tap-highlight-color:transparent!important;
-  }
-
-  .student-bottom-nav > .mobile-menu-nav:before,
-  .student-bottom-nav > .mobile-home-nav:before,
-  .student-bottom-nav > .mobile-profile-nav:before{
-    display:block!important;
-    font-size:17px!important;
-    line-height:18px!important;
-    font-weight:500!important;
-  }
-  .student-bottom-nav > .mobile-menu-nav:before{content:"☰"!important}
-  .student-bottom-nav > .mobile-home-nav:before{content:"⌂"!important}
-  .student-bottom-nav > .mobile-profile-nav:before{content:"♙"!important}
-
-  .student-bottom-nav > .mobile-menu-nav:hover,
-  .student-bottom-nav > .mobile-profile-nav:hover,
-  .student-bottom-nav > .mobile-home-nav:hover{
-    background:rgba(255,255,255,.07)!important;
-    color:#f4f8fc!important;
-    border-color:rgba(255,255,255,.08)!important;
-  }
-
-  .student-bottom-nav > .mobile-home-nav.active{
-    background:linear-gradient(180deg,rgba(55,127,207,.36),rgba(36,91,154,.28))!important;
-    border-color:rgba(104,184,240,.30)!important;
-    color:#ffffff!important;
-    box-shadow:inset 0 1px rgba(255,255,255,.10),0 4px 14px rgba(35,110,180,.16)!important;
-  }
-
-  .student-bottom-nav > a:active,
-  .student-bottom-nav > button:active{
-    transform:scale(.96)!important;
-  }
-
-  /* Keep the assistant just above the floating navigation. */
-  .vybe-assistant-fab{
-    right:14px!important;
-    bottom:86px!important;
-    z-index:6900!important;
-    border-radius:15px!important;
-    padding:9px 12px!important;
-    min-height:42px!important;
-    font-size:12px!important;
-    box-shadow:0 10px 28px rgba(16,24,39,.24)!important;
-  }
-  .vybe-assistant-fab .fab-mark{
-    width:24px!important;
-    height:24px!important;
-    border-radius:8px!important;
-  }
-  .vybe-assistant-panel{
-    bottom:142px!important;
-    z-index:6899!important;
-  }
-}
-
-@media (max-width:380px){
-  .student-bottom-nav{
-    left:8px!important;
-    right:8px!important;
-    bottom:8px!important;
-    height:63px!important;
-    min-height:63px!important;
-    border-radius:20px!important;
-  }
-  .student-bottom-nav > .mobile-menu-nav,
-  .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav{
-    font-size:10px!important;
-  }
-  .student-bottom-nav > .mobile-menu-nav:before,
-  .student-bottom-nav > .mobile-home-nav:before,
-  .student-bottom-nav > .mobile-profile-nav:before{
-    font-size:16px!important;
-  }
-}
-<style>
-/* ===== ACADEMIC HUB — HOMEPAGE LIGHT GLASS MOBILE NAV ===== */
-@media (max-width:850px){
-  .page-academics{padding-bottom:94px!important}
-
-  .student-bottom-nav{
-    position:fixed!important;
-    left:12px!important;
-    right:12px!important;
-    bottom:10px!important;
-    width:auto!important;
-    height:68px!important;
-    min-height:68px!important;
-    padding:7px!important;
-    margin:0!important;
-    display:grid!important;
-    grid-template-columns:repeat(3,minmax(0,1fr))!important;
-    gap:6px!important;
-    align-items:stretch!important;
-    box-sizing:border-box!important;
-    background:rgba(255,255,255,.68)!important;
-    background-image:linear-gradient(135deg,rgba(255,255,255,.82),rgba(239,247,255,.64) 58%,rgba(241,249,235,.64))!important;
-    border:1px solid rgba(255,255,255,.92)!important;
-    border-radius:22px!important;
-    box-shadow:0 12px 34px rgba(42,75,105,.15),0 2px 8px rgba(42,75,105,.07),inset 0 1px rgba(255,255,255,.95)!important;
-    backdrop-filter:blur(24px) saturate(135%)!important;
-    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-    z-index:10000!important;
-  }
-
-  .student-bottom-nav > .mobile-menu-nav,
-  .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav{
-    width:100%!important;
-    height:52px!important;
-    min-width:0!important;
-    max-width:none!important;
-    margin:0!important;
-    padding:4px 6px!important;
-    display:flex!important;
-    flex-direction:column!important;
-    align-items:center!important;
-    justify-content:center!important;
-    gap:4px!important;
-    box-sizing:border-box!important;
-    border:1px solid rgba(205,220,232,.72)!important;
-    border-radius:16px!important;
-    background:rgba(255,255,255,.54)!important;
-    color:#526171!important;
-    box-shadow:0 3px 10px rgba(43,73,99,.045),inset 0 1px rgba(255,255,255,.85)!important;
-    backdrop-filter:blur(12px)!important;
-    -webkit-backdrop-filter:blur(12px)!important;
-    font-size:11px!important;
-    font-weight:800!important;
-    line-height:1!important;
-    text-decoration:none!important;
-    transition:background .18s ease,color .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease!important;
-    -webkit-tap-highlight-color:transparent!important;
-  }
-
-  .student-bottom-nav .vybe-nav-icon{
-    width:19px!important;
-    height:19px!important;
-    display:grid!important;
-    place-items:center!important;
-    flex:0 0 19px!important;
-  }
-  .student-bottom-nav .vybe-nav-icon svg{
-    width:19px!important;
-    height:19px!important;
-    stroke:currentColor!important;
-  }
-  .student-bottom-nav .mobile-menu-label{
-    display:block!important;
-    color:inherit!important;
-    font-size:10px!important;
-    font-weight:800!important;
-    line-height:1!important;
-  }
-
-  /* Home: soft VYBE blue */
-  .student-bottom-nav > .mobile-home-nav.active{
-    background:linear-gradient(145deg,rgba(237,246,255,.94),rgba(221,237,255,.82))!important;
-    color:#2f6fca!important;
-    border-color:rgba(143,190,232,.78)!important;
-    box-shadow:0 5px 15px rgba(47,111,202,.10),inset 0 1px rgba(255,255,255,.95)!important;
-  }
-
-  /* Profile: soft VYBE green */
-  .student-bottom-nav > .mobile-profile-nav{
-    background:rgba(242,249,236,.62)!important;
-    color:#5c8e35!important;
-    border-color:rgba(178,211,151,.68)!important;
-  }
-
-  .student-bottom-nav > .mobile-menu-nav:hover,
-  .student-bottom-nav > .mobile-menu-nav:focus-visible{
-    background:rgba(255,255,255,.82)!important;
-    color:#2f6fca!important;
-    border-color:#bcd6ed!important;
-  }
-  .student-bottom-nav > .mobile-profile-nav:hover,
-  .student-bottom-nav > .mobile-profile-nav:focus-visible{
-    background:rgba(242,249,236,.88)!important;
-    color:#4f8129!important;
-    border-color:#b8d69d!important;
-  }
-  .student-bottom-nav > .mobile-home-nav:hover,
-  .student-bottom-nav > .mobile-home-nav:focus-visible{
-    background:rgba(237,246,255,.92)!important;
-  }
-
-  .student-bottom-nav > a:active,
-  .student-bottom-nav > button:active{
-    transform:scale(.96)!important;
-  }
-
-  /* Let the homepage-like background show through the glass. */
-  .vybe-assistant-fab{
-    right:14px!important;
-    bottom:82px!important;
-    min-height:40px!important;
-    padding:8px 11px!important;
-    border-radius:14px!important;
-    background:rgba(255,255,255,.76)!important;
-    color:#24384b!important;
-    border:1px solid rgba(177,205,226,.72)!important;
-    box-shadow:0 10px 26px rgba(42,75,105,.15),inset 0 1px rgba(255,255,255,.9)!important;
-    backdrop-filter:blur(18px)!important;
-    -webkit-backdrop-filter:blur(18px)!important;
-  }
-  .vybe-assistant-fab .fab-mark{
-    background:#eef6ff!important;
-    color:#2f6fca!important;
-    border:1px solid #d2e3f5!important;
-  }
-  .vybe-assistant-panel{bottom:138px!important}
-}
-
-@media (max-width:380px){
-  .student-bottom-nav{left:8px!important;right:8px!important;bottom:8px!important;height:64px!important;min-height:64px!important;border-radius:20px!important;padding:6px!important}
-  .student-bottom-nav > .mobile-menu-nav,
-  .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav{height:50px!important;border-radius:15px!important;font-size:10px!important}
-}
-</style>""" + body
-    body = body + '<style>\n/* ===== ACADEMIC HUB — HOMEPAGE LIGHT GLASS MOBILE SHELL ===== */\n@media (max-width:850px){\n  .academic-hub-page{\n    padding:18px 12px 118px!important;\n    width:100%!important;\n    max-width:100%!important;\n    overflow:visible!important;\n  }\n\n  /* Actual global mobile navigation used by VYBE. Keep the page visible through it. */\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav{\n    position:fixed!important;\n    left:12px!important;\n    right:12px!important;\n    bottom:10px!important;\n    width:auto!important;\n    height:64px!important;\n    min-height:64px!important;\n    padding:6px!important;\n    margin:0!important;\n    display:grid!important;\n    grid-template-columns:repeat(3,minmax(0,1fr))!important;\n    gap:5px!important;\n    box-sizing:border-box!important;\n    background:rgba(255,255,255,.58)!important;\n    background-image:linear-gradient(115deg,rgba(255,255,255,.78),rgba(247,251,255,.58) 52%,rgba(247,252,241,.68))!important;\n    border:1px solid rgba(255,255,255,.92)!important;\n    border-radius:21px!important;\n    box-shadow:0 14px 38px rgba(33,55,76,.14),0 3px 10px rgba(33,55,76,.06),inset 0 1px rgba(255,255,255,.96)!important;\n    backdrop-filter:blur(22px) saturate(150%)!important;\n    -webkit-backdrop-filter:blur(22px) saturate(150%)!important;\n    z-index:2147483000!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-menu-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-home-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav > .mobile-profile-nav{\n    width:100%!important;\n    height:50px!important;\n    min-height:50px!important;\n    max-width:none!important;\n    min-width:0!important;\n    margin:0!important;\n    padding:4px 5px!important;\n    box-sizing:border-box!important;\n    display:flex!important;\n    flex-direction:column!important;\n    align-items:center!important;\n    justify-content:center!important;\n    gap:3px!important;\n    border:1px solid rgba(211,222,231,.68)!important;\n    border-radius:15px!important;\n    background:rgba(255,255,255,.38)!important;\n    color:#687583!important;\n    box-shadow:inset 0 1px rgba(255,255,255,.9)!important;\n    backdrop-filter:blur(10px)!important;\n    -webkit-backdrop-filter:blur(10px)!important;\n    text-decoration:none!important;\n    font-size:10px!important;\n    font-weight:800!important;\n    line-height:1!important;\n    transition:transform .16s ease,background .16s ease,border-color .16s ease,color .16s ease!important;\n    -webkit-tap-highlight-color:transparent!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav .vybe-nav-icon{\n    width:19px!important;\n    height:19px!important;\n    display:grid!important;\n    place-items:center!important;\n    flex:0 0 19px!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav .vybe-nav-icon svg{\n    width:19px!important;\n    height:19px!important;\n    fill:none!important;\n    stroke:currentColor!important;\n    stroke-width:1.8!important;\n    stroke-linecap:round!important;\n    stroke-linejoin:round!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav .mobile-menu-label{\n    display:block!important;\n    color:inherit!important;\n    font-size:10px!important;\n    font-weight:800!important;\n    line-height:1!important;\n  }\n\n  /* Neutral Menu */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > #vybeBottomMenuButton{\n    background:rgba(255,255,255,.46)!important;\n    color:#697786!important;\n    border-color:rgba(211,222,231,.70)!important;\n  }\n  /* Soft homepage blue */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-home-nav.active{\n    background:linear-gradient(145deg,rgba(238,247,255,.88),rgba(225,240,255,.66))!important;\n    color:#2f6fca!important;\n    border-color:rgba(164,199,232,.68)!important;\n    box-shadow:0 4px 13px rgba(47,111,202,.09),inset 0 1px rgba(255,255,255,.96)!important;\n  }\n  /* Soft homepage green */\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-profile-nav{\n    background:linear-gradient(145deg,rgba(248,252,244,.82),rgba(235,247,226,.58))!important;\n    color:#60913d!important;\n    border-color:rgba(185,211,161,.66)!important;\n  }\n\n  body:has(.academic-hub-page) #vybeStudentBottomNav > a:active,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > button:active{\n    transform:scale(.96)!important;\n  }\n\n  /* Ask VYBE should float in the same light glass language. */\n  body:has(.academic-hub-page) .vybe-assistant-fab{\n    right:13px!important;\n    bottom:82px!important;\n    min-height:40px!important;\n    padding:7px 11px!important;\n    border-radius:15px!important;\n    background:rgba(255,255,255,.68)!important;\n    color:#263646!important;\n    border:1px solid rgba(255,255,255,.94)!important;\n    box-shadow:0 10px 26px rgba(34,58,78,.14),inset 0 1px rgba(255,255,255,.95)!important;\n    backdrop-filter:blur(18px) saturate(145%)!important;\n    -webkit-backdrop-filter:blur(18px) saturate(145%)!important;\n  }\n  body:has(.academic-hub-page) .vybe-assistant-fab .fab-mark{\n    background:linear-gradient(145deg,#edf6ff,#e3f0ff)!important;\n    color:#2f6fca!important;\n    border:1px solid #d2e3f4!important;\n  }\n}\n\n@media (max-width:380px){\n  body:has(.academic-hub-page) #vybeStudentBottomNav.student-bottom-nav{\n    left:10px!important;\n    right:10px!important;\n    bottom:8px!important;\n    height:62px!important;\n    min-height:62px!important;\n    border-radius:19px!important;\n  }\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-menu-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-home-nav,\n  body:has(.academic-hub-page) #vybeStudentBottomNav > .mobile-profile-nav{\n    height:48px!important;\n    min-height:48px!important;\n    border-radius:14px!important;\n  }\n}\n</style>'
-    return layout("Academic Hub", body)
+        if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]): continue
+        meta=" · ".join(x for x in (r["resource_type"],r["semester"],r["subject"]) if x)
+        items.append(f'<a class="ah-result" href="/resource/{r["id"]}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"] or r["original_name"] or "Resource")}</span><span class="ah-result-meta">{esc(meta or r["original_name"] or "Academic resource")}</span></span><span class="ah-result-open">Open ↗</span></a>')
+    results=''.join(items) if q and items else ('<div class="ah-empty">No matching files found.</div>' if q else '<div class="ah-empty">Search by semester, subject, or file name to find a resource.</div>')
+    count=f'<div class="ah-count">Showing {len(items)} result(s)</div>' if q and items else ''
+    body=f"""{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-search-wrap"><div class="academic-kicker">ACADEMIC HUB</div><h1>Academic resources</h1><p>Search the VYBE library when you need something.</p><form class="ah-search" method="get" autocomplete="off"><input type="search" name="q" value="{esc(q)}" placeholder="Search semester, subject or file name…" aria-label="Search academic resources"><button type="submit">Search</button></form></div><div class="ah-results">{count}{results}</div></section>"""
+    return layout("Academics",body)
 
 ACADEMIC_COLLECTION_CSS = """
 <style>
-.ah-collection{max-width:1180px;margin:0 auto;padding:42px 0 90px}.ah-hero{padding:34px;border:1px solid #dfe5ea;border-radius:26px;background:linear-gradient(135deg,#fff,#f5f9ff 65%,#f4faed);box-shadow:0 14px 38px rgba(31,48,66,.06)}.ah-hero h1{margin:12px 0 8px;font-size:clamp(38px,5vw,60px);letter-spacing:-.055em;color:#17202b}.ah-hero p{max-width:720px;margin:0;color:#687482;line-height:1.65}.ah-filter{margin-top:20px;padding:13px;border:1px solid #e1e6eb;border-radius:17px;background:#fff;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px}.ah-filter input,.ah-filter select{min-height:43px;box-sizing:border-box}.ah-filter button{border:0;border-radius:11px;background:#2f6fca;color:#fff;font-weight:800;padding:0 17px;cursor:pointer}.ah-section{margin-top:28px}.ah-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;margin-bottom:11px}.ah-section-head h2{margin:0;color:#17202b;font-size:23px}.ah-section-head span{font-size:11px;color:#7c8893}.ah-subject{margin-top:14px}.ah-subject h3{margin:0 0 9px;font-size:14px;color:#52616e}.ah-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}.ah-card{display:flex;flex-direction:column;min-height:150px;padding:17px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 8px 22px rgba(31,48,66,.045);transition:.2s}.ah-card:hover{transform:translateY(-3px);border-color:#bfd5ec;box-shadow:0 15px 30px rgba(31,48,66,.09)}.ah-card .tag{display:inline-flex;width:max-content;padding:5px 8px;border-radius:999px;background:#edf4ff;color:#2f6fca;font-size:9px;font-weight:900}.ah-card h4{margin:12px 0 6px;font-size:15px}.ah-card p{margin:0;color:#778490;font-size:12px;line-height:1.45}.ah-card-foot{margin-top:auto;padding-top:14px;display:flex;justify-content:space-between;gap:8px;color:#8a96a0;font-size:10px}.ah-empty{padding:28px;border:1px dashed #cfd9e1;border-radius:18px;background:#fbfcfd;color:#71808c;text-align:center}.ah-update-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.ah-update{display:block;padding:19px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;text-decoration:none;color:#17202b;box-shadow:0 8px 24px rgba(31,48,66,.045)}.ah-update:hover{border-color:#bfd5ec;transform:translateY(-2px)}.ah-update .tag{color:#579c24;background:#edf8e6;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900}.ah-update h3{margin:12px 0 7px}.ah-update p{margin:0;color:#697783;line-height:1.5;font-size:12px}.ah-update-foot{margin-top:14px;color:#2f6fca;font-size:11px;font-weight:800}
-.ah-browse-title{margin:26px 0 11px;font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#71808c}.ah-browse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ah-browse-card{display:flex;flex-direction:column;gap:6px;padding:19px;border:1px solid #dfe5ea;border-radius:18px;background:#fff;color:#17202b;text-decoration:none;box-shadow:0 8px 22px rgba(31,48,66,.045);transition:.18s}.ah-browse-card:hover{transform:translateY(-2px);border-color:#bfd5ec;box-shadow:0 13px 28px rgba(31,48,66,.08)}.ah-browse-card strong{font-size:15px}.ah-browse-card span{font-size:11px;color:#7a8792}.ah-reset{display:flex;align-items:center;justify-content:center;min-height:43px;padding:0 12px;border:1px solid #dfe5ea;border-radius:11px;color:#687482;text-decoration:none;font-size:12px;font-weight:800;background:#fff}
-@media(max-width:850px){.ah-collection{padding:30px 14px 82px}.ah-hero{padding:23px 18px;border-radius:21px}.ah-filter{grid-template-columns:1fr}.ah-grid,.ah-update-grid,.ah-browse-grid{grid-template-columns:1fr}.ah-section-head{align-items:flex-start;flex-direction:column}.ah-card{min-height:130px}}
+.ah-collection{max-width:820px;margin:0 auto;padding:46px 18px 80px;color:#17202b}.ah-search-wrap{text-align:center;padding:30px 0 18px}.ah-search-wrap h1{margin:0 0 9px;font-size:clamp(34px,6vw,52px);letter-spacing:-.05em}.ah-search-wrap p{margin:0 0 22px;color:#74808b;font-size:13px}.ah-search{display:flex;gap:8px;max-width:650px;margin:0 auto}.ah-search input{height:50px;flex:1;min-width:0;box-sizing:border-box;padding:0 16px;border:1px solid #d8e0e6;border-radius:14px;background:#fff;color:#17202b;outline:none;box-shadow:0 5px 18px rgba(31,48,66,.04)}.ah-search input:focus{border-color:#8eb6dc;box-shadow:0 0 0 4px rgba(47,111,202,.08)}.ah-search button{height:50px;padding:0 19px;border:0;border-radius:14px;background:#2f6fca;color:#fff;font-weight:800;cursor:pointer}.ah-results{margin-top:24px}.ah-result{display:flex;align-items:center;gap:14px;padding:14px 15px;margin-bottom:8px;border:1px solid #e0e6eb;border-radius:14px;background:#fff;color:#17202b;text-decoration:none}.ah-result:hover{border-color:#b8d0e7}.ah-result-main{min-width:0;flex:1}.ah-result-title{display:block;font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ah-result-meta{display:block;margin-top:4px;color:#7a8792;font-size:11px}.ah-result-open{font-size:11px;font-weight:800;color:#2f6fca;white-space:nowrap}.ah-empty{text-align:center;padding:28px 12px;color:#7a8792;font-size:12px}.ah-count{text-align:center;color:#87929c;font-size:11px;margin-bottom:10px}@media(max-width:600px){.ah-collection{padding:30px 12px 70px}.ah-search{gap:7px}.ah-search input{height:48px;font-size:14px}.ah-search button{height:48px;padding:0 15px}.ah-result{padding:13px 12px}.ah-result-open{font-size:10px}}
 </style>
 """
 
 def _academic_resource_collection(resource_type, title, subtitle, kicker):
+    """Lightweight student resource search: nothing loads until the student searches."""
     con=db()
-    q=request.args.get("q","").strip()[:120]
-    semester=request.args.get("semester","").strip()[:100]
-    subject=request.args.get("subject","").strip()[:120]
-    course=request.args.get("course","").strip()[:100]
-    params=[resource_type]
-    where=["resource_type=?"]
-    if q:
-        where.append("(title LIKE ? OR subject LIKE ? OR course LIKE ? OR description LIKE ?)")
-        params += [f"%{q}%"] * 4
-    if semester: where.append("semester=?"); params.append(semester)
-    if subject: where.append("subject=?"); params.append(subject)
-    if course: where.append("course=?"); params.append(course)
-    show_files=bool(q or subject or course or (semester and subject))
+    q=" ".join(request.args.get("q","").strip().split())[:120]
     rows=[]
-    if show_files:
-        rows=con.execute("SELECT id,title,course,semester,subject,description,file_name,file_data,drive_file_id,drive_web_url,created_at FROM resources WHERE " + " AND ".join(where) + " ORDER BY semester,subject,id DESC",params).fetchall()
-    semesters=[r["semester"] for r in con.execute("SELECT DISTINCT semester FROM resources WHERE resource_type=? AND semester<>'' AND semester NOT IN ('Uncategorized','All') ORDER BY semester",(resource_type,)).fetchall()]
-    if semester:
-        subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND semester=? AND subject<>'' AND subject NOT IN ('General','All') ORDER BY subject",(resource_type,semester)).fetchall()]
-    else:
-        subjects=[r["subject"] for r in con.execute("SELECT DISTINCT subject FROM resources WHERE resource_type=? AND subject<>'' AND subject NOT IN ('General','All') ORDER BY subject",(resource_type,)).fetchall()]
-    courses=[r["course"] for r in con.execute("SELECT DISTINCT course FROM resources WHERE resource_type=? AND course<>'' ORDER BY course",(resource_type,)).fetchall()]
+    if q:
+        like=f"%{q}%"
+        rows=con.execute(
+            "SELECT id,title,course,semester,subject,original_name,drive_file_id,drive_web_url "
+            "FROM resources WHERE resource_type=? AND "
+            "(title LIKE ? OR subject LIKE ? OR semester LIKE ? OR original_name LIKE ? OR course LIKE ?) "
+            "ORDER BY id DESC LIMIT 80",
+            (resource_type,like,like,like,like,like)
+        ).fetchall()
     con.close()
-    groups={}
-    for r in rows:
-        groups.setdefault(r["semester"] or "Uncategorized",{}).setdefault(r["subject"] or "General",[]).append(r)
-    sections=[]
-    for sem, subs in groups.items():
-        subject_blocks=[]
-        for sub, items in subs.items():
-            cards=[]
-            for r in items:
-                has_file=bool(r["file_name"] or r["drive_file_id"] or r["drive_web_url"])
-                href=f'/resource/{r["id"]}' if has_file else '#'
-                target=' target="_blank" rel="noopener"' if has_file else ''
-                cards.append(f'''<a class="ah-card" href="{href}"{target}><span class="tag">{esc(resource_type)}</span><h4>{esc(r["title"])}</h4><p>{esc(r["description"] or "Open the uploaded academic resource.")}</p><div class="ah-card-foot"><span>{esc(r["course"] or "All courses")}</span><span>{"Open ↗" if has_file else "No file"}</span></div></a>''')
-            subject_blocks.append(f'<div class="ah-subject"><h3>{esc(sub)}</h3><div class="ah-grid">{"".join(cards)}</div></div>')
-        sections.append(f'<section class="ah-section"><div class="ah-section-head"><h2>{esc(sem)}</h2><span>{sum(len(x) for x in subs.values())} item(s)</span></div>{"".join(subject_blocks)}</section>')
-    if not show_files:
-        if semester:
-            subject_cards=[]
-            for sub in subjects:
-                subject_cards.append(f'<a class="ah-browse-card" href="?semester={quote(semester)}&subject={quote(sub)}"><strong>{esc(sub)}</strong><span>Open {esc(semester)} resources →</span></a>')
-            browse_html=''.join(subject_cards) or '<div class="ah-empty">No subjects are available for this semester yet.</div>'
-            sections_html=f'<div class="ah-browse-title">Choose a subject</div><div class="ah-browse-grid">{browse_html}</div>'
-        else:
-            semester_cards=[]
-            for sem in semesters:
-                semester_cards.append(f'<a class="ah-browse-card" href="?semester={quote(sem)}"><strong>{esc(sem)}</strong><span>Browse subjects →</span></a>')
-            browse_html=''.join(semester_cards) or '<div class="ah-empty">No semester folders are available yet.</div>'
-            sections_html=f'<div class="ah-browse-title">Choose a semester</div><div class="ah-browse-grid">{browse_html}</div>'
+    if q:
+        items=[]
+        for r in rows:
+            if not (r["drive_file_id"] or r["drive_web_url"] or r["original_name"]): continue
+            meta=" · ".join(x for x in (r["semester"],r["subject"],r["course"]) if x)
+            items.append(f'<a class="ah-result" href="/resource/{r["id"]}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"] or r["original_name"] or "Resource")}</span><span class="ah-result-meta">{esc(meta or r["original_name"] or "Academic resource")}</span></span><span class="ah-result-open">Open ↗</span></a>')
+        results="".join(items) or '<div class="ah-empty">No matching files found.</div>'
+        count=f'<div class="ah-count">Showing up to {len(items)} matching file(s)</div>' if items else ""
     else:
-        sections_html=''.join(sections) if sections else '<div class="ah-empty" style="margin-top:22px">No matching resources were found.</div>'
-    opts=lambda values,current: ''.join(f'<option value="{esc(x)}" {"selected" if x==current else ""}>{esc(x)}</option>' for x in values)
-    reset_href=f'/academic-hub/{"notes" if resource_type=="Notes" else "study-material" if resource_type=="Study material" else "pyq"}'
-    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-filter" method="get"><input name="q" value="{esc(q)}" placeholder="Search this section…" aria-label="Search this section"><select name="semester"><option value="">Choose semester</option>{opts(semesters,semester)}</select><select name="subject"><option value="">Choose subject</option>{opts(subjects,subject)}</select><select name="course"><option value="">All courses</option>{opts(courses,course)}</select><button type="submit">Show resources</button><a class="ah-reset" href="{reset_href}">Reset</a></form></section>{sections_html}</section>'''
+        results='<div class="ah-empty">Search by semester, subject, or file name to find what you need.</div>'; count=""
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-search-wrap"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-search" method="get" autocomplete="off"><input type="search" name="q" value="{esc(q)}" placeholder="Search by semester, subject or file name…" aria-label="Search {esc(title)}"><button type="submit">Search</button></form></div><div class="ah-results">{count}{results}</div></section>'''
     return layout(title,body)
 
 @app.route("/academic-hub/notes")
@@ -6452,14 +5921,29 @@ def academic_hub_study_material():
 def academic_hub_pyq():
     return _academic_resource_collection("Previous Year Questions","PYQ Papers","Previous-year question papers grouped by semester and subject.","PYQ PAPERS")
 
+@app.route("/academic-hub/syllabus")
+@student_required
+def academic_hub_syllabus():
+    return _academic_resource_collection("Syllabus","Syllabus","Find syllabus files by semester or subject.","SYLLABUS")
+
+@app.route("/academic-hub/assignments")
+@student_required
+def academic_hub_assignments():
+    return _academic_resource_collection("Assignments","Assignments","Find assignment files by semester or subject.","ASSIGNMENTS")
+
 def _academic_update_collection(kind, title, subtitle, kicker):
-    con=db(); rows=con.execute("SELECT id,kind,title,description,event_date,external_url,file_name,(file_data IS NOT NULL) AS has_local_file,drive_file_id,drive_web_url,created_at FROM academic_updates WHERE kind=? ORDER BY id DESC",(kind,)).fetchall(); con.close()
-    cards=[]
+    con=db(); q=" ".join(request.args.get("q","").strip().split())[:120]; rows=[]
+    if q:
+        like=f"%{q}%"
+        rows=con.execute("SELECT id,kind,title,description,event_date,external_url,file_name,drive_file_id,drive_web_url,created_at FROM academic_updates WHERE kind=? AND (title LIKE ? OR description LIKE ? OR event_date LIKE ?) ORDER BY id DESC LIMIT 80",(kind,like,like,like)).fetchall()
+    con.close(); items=[]
     for r in rows:
-        action="Open official website ↗" if r["external_url"] else ("Open document ↗" if r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"] else "View update ↗")
-        href=r["external_url"] if r["external_url"] else (f'/academic-update-file/{r["id"]}' if r["file_name"] or r["drive_file_id"] or r["drive_web_url"] else f'/academic-update/{r["id"]}')
-        cards.append(f'''<a class="ah-update" href="{esc(href)}" target="_blank" rel="noopener noreferrer"><span class="tag">{esc(kind)}</span><h3>{esc(r["title"])}</h3><p>{esc(r["description"])}</p><div class="ah-update-foot">{esc(r["event_date"] or r["created_at"])} · {action}</div></a>''')
-    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><section class="ah-hero"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></section><section class="ah-section"><div class="ah-update-grid">{"".join(cards) or '<div class="ah-empty">Nothing has been published here yet.</div>'}</div></section></section>'''
+        href=r["external_url"] or (f'/academic-update-file/{r["id"]}' if (r["file_name"] or r["drive_file_id"] or r["drive_web_url"]) else f'/academic-update/{r["id"]}')
+        action="Open official website ↗" if r["external_url"] else "Open ↗"
+        items.append(f'<a class="ah-result" href="{esc(href)}" target="_blank" rel="noopener"><span class="ah-result-main"><span class="ah-result-title">{esc(r["title"])}</span><span class="ah-result-meta">{esc(r["event_date"] or r["created_at"])} · {esc(r["description"] or "Academic update")}</span></span><span class="ah-result-open">{action}</span></a>')
+    results=''.join(items) if q and items else ('<div class="ah-empty">No matching updates found.</div>' if q else '<div class="ah-empty">Search for a result, notice, date or title.</div>')
+    count=f'<div class="ah-count">Showing {len(items)} result(s)</div>' if q and items else ''
+    body=f"""{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-search-wrap"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p><form class="ah-search" method="get" autocomplete="off"><input type="search" name="q" value="{esc(q)}" placeholder="Search {esc(title).lower()}…" aria-label="Search {esc(title)}"><button type="submit">Search</button></form></div><div class="ah-results">{count}{results}</div></section>"""
     return layout(title,body)
 
 @app.route("/academic-hub/results")
@@ -6485,7 +5969,7 @@ def academic_hub_exam_forms():
 @app.route("/papers")
 @student_required
 def academic_papers():
-    return redirect(url_for("academics", resource_type="Previous Year Questions"))
+    return redirect(url_for("academic_hub_pyq"))
 
 ACADEMIC_UPDATES_PAGE_CSS = """<style>
 .page-updates .academic-compact{max-width:1180px;margin:0 auto;padding:42px 40px 36px;border-radius:28px;background:linear-gradient(135deg,#fff 0%,#f5f9ff 62%,#f5faef 100%);box-shadow:0 15px 40px rgba(31,48,66,.065);position:relative;overflow:hidden}.page-updates .academic-compact:after{content:"";position:absolute;right:-70px;top:-100px;width:230px;height:230px;border-radius:50%;background:rgba(47,111,202,.06);pointer-events:none}.page-updates .academic-compact h1{font-size:clamp(40px,5vw,64px);line-height:.98;letter-spacing:-.055em;margin:14px 0 10px;color:#17202b}.page-updates .academic-compact .academic-lead{max-width:720px;font-size:14px;line-height:1.65;color:#687482}.page-updates .academic-filter-panel{max-width:1180px;margin:0 auto 22px;padding:14px;border-radius:18px;background:#fff;border:1px solid #e2e7ec;box-shadow:0 9px 28px rgba(31,48,66,.06)}.page-updates .academic-filter-form{display:grid;grid-template-columns:minmax(220px,2fr) 1fr 1fr auto;gap:8px}.page-updates .academic-filter-form input,.page-updates .academic-filter-form select{min-height:44px;border-radius:11px;box-sizing:border-box}.page-updates .academic-filter-form button{min-height:44px;border-radius:11px;background:#17202b;color:#fff;font-weight:800;padding:0 16px;border:1px solid #17202b;cursor:pointer}.page-updates .academic-update-list{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.page-updates .academic-update-card{position:relative;min-height:230px;padding:0;border-radius:21px;background:#fff;border:1px solid #dfe5ea;box-shadow:0 9px 26px rgba(31,48,66,.055);display:flex;flex-direction:column;overflow:hidden;text-decoration:none;color:#17202b;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}.page-updates .academic-update-card:hover{transform:translateY(-5px);border-color:#bfd5ec;box-shadow:0 20px 42px rgba(31,48,66,.12)}.page-updates .academic-update-card:focus-visible{outline:3px solid rgba(47,111,202,.22);outline-offset:3px}.page-updates .academic-update-card:before{content:"";height:5px;width:100%;background:linear-gradient(90deg,#2f6fca,#68b82e);display:block}.page-updates .academic-update-content{padding:19px 20px 0;display:flex;flex-direction:column;flex:1}.page-updates .academic-update-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.page-updates .academic-update-category,.page-updates .academic-update-kind{display:inline-flex;align-items:center;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:850;letter-spacing:.02em}.page-updates .academic-update-category{background:#edf8e6;border:1px solid #d5e9c4;color:#4f861e}.page-updates .academic-update-kind{background:#edf4ff;border:1px solid #d7e4f7;color:#2f6fca}.page-updates .academic-update-card h2{font-size:21px;line-height:1.22;letter-spacing:-.025em;margin:15px 0 7px;color:#17202b}.page-updates .academic-update-card p{font-size:13px;line-height:1.6;color:#687482;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin:0}.page-updates .academic-update-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding:15px 20px 18px;border-top:1px solid #edf0f2;color:#89939f;font-size:11px}.page-updates .academic-link{display:inline-flex;align-items:center;gap:5px;padding:9px 12px;border-radius:10px;background:#f2f7ff;color:#2f6fca;border:1px solid #d9e6f4;text-decoration:none;font-size:11px;font-weight:900;transition:.18s ease}.page-updates .academic-update-card:hover .academic-link{background:#2f6fca;color:#fff;border-color:#2f6fca}.page-updates .academic-empty{grid-column:1/-1;padding:55px 24px;border-radius:20px;background:#fff;border:1px dashed #ccd7df;text-align:center;color:#687482}@media(max-width:900px){.page-updates .academic-update-list{grid-template-columns:1fr}.page-updates .academic-filter-form{grid-template-columns:1fr 1fr 1fr}.page-updates .academic-filter-form button{grid-column:1/-1}}@media(max-width:620px){.page-updates .academic-compact{padding:30px 20px;border-radius:22px}.page-updates .academic-compact h1{font-size:39px}.page-updates .academic-filter-form{grid-template-columns:1fr}.page-updates .academic-filter-form button{grid-column:auto}.page-updates .academic-update-card{min-height:215px;border-radius:19px}.page-updates .academic-update-content{padding:16px 16px 0}.page-updates .academic-update-card h2{font-size:18px}.page-updates .academic-update-foot{padding:13px 16px 15px;align-items:flex-start;flex-direction:column;gap:9px}.page-updates .academic-link{width:100%;justify-content:center;box-sizing:border-box}}
@@ -8125,10 +7609,10 @@ def admin_assistant():
         selected = []
 
     shortcut_catalog = [
-        ("study_material", "Study Material", "Open the main study-material collection.", "/academics?resource_type=Study+material"),
-        ("notes", "Notes", "Quick access to student notes.", "/academics?resource_type=Notes"),
-        ("syllabus", "Syllabus", "Open syllabus resources.", "/academics?resource_type=Syllabus"),
-        ("assignments", "Assignments", "Open assignment resources.", "/academics?resource_type=Assignments"),
+        ("study_material", "Study Material", "Open the main study-material collection.", "/academic-hub/study-material"),
+        ("notes", "Notes", "Quick access to student notes.", "/academic-hub/notes"),
+        ("syllabus", "Syllabus", "Open syllabus resources.", "/academic-hub/syllabus"),
+        ("assignments", "Assignments", "Open assignment resources.", "/academic-hub/assignments"),
         ("previous_papers", "Previous Papers", "Open previous-year papers.", "/papers"),
         ("admit_card", "Admit Card", "Open the student's admit-card area.", "/academic-hub/admit-card"),
         ("date_sheets", "Date Sheets", "Open examination/date-sheet updates.", "/updates?category=Examination"),
@@ -8560,7 +8044,7 @@ window.vybeDriveUpload = async function(file,status,category){
   async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}
   const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:category,name:file.name,mimeType:file.type||'application/octet-stream',size:file.size})});
   const direct=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable&&status)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%';};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'));}catch(_){reject(new Error('Drive returned an invalid upload response.'));}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'));};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file);});
-  try{return await direct();}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);if(status)status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata;}if(!done||!done.id)throw new Error('Google Drive did not return the uploaded file.');return done;}
+  try{return await direct();}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+4*1024*1024,file.size);if(status)status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata;}if(!done||!done.id)throw new Error('Google Drive did not return the uploaded file.');return done;}
 };
 </script>'''
 
@@ -8657,13 +8141,13 @@ ACADEMIC_HUB_ADMIN_CSS = """
 
 
 AH_DIRECT_UPLOAD_JS = r'''
-<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status,semester,subject){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size,semester:(semester||'').toString().trim(),subject:(subject||'').toString().trim()})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+2*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');meta.__vybe_folder_id=init.folder_id||'';return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status,(data.get('semester')||'').toString().trim(),(data.get('subject')||'').toString().trim());await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description'),folder_id:meta.__vybe_folder_id||''})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
+<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status,semester,subject){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','assignments':'Assignments'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size,semester:(semester||'').toString().trim(),subject:(subject||'').toString().trim()})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+4*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');meta.__vybe_folder_id=init.folder_id||'';return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status,(data.get('semester')||'').toString().trim(),(data.get('subject')||'').toString().trim());await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','assignments':'Assignments'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description'),folder_id:meta.__vybe_folder_id||''})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
 '''
 
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
-    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions"}
+    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions","syllabus":"Syllabus","assignments":"Assignments"}
     section=request.args.get("section","notes").strip()
     if section not in allowed: section="notes"
     con=db()
@@ -8704,7 +8188,7 @@ def admin_academic_hub():
         except Exception:
             con.rollback(); con.close(); app.logger.exception("Academic Hub upload failed"); flash("Could not upload the academic resources. Please try again.")
         return redirect(url_for("admin_academic_hub",section=section))
-    rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,created_at FROM resources WHERE resource_type=? ORDER BY id DESC",(allowed[section],)).fetchall()
+    rows=con.execute("SELECT id,title,resource_type,course,semester,subject,original_name,created_at FROM resources WHERE resource_type=? ORDER BY id DESC LIMIT 100",(allowed[section],)).fetchall()
     con.close()
     descriptions={"notes":"Revision notes by subject and semester.","study_material":"Semester-wise reference and study files.","pyq":"Previous-year question papers by subject and semester."}
     tabs=[]
@@ -8712,7 +8196,7 @@ def admin_academic_hub():
         active=" active" if k==section else ""
         tabs.append(f'<a class="admin-ah-tab{active}" href="/admin/academic-hub?section={k}"><b>{v}</b><span>{descriptions[k]}</span></a>')
     rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><form method="post" action="/admin/academic-hub/resource/{r["id"]}/delete" onsubmit="return confirm('Delete this resource?')"><button class="btn danger">Delete</button></form></div></div>''' for r in rows)
-    body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Upload any file type directly to Google Drive. Single files and large bulk batches use resumable Drive uploads, so Vercel request-size limits do not interrupt the transfer.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form id="ahSingleUpload" class="admin-ah-form" onsubmit="return false"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Any file format supported by Google Drive.</div></div><div id="ahSingleStatus" class="admin-ah-help"></div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Select as many files as you need. VYBE uploads them sequentially with a visible progress message.</p><form id="ahBulkUpload" class="admin-ah-form" onsubmit="return false"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Large batches are sent directly to Google Drive one file at a time.</div></div><div id="ahBulkStatus" class="admin-ah-help"></div><button class="btn dark" type="submit">Upload all directly to Drive →</button></form><div class="admin-ah-note" style="margin-top:12px">Keep files for the same subject and semester in one batch.</div></div></div>{AH_DIRECT_UPLOAD_JS.replace("__AH_SECTION__", section)}<div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
+    body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Upload any file type directly to Google Drive. Single files and large bulk batches use resumable Drive uploads, so Vercel request-size limits do not interrupt the transfer.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form id="ahSingleUpload" class="admin-ah-form" onsubmit="return false"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Any file format supported by Google Drive.</div></div><div id="ahSingleStatus" class="admin-ah-help"></div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Select as many files as you need. VYBE uploads them sequentially with a visible progress message.</p><form id="ahBulkUpload" class="admin-ah-form" onsubmit="return false"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Large batches are sent directly to Google Drive one file at a time.</div></div><div id="ahBulkStatus" class="admin-ah-help"></div><button class="btn dark" type="submit">Upload all directly to Drive →</button></form><div class="admin-ah-note" style="margin-top:12px">Keep files for the same subject and semester in one batch.</div></div></div>{AH_DIRECT_UPLOAD_JS.replace("__AH_SECTION__", section)}<div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
     return layout("Academic Hub",body,admin=True)
 
 
@@ -9318,7 +8802,7 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (required for academic resources)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Organizing existing Academic Hub files by semester and subject…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=(d.moved||0)+' file(s) moved into semester / subject folders.'+(d.skipped?' '+d.skipped+' file(s) left at their current location.':'');}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=2*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Organizing existing Academic Hub files by semester and subject…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=(d.moved||0)+' file(s) moved into semester / subject folders.'+(d.skipped?' '+d.skipped+' file(s) left at their current location.':'');}}catch(e){{el.textContent=e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 @app.route("/admin/drive/organize-subjects", methods=["POST"])
@@ -9355,8 +8839,8 @@ def admin_drive_organize_subjects():
 @admin_required
 def admin_drive_upload_session():
     data=request.get_json(force=True) or {}; category=str(data.get("category") or "").strip(); name=Path(str(data.get("name") or "uploaded-file")).name[:240]
-    semester=str(data.get("semester") or "").strip()[:100]
-    subject=str(data.get("subject") or "").strip()[:120]
+    semester=_drive_normalize_semester(data.get("semester")) if str(data.get("semester") or "").strip() else "Uncategorized"
+    subject=" ".join(str(data.get("subject") or "").strip().split())[:120] or "General"
     if category not in DRIVE_CATEGORY_MAP: return jsonify(error="Choose a valid VYBE Drive section."),400
     if DRIVE_CATEGORY_MAP[category][2]=="resource" and (not semester or not subject):
         return jsonify(error="Semester and subject are required for academic resource uploads."),400
@@ -9483,8 +8967,8 @@ def admin_drive_register():
     data=request.get_json(force=True) or {}
     category=str(data.get("category") or "").strip(); fid=str(data.get("file_id") or "").strip()
     if category not in DRIVE_CATEGORY_MAP or not fid: return jsonify(error="Missing Drive file/category."),400
-    semester=str(data.get("semester") or "").strip()[:100]
-    subject=str(data.get("subject") or "").strip()[:120]
+    semester=_drive_normalize_semester(data.get("semester")) if DRIVE_CATEGORY_MAP.get(category, (None,None,None))[2]=="resource" else str(data.get("semester") or "").strip()[:100]
+    subject=" ".join(str(data.get("subject") or "").strip().split())[:120]
     if DRIVE_CATEGORY_MAP[category][2]=="resource" and (not semester or not subject):
         return jsonify(error="Semester and subject are required for academic resource uploads."),400
     con=None
@@ -9522,9 +9006,9 @@ def admin_drive_register_resource():
     fid=str(data.get("file_id") or "").strip()
     if category not in {"Notes","Study Material","Previous Year Questions","Syllabus","Assignments"} or not fid:
         return jsonify(error="Missing Drive file or resource category."),400
-    semester=str(data.get("semester") or "").strip()[:100]
-    subject=str(data.get("subject") or "").strip()[:120]
-    if not semester or not subject:
+    semester=_drive_normalize_semester(data.get("semester"))
+    subject=" ".join(str(data.get("subject") or "").strip().split())[:120]
+    if not semester or semester=="Uncategorized" or not subject or subject=="General":
         return jsonify(error="Semester and subject are required for academic resource uploads."),400
     try:
         meta=_drive_file_meta(fid)
@@ -10235,12 +9719,25 @@ def _drive_find_or_create_folder(parent_id,name):
     _,_,created=_drive_api("POST","files",query={"fields":"id,name"},body={"name":name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]})
     return created["id"]
 
+def _drive_normalize_semester(value):
+    """Normalize user-entered semester labels so Drive folders stay consistent."""
+    raw=" ".join(str(value or "").strip().split())
+    if not raw: return "Uncategorized"
+    if raw.lower() in {"all","general","semester","semesters","uncategorized"}: return "Uncategorized"
+    low=raw.lower().replace("semester", "").replace("sem", "").strip()
+    words={"first":"1st","second":"2nd","third":"3rd","fourth":"4th","fifth":"5th","sixth":"6th","seventh":"7th","eighth":"8th"}
+    if low in words: return words[low]+" Semester"
+    m=re.fullmatch(r"(\d+)(?:st|nd|rd|th)?",low)
+    if m:
+        n=int(m.group(1)); suffix="th" if 10<=n%100<=20 else {1:"st",2:"nd",3:"rd"}.get(n%10,"th")
+        return f"{n}{suffix} Semester"
+    return raw[:100]
+
 def _drive_category_folder(category,create=True,semester=None,subject=None):
     """Return the Drive folder for a VYBE category using Semester -> Subject hierarchy."""
     top,sub,kind,_=DRIVE_CATEGORY_MAP[category]
-    semester_name=str(semester or "").strip()[:100] if semester is not None else None
-    subject_name=str(subject or "").strip()[:120] if subject is not None else None
-    if semester_name is not None and semester_name.lower() in {"","all","general","semester","semesters"}: semester_name="Uncategorized"
+    semester_name=_drive_normalize_semester(semester) if semester is not None else None
+    subject_name=" ".join(str(subject or "").strip().split())[:120] if subject is not None else None
     if subject_name is not None and subject_name.lower() in {"","all","general","subject","subjects"}: subject_name="General"
     key=(category,semester_name,subject_name)
     if create:
