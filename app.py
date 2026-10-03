@@ -3524,7 +3524,10 @@ def layout(title, body, admin=False):
             if not _ai_links:
                 _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
             assistant_widget = f"""<button class="vybe-assistant-fab" id="vybeAssistantFab" type="button" aria-expanded="false" aria-controls="vybeAssistantPanel"><span class="fab-mark">AI</span><span>Ask VYBE</span></button><section class="vybe-assistant-panel" id="vybeAssistantPanel" aria-label="VYBE Assistant"><div class="vybe-assistant-head"><div><strong>VYBE Assistant</strong><small>Quick campus shortcuts</small></div></div><div class="vybe-assistant-body"><div class="vybe-assistant-suggestions">{_ai_links}</div></div></section>"""
-    performance_css = """<style>
+    # This is injected inside layout()'s single <style> block. Keep it as raw CSS.
+    # Wrapping it in <style> here would prematurely close the outer style tag and
+    # cause the following mobile CSS to be rendered as visible text in the page.
+    performance_css = """
 @media(max-width:900px){
   *,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}
   .nav,.card,.flash,.badge,.pill,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
@@ -3533,7 +3536,7 @@ def layout(title, body, admin=False):
   .card{animation:none!important}
   .nav,.card,.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 }
-</style>"""
+"""
     admin_problem_alert_runtime = r"""
 <script>
 (function(){
