@@ -255,28 +255,6 @@ def _admin_datetime_to_utc(value):
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     except Exception: return now()
 
-def _cleanup_expired_campus_content(con):
-    try:
-        con.execute("DELETE FROM announcements WHERE expires_at IS NOT NULL AND expires_at<>'' AND expires_at<=?", (now(),))
-    except Exception:
-        try: con.rollback()
-        except Exception: pass
-    try:
-        from zoneinfo import ZoneInfo
-        current=datetime.now(ZoneInfo("Asia/Kolkata"))
-        rows=con.execute("SELECT id,event_date,event_time FROM events").fetchall()
-        for r in rows:
-            try:
-                t=str(r["event_time"] or "23:59")
-                start=datetime.fromisoformat(f"{r['event_date']}T{t}").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-                if current >= start + timedelta(hours=5):
-                    con.execute("DELETE FROM events WHERE id=?", (int(r["id"]),))
-            except Exception: continue
-    except Exception:
-        try: con.rollback()
-        except Exception: pass
-    try: con.commit()
-    except Exception: pass
 
 
 def record_admin_login(con, success, event="login"):
@@ -506,13 +484,6 @@ def _crawl_college_website(start_url,max_pages=25):
         except Exception: continue
     return pages
 
-def _sync_college_website(con,start_url):
-    pages=_crawl_college_website(start_url)
-    if not pages: raise RuntimeError('No readable public HTML pages were found on that website.')
-    con.execute('DELETE FROM campus_pages')
-    for url,title,text in pages: con.execute('INSERT INTO campus_pages(source_url,title,text,updated_at) VALUES(?,?,?,?)',(url,title,text,now()))
-    set_setting(con,'college_website_url',_normalize_public_url(start_url)); set_setting(con,'college_website_last_sync',now())
-    return len(pages)
 
 
 def init_db():
@@ -934,10 +905,13 @@ def init_db():
         if "assistant_text" not in cols:
             con.execute("ALTER TABLE resources ADD COLUMN assistant_text TEXT NOT NULL DEFAULT ''")
         tt_cols = {r["name"] for r in con.execute("PRAGMA table_info(timetables)").fetchall()}
-        if "file_data" not in tt_cols:
-            con.execute("ALTER TABLE timetables ADD COLUMN file_data BLOB")
-        if "assistant_text" not in tt_cols:
-            con.execute("ALTER TABLE timetables ADD COLUMN assistant_text TEXT NOT NULL DEFAULT ''")
+        for col,definition in (("mime_type","TEXT"),("drive_file_id","TEXT"),("drive_folder_id","TEXT"),("drive_web_url","TEXT"),("file_data","BLOB"),("assistant_text","TEXT NOT NULL DEFAULT ''")):
+            if col not in tt_cols:
+                con.execute(f"ALTER TABLE timetables ADD COLUMN {col} {definition}")
+        au_cols = {r["name"] for r in con.execute("PRAGMA table_info(academic_updates)").fetchall()}
+        for col in ("drive_file_id","drive_folder_id","drive_web_url"):
+            if col not in au_cols:
+                con.execute(f"ALTER TABLE academic_updates ADD COLUMN {col} TEXT")
     else:
         # PostgreSQL migrations are idempotent and safe on existing deployments.
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
@@ -945,11 +919,19 @@ def init_db():
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT")
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
         con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
+        # Existing deployments may have the original small timetable schema.
+        # Drive-backed publishing needs these additive columns; CREATE TABLE IF NOT EXISTS
+        # does not modify an already-existing Neon table, so migrate them explicitly.
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS mime_type TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
         con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
-        # Existing deployments may have the timetable table from before the
-        # Assistant text column was introduced. Add it before any upload tries
-        # to insert assistant_text, otherwise PostgreSQL rejects the INSERT.
         con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
+        # Existing deployments may also have the original academic-updates schema.
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
         # Existing Render databases may have an older SMALLINT/TEXT success column.
         # Normalize it to BOOLEAN before the application starts so admin login logging cannot fail.
         con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
@@ -1157,8 +1139,6 @@ def publisher_permissions(student_id):
             pass
     return {"announcements", "events", "timetable"} if legacy and legacy["value"] == "1" else set()
 
-def publisher_can(student_id, permission):
-    return permission in publisher_permissions(student_id)
 
 def content_manager_required(fn):
     @wraps(fn)
@@ -1199,16 +1179,6 @@ def admin_required(fn):
     return wrapper
 
 
-def passkey_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not session.get("admin_authenticated"):
-            return redirect(url_for("admin_login"))
-        if not session.get("passkey_verified"):
-            flash("Verify your registered phone passkey first.")
-            return redirect(url_for("admin_password"))
-        return fn(*args, **kwargs)
-    return wrapper
 
 
 def admin_password_hash(con):
@@ -1712,334 +1682,6 @@ def global_online_gate():
     return None
 
 
-def _safe_500_page():
-    # Keep the 500 response independent of the database/layout system so the
-    # error handler itself can never cause a second exception.
-    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VYBE Error</title><style>body{margin:0;background:#050505;color:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;display:grid;place-items:center}.box{max-width:520px;margin:24px;padding:32px;border:1px solid #25252a;border-radius:24px;background:#101012;box-shadow:0 25px 70px #000}.muted{color:#a1a1a6;line-height:1.6}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:12px;background:#f5f5f7;color:#080808;text-decoration:none;font-weight:700}
-/* VYBE: mobile student navigation — sketch-style left menu */
-.student-header-tools .student-menu{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;}
-@media (min-width:851px){
-  .student-header-tools .student-menu{display:grid!important;}
-}
-@media (max-width:850px){
-  .student-header-tools{display:none!important}
-  .student-menu{display:none!important}
-
-  .student-bottom-nav{
-    position:fixed!important;left:0!important;right:0!important;bottom:0!important;
-    height:68px!important;display:flex!important;align-items:center!important;
-    justify-content:space-around!important;z-index:220!important;padding:7px 10px calc(7px + env(safe-area-inset-bottom))!important;
-    background:rgba(2,8,14,.98)!important;
-    border-top:1px solid rgba(58,126,175,.28)!important;
-    backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;
-    box-shadow:0 -12px 35px rgba(0,0,0,.38)!important;
-  }
-  .student-bottom-nav a,
-  .student-bottom-nav button.mobile-menu-nav{
-    flex:1!important;min-width:0!important;display:flex!important;flex-direction:column!important;
-    align-items:center!important;justify-content:center!important;gap:2px!important;
-    text-decoration:none!important;max-width:120px!important;color:#91a9c0!important;
-    font-size:11px!important;
-  }
-  .student-bottom-nav a span,
-  .student-bottom-nav button.mobile-menu-nav span{
-    font-size:23px!important;line-height:1!important;
-  }
-  .student-bottom-nav button.mobile-menu-nav{
-    border:0!important;background:transparent!important;color:#91a9c0!important;
-    font:inherit!important;cursor:pointer!important;padding:0!important;
-  }\n  /* Mobile-only Menu icon: use the exact same hamburger glyph treatment as desktop. */\n  .student-bottom-nav button.mobile-menu-nav span{\n    width:auto!important;height:auto!important;display:block!important;\n    border:0!important;border-radius:0!important;background:transparent!important;\n    box-shadow:none!important;\n    font-family:Arial,Helvetica,sans-serif!important;\n    font-size:24px!important;line-height:1!important;letter-spacing:normal!important;\n    font-weight:400!important;color:#e5f4ff!important;\n  }\n  .student-bottom-nav button.mobile-menu-nav:active span{\n    background:transparent!important;border:0!important;color:#22aef2!important;\n  }\n  .student-bottom-nav a.active,
-  .student-bottom-nav a:active,
-  .student-bottom-nav button.mobile-menu-nav:active{color:#22aef2!important}
-  .student-bottom-nav .mobile-menu-nav{order:1}
-  .student-bottom-nav .mobile-home-nav{order:2}
-  .student-bottom-nav .mobile-profile-nav{order:3}
-  .student-bottom-nav .mobile-back-nav{order:4}
-  .student-bottom-spacer{height:82px!important}
-
-  /* The drawer is a narrow vertical menu attached directly to the left edge,
-     matching the user's hand-drawn mobile layout. */
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
-    display:flex!important;flex-direction:column!important;
-    position:fixed!important;left:0!important;right:auto!important;top:0!important;bottom:68px!important;
-    width:min(48vw,180px)!important;min-width:0!important;
-    z-index:210!important;margin:0!important;padding:22px 10px 18px!important;
-    border:0!important;border-right:1px solid rgba(74,151,204,.34)!important;
-    border-radius:0!important;
-    background:rgba(2,9,17,.30)!important;
-    box-shadow:12px 0 35px rgba(0,0,0,.42)!important;
-    backdrop-filter:blur(25px)!important;-webkit-backdrop-filter:blur(25px)!important;
-    overflow-y:auto!important;
-  }
-
-  /* Hide the title/close row — the bottom Menu button is the control for this drawer. */
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:none!important}
-
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open a{
-    box-sizing:border-box!important;
-    width:100%!important;min-height:72px!important;
-    display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
-    gap:5px!important;padding:9px 6px!important;margin:0 0 10px!important;
-    border:1px solid rgba(75,146,195,.30)!important;
-    border-radius:12px!important;
-    background:rgba(8,25,40,.72)!important;
-    color:#d9eaf6!important;font-size:12px!important;font-weight:650!important;
-    text-align:center!important;text-decoration:none!important;
-    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
-  }
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:hover,
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:active{
-    background:rgba(22,91,139,.38)!important;
-    border-color:rgba(73,173,235,.58)!important;
-    color:#fff!important;
-  }
-  #vybeMobileNav.student-mobile-menu .student-menu-icon{
-    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
-    font-size:21px!important;line-height:1!important;
-    color:#54b9ee!important;
-  }
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open a:last-child{
-    margin-top:auto!important;
-    margin-bottom:0!important;
-  }
-}
-
-
-@media (max-width:850px){
-  /* Mobile only: hide the desktop header controls. Desktop keeps Profile + Menu. */
-  .student-header-tools,
-  .student-control-row .student-menu{
-    display:none!important;
-    visibility:hidden!important;
-    width:0!important;
-    height:0!important;
-    min-width:0!important;
-    min-height:0!important;
-    margin:0!important;
-    padding:0!important;
-    pointer-events:none!important;
-  }
-}
-
-/* ===== VYBE MOBILE-ONLY NAVIGATION OVERRIDE =====
-   Desktop is intentionally untouched. */
-@media (max-width:850px){
-  /* Remove the Profile + Menu controls from the TOP of the mobile student header only. */
-  .student-header-tools .student-header-icon.profile,
-  .student-header-tools .student-menu{
-    display:none!important;
-    visibility:hidden!important;
-    pointer-events:none!important;
-  }
-
-  /* Mobile bottom bar: Menu LEFT, Home CENTER, Profile RIGHT. */
-  .student-bottom-nav{
-    display:flex!important;
-    align-items:stretch!important;
-    justify-content:stretch!important;
-    left:0!important;
-    right:0!important;
-    width:100%!important;
-    transform:none!important;
-    padding-left:8px!important;
-    padding-right:8px!important;
-  }
-  .student-bottom-nav .mobile-menu-nav{order:1!important}
-  .student-bottom-nav .mobile-home-nav{order:2!important}
-  .student-bottom-nav .mobile-profile-nav{order:3!important}
-  .student-bottom-nav .mobile-back-nav{order:4!important}
-
-  .student-bottom-nav .mobile-menu-nav,
-  .student-bottom-nav .mobile-home-nav,
-  .student-bottom-nav .mobile-profile-nav,
-  .student-bottom-nav .mobile-back-nav{
-    flex:1 1 0!important;
-    max-width:none!important;
-    min-width:0!important;
-  }
-
-  /* Left-edge menu drawer, mobile only. */
-  #vybeMobileNav.student-mobile-menu.mobile-nav.open{
-    display:flex!important;
-    position:fixed!important;
-    left:0!important;
-    right:auto!important;
-    top:0!important;
-    bottom:68px!important;
-    width:min(48vw,180px)!important;
-    z-index:1000!important;
-  }
-}
-
-/* Desktop: no rules changed here. */
-
-/* VYBE: mobile drawer only. Desktop menu keeps the original links/layout. */
-.mobile-only-menu-links{display:none}
-@media (max-width:850px){
-  #vybeMobileNav.student-mobile-menu > a{display:none!important}
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
-    display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
-    box-sizing:border-box!important;
-    width:100%!important;min-height:54px!important;
-    display:flex!important;align-items:center!important;justify-content:flex-start!important;
-    gap:12px!important;padding:11px 14px!important;margin:0!important;
-    border:1px solid rgba(75,146,195,.30)!important;
-    border-radius:14px!important;
-    background:rgba(8,25,40,.72)!important;
-    color:#d9eaf6!important;font-size:13px!important;font-weight:650!important;
-    text-decoration:none!important;
-    box-shadow:0 7px 20px rgba(0,0,0,.20)!important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
-    background:rgba(22,91,139,.38)!important;
-    border-color:rgba(73,173,235,.58)!important;
-    color:#fff!important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links .student-menu-icon{
-    width:30px!important;height:30px!important;display:grid!important;place-items:center!important;
-    flex:0 0 30px!important;font-size:20px!important;line-height:1!important;color:#54b9ee!important;
-  }
-}
-
-  /* ===== SIMPLE FINAL PHONE NAV: DO NOT TOUCH DESKTOP ===== */
-  @media(max-width:850px){
-    html,body{width:100%!important;overflow-x:hidden!important}
-    body{padding-bottom:0!important}
-    body:has(.student-nav-compact){padding-top:111px!important;padding-bottom:78px!important}
-    .nav:has(.student-nav-compact){position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;z-index:9000!important;background:#fff!important;border-bottom:1px solid #dfe5df!important;box-shadow:0 3px 14px rgba(20,35,28,.08)!important}
-    .nav:has(.student-nav-compact) .student-nav-compact{height:54px!important;min-height:54px!important;padding:7px 12px!important;display:flex!important;align-items:center!important;gap:8px!important;box-sizing:border-box!important}
-    .student-nav-compact .student-brand-compact,.student-nav-compact .student-header-back{flex:1 1 auto!important;min-width:0!important}
-    .student-nav-compact .student-brand-compact{display:flex!important;align-items:center!important;gap:7px!important;text-decoration:none!important}
-    .student-nav-compact .student-brand-compact .brandmark{width:32px!important;height:32px!important;border-radius:10px!important;font-size:17px!important}
-    .student-nav-compact .student-brand-compact .brandtext{font-size:18px!important;font-weight:850!important;color:#172033!important}
-    .student-nav-compact .student-header-back{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:7px 9px!important;border:1px solid #dce4dc!important;border-radius:9px!important;background:#f6f8f5!important;color:#172033!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
-    .student-nav-compact .student-desktop-links,.student-nav-compact .student-menu{display:none!important}
-    .student-nav-compact .student-header-tools{display:flex!important;align-items:center!important;flex:0 0 auto!important;margin-left:auto!important}
-    .student-nav-compact .student-header-updates{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:34px!important;padding:0 11px!important;border:1px solid #cfd9e2!important;border-radius:9px!important;background:#fff!important;color:#263746!important;font-size:12px!important;font-weight:800!important;text-decoration:none!important;box-shadow:none!important}
-    .student-nav-compact .student-header-updates:hover{background:#f3f7fa!important;border-color:#b9c9d6!important;color:#1f5f8e!important}
-    .nav:has(.student-nav-compact) .student-control-row{height:57px!important;box-sizing:border-box!important;padding:6px 12px 9px!important;margin:0!important;background:#fff!important;border:0!important;display:flex!important;align-items:center!important;justify-content:center!important}
-    .student-control-row .student-search{width:100%!important;max-width:none!important;height:42px!important;margin:0!important;position:relative!important}
-    .student-search input{width:100%!important;height:42px!important;box-sizing:border-box!important;padding:0 13px!important;border:1px solid #d6e0e7!important;border-radius:11px!important;background:#f8fafb!important;color:#172033!important;font-size:13px!important;outline:none!important}
-    .student-search input:focus{background:#fff!important;border-color:#78a9cf!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
-
-    /* Real, visible direct suggestions under the search field. */
-    .vybe-search-suggestions{display:none!important;position:absolute!important;left:0!important;right:0!important;top:48px!important;z-index:10001!important;background:#fff!important;border:1px solid #d9e2e8!important;border-radius:12px!important;padding:5px!important;box-shadow:0 14px 35px rgba(24,42,58,.16)!important}
-    .vybe-search-suggestions.open{display:block!important}
-    .vybe-search-suggestion{display:flex!important;align-items:center!important;justify-content:space-between!important;min-height:40px!important;padding:8px 10px!important;border-radius:8px!important;color:#253746!important;background:#fff!important;text-decoration:none!important;font-size:12px!important;font-weight:750!important}
-    .vybe-search-suggestion:hover,.vybe-search-suggestion:focus{background:#eef5fa!important;color:#205f8d!important;outline:none!important}
-
-    /* Exactly three aligned footer controls. */
-    .student-bottom-nav{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:70px!important;box-sizing:border-box!important;z-index:9000!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;align-items:center!important;gap:6px!important;padding:6px 10px calc(6px + env(safe-area-inset-bottom))!important;background:rgba(255,255,255,.48)!important;border-top:1px solid #dfe5df!important;box-shadow:0 -6px 22px rgba(20,35,28,.08)!important}
-    .student-bottom-nav a,.student-bottom-nav button.mobile-menu-nav{width:100%!important;height:48px!important;min-width:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:10px!important;border:1px solid transparent!important;background:transparent!important;color:#596875!important;text-decoration:none!important;font-size:12px!important;font-weight:800!important;line-height:1!important}
-    .student-bottom-nav a.active{background:#eef4f8!important;color:#245f88!important;border-color:#d8e5ee!important}
-    .student-bottom-nav button.mobile-menu-nav{background:#172033!important;color:#fff!important;border-color:#172033!important;box-shadow:none!important}
-    .student-bottom-nav button.mobile-menu-nav:hover{background:#243247!important;color:#fff!important}
-    .student-bottom-nav .mobile-menu-label{display:block!important;color:inherit!important;font-size:12px!important;font-weight:800!important}
-    .student-bottom-nav .mobile-menu-icon-lines{display:none!important}
-    .student-bottom-spacer{display:none!important}
-
-    /* Left drawer, no duplicate second menu. */
-    #vybeMobileNav.student-mobile-menu{display:none!important;position:fixed!important;left:8px!important;right:auto!important;top:62px!important;width:min(44vw,205px)!important;min-width:155px!important;max-height:calc(100vh - 145px)!important;overflow:auto!important;padding:8px!important;z-index:10000!important;box-sizing:border-box!important;background:rgba(255,255,255,.42)!important;border:1px solid rgba(255,255,255,.58)!important;border-radius:16px!important;backdrop-filter:blur(25px) saturate(160%)!important;-webkit-backdrop-filter:blur(25px) saturate(160%)!important;box-shadow:0 18px 45px rgba(24,42,58,.16),inset 0 1px 0 rgba(255,255,255,.55)!important}
-    #vybeMobileNav.student-mobile-menu.open{display:flex!important;flex-direction:column!important;gap:3px!important}
-    #vybeMobileNav.student-mobile-menu .mobile-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:3px 4px 7px!important;border-bottom:1px solid #edf0ed!important}
-    #vybeMobileNav.student-mobile-menu .mobile-menu-title{font-size:12px!important;font-weight:850!important;color:#172033!important}
-    #vybeMobileNav.student-mobile-menu .mobile-menu-close{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:27px!important;padding:0 8px!important;border:1px solid #d9e1dc!important;border-radius:7px!important;background:#f7f9f7!important;color:#26323e!important;font-size:10px!important}
-    #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{display:flex!important;align-items:center!important;min-height:34px!important;padding:7px 8px!important;border:0!important;border-radius:8px!important;background:rgba(255,255,255,.20)!important;color:#26323e!important;text-decoration:none!important;font-size:10.5px!important;font-weight:700!important;line-height:1.15!important}
-    #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover{background:#eef5fa!important;color:#205f8d!important}
-    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:none!important}
-    .vybe-assistant-fab{bottom:80px!important}
-    .vybe-assistant-panel{bottom:132px!important}
-    .footer,.vybe-footer{display:none!important}
-  }
-
-
-
-
-/* ===== FINAL GLOBAL ASK VYBE DARK PANEL — DESKTOP + MOBILE ===== */
-.vybe-assistant-panel{
-  background:rgba(15,23,42,.97)!important;
-  background-image:linear-gradient(145deg,rgba(25,39,64,.98),rgba(9,15,28,.98))!important;
-  border:1px solid rgba(137,178,211,.28)!important;
-  box-shadow:0 28px 80px rgba(3,8,18,.42),0 8px 28px rgba(3,8,18,.28)!important;
-  color:#f7fbff!important;
-  backdrop-filter:blur(22px)!important;
-  -webkit-backdrop-filter:blur(22px)!important;
-}
-.vybe-assistant-panel .vybe-assistant-head{
-  background:linear-gradient(135deg,#18283f,#111c2e)!important;
-  border-bottom:1px solid rgba(157,194,222,.18)!important;
-}
-.vybe-assistant-panel .vybe-assistant-head strong{color:#ffffff!important}
-.vybe-assistant-panel .vybe-assistant-head small{color:#a9bbcc!important}
-.vybe-assistant-panel .vybe-assistant-close{
-  background:rgba(255,255,255,.08)!important;
-  border-color:rgba(174,207,231,.22)!important;
-  color:#eaf4fb!important;
-}
-.vybe-assistant-panel .vybe-assistant-body{background:transparent!important}
-.vybe-assistant-panel .vybe-assistant-suggestion{
-  background:rgba(255,255,255,.055)!important;
-  border-color:rgba(169,204,228,.18)!important;
-  color:#edf6fc!important;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
-}
-.vybe-assistant-panel .vybe-assistant-suggestion:hover{
-  background:rgba(65,132,194,.18)!important;
-  border-color:rgba(111,175,224,.42)!important;
-  color:#ffffff!important;
-}
-.vybe-assistant-panel .vybe-assistant-note{color:#8fa5b8!important}
-@media(max-width:850px){
-  .vybe-assistant-panel{
-    right:10px!important;
-    bottom:136px!important;
-    width:calc(100vw - 20px)!important;
-    max-height:calc(100svh - 160px)!important;
-    border-radius:20px!important;
-  }
-  .vybe-assistant-panel .vybe-assistant-head{padding:14px 15px!important}
-  .vybe-assistant-panel .vybe-assistant-body{padding:14px!important}
-}
-
-/* FINAL GLOBAL MOBILE ASK VYBE — MATCH DESKTOP AI BUTTON COLOUR */
-@media (max-width:850px){
-  body:has(.student-nav-compact) .vybe-assistant-fab{
-    background:#101827!important;
-    background-image:none!important;
-    color:#ffffff!important;
-    border:1px solid #b9d6ed!important;
-    box-shadow:0 12px 30px rgba(16,24,39,.22)!important;
-    backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;
-  }
-  body:has(.student-nav-compact) .vybe-assistant-fab:hover{
-    background:#172238!important;
-    color:#ffffff!important;
-  }
-  body:has(.student-nav-compact) .vybe-assistant-fab .fab-mark{
-    background:#eaf3ff!important;
-    color:#2f6fca!important;
-    border:0!important;
-    box-shadow:none!important;
-  }
-}
-
-/* FINAL STUDENT PHONE MENU — dark glass, no close button */
-@media (max-width:850px){{
-  #vybeMobileNav.student-mobile-menu{{position:fixed!important;left:10px!important;right:auto!important;top:72px!important;bottom:76px!important;width:min(82vw,270px)!important;max-width:270px!important;min-width:0!important;max-height:calc(100vh - 160px)!important;display:none!important;flex-direction:column!important;gap:8px!important;padding:14px!important;margin:0!important;overflow-y:auto!important;z-index:30000!important;box-sizing:border-box!important;border:1px solid rgba(104,184,235,.28)!important;border-radius:20px!important;background:linear-gradient(145deg,rgba(3,14,25,.96),rgba(7,27,43,.94))!important;color:#eaf7ff!important;box-shadow:0 24px 60px rgba(0,0,0,.52),inset 0 1px rgba(255,255,255,.06)!important;backdrop-filter:blur(24px) saturate(145%)!important;-webkit-backdrop-filter:blur(24px) saturate(145%)!important;}}
-  #vybeMobileNav.student-mobile-menu.open{{display:flex!important;animation:vybeStudentMenuIn .18s ease-out both!important;}}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{display:flex!important;align-items:center!important;justify-content:flex-start!important;min-height:28px!important;padding:2px 4px 9px!important;margin:0 2px 2px!important;border-bottom:1px solid rgba(126,193,229,.16)!important;}}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#f3fbff!important;font-size:13px!important;font-weight:850!important;letter-spacing:.2px!important;}}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-close{{display:none!important}}
-  #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;justify-content:flex-start!important;width:100%!important;min-height:48px!important;margin:0!important;padding:0 13px!important;box-sizing:border-box!important;border:1px solid rgba(111,184,224,.18)!important;border-radius:13px!important;background:rgba(12,39,59,.72)!important;color:#e8f5fc!important;font-size:12px!important;font-weight:750!important;text-decoration:none!important;box-shadow:inset 0 1px rgba(255,255,255,.035),0 5px 16px rgba(0,0,0,.16)!important;}}
-  #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:rgba(24,78,111,.78)!important;border-color:rgba(86,190,242,.42)!important;color:#fff!important;}}
-}}
-@keyframes vybeStudentMenuIn{{from{{opacity:0;transform:translateY(-6px) scale(.985)}}to{{opacity:1;transform:none}}}}
-
-</style></head><body><div class="box"><div>VYBE</div><h1>Something went wrong.</h1><p class="muted">VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><a class="btn" href="javascript:history.back()">← Go back</a></div></body></html>"""
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(error):
@@ -5872,16 +5514,6 @@ def _campus_search(con, q, limit=8):
     return out[:limit*4]
 
 
-def _ai_context(con, question):
-    results=_campus_search(con, question, limit=5)
-    if results:
-        return "\n".join(f'[{x["type"]}] {x["title"]}: {x["text"]}' for x in results)
-    anns=_active_announcements(con,4)
-    evs=_upcoming_events(con,4)
-    return "\n".join(
-        [f'[Announcement] {x["title"]}: {x["message"]}' for x in anns] +
-        [f'[Event] {x["title"]}: {x["event_date"]} {x["event_time"]} at {x["location"]}: {x["description"]}' for x in evs]
-    )
 
 
 def _current_ist():
@@ -9948,7 +9580,7 @@ def admin_drive_register_timetable():
     if not fid or not title: return jsonify(error="Missing timetable title or Drive file."),400
     try:
         _drive_make_public(fid); meta=_drive_file_meta(fid); con=db()
-        con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,None,meta.get("name"),meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink"),str(data.get("assistant_text") or "")[:50000]))
+        con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",(title,meta.get("name") or "Drive file",meta.get("name") or "Drive file",meta.get("mimeType") or "application/octet-stream",None,now(),fid,(meta.get("parents") or [None])[0],meta.get("webContentLink") or meta.get("webViewLink"),str(data.get("assistant_text") or "")[:50000]))
         con.commit(); con.close(); return jsonify(message="Timetable uploaded to Drive and published in VYBE.",metadata=meta)
     except Exception as e:
         try: con.close()
@@ -10672,7 +10304,7 @@ def _drive_store_timetable(con, *, title, original_name, mime_type, data, assist
     fid, folder_id, web = _drive_metadata_values(meta)
     con.execute(
         "INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url,assistant_text) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (title, None, original_name, mime_type, None, now(), fid, folder_id, web, assistant_text)
+        (title, original_name, original_name, mime_type or "application/octet-stream", None, now(), fid, folder_id, web, assistant_text)
     )
     return meta
 
@@ -10686,7 +10318,7 @@ def _drive_record_file(con, category, meta, title=None, course="All", semester="
         if con.execute("SELECT id FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone(): return
         con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(mapped,"Examination" if mapped!="Result" else "Results",title or Path(name).stem,description,course,semester,subject,"","",None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web)); return
     if con.execute("SELECT id FROM timetables WHERE drive_file_id=?",(fid,)).fetchone(): return
-    con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web))
+    con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,name,name,meta.get("mimeType") or "application/octet-stream",None,now(),fid,(meta.get("parents") or [None])[0],web))
 
 def drive_sync_all():
     if False: return {"ok":False,"skipped":True,"message":"Drive not configured"}
