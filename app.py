@@ -1171,12 +1171,29 @@ PUBLISHER_ACCESS_PICKER_CSS = """
 </style>
 """
 
+def publisher_is_active(student_id, con=None):
+    """Return whether the student has been explicitly granted publisher access."""
+    own_con = con is None
+    if own_con:
+        con = db()
+    try:
+        sid = int(student_id)
+        row = con.execute("SELECT value FROM settings WHERE key=?", (f"content_manager_{sid}",)).fetchone()
+        return bool(row and str(row["value"] or "") == "1")
+    except Exception:
+        return False
+    finally:
+        if own_con and con is not None:
+            try: con.close()
+            except Exception: pass
+
+
 def content_manager_required(fn):
     @wraps(fn)
     @student_required
     def wrapper(*args, **kwargs):
         sid = session.get("student_db_id")
-        if not publisher_permissions(sid):
+        if not publisher_is_active(sid) or not publisher_permissions(sid):
             flash("You do not have publisher access.")
             return redirect(url_for("dashboard"))
         return fn(*args, **kwargs)
@@ -3752,6 +3769,21 @@ body{background-attachment:scroll!important}
 .nav,.mobile-nav,.student-bottom-nav,.vybe-assistant-panel,.vybe-assistant-fab,.chat-composer,.flash,.badge,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 .card,.admin-control-card,.admin-tool,.home-action,.home-update-panel,.home-update{animation:none!important}
 .card{transition:border-color .14s ease,background .14s ease!important}
+/* Students / Access has two renderers: table on desktop, cards on phones. */
+.admin-students-mobile{display:none!important}
+.admin-students-desktop{display:block!important}
+.admin-students-page .admin-student-card{display:block!important;padding:15px!important;border:1px solid #dfe5ea!important;border-radius:17px!important;background:#fff!important;box-shadow:0 4px 12px rgba(31,48,66,.045)!important;min-width:0!important;box-sizing:border-box!important}
+.admin-students-page .admin-student-card-head{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:10px!important;min-width:0!important}
+.admin-students-page .admin-student-person{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important;flex:1!important}
+.admin-students-page .admin-student-person>div{min-width:0!important}
+.admin-students-page .admin-student-person strong{display:block!important;font-size:14px!important;line-height:1.25!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.admin-students-page .admin-student-person small{display:block!important;margin-top:3px!important;color:#718090!important;font-size:10px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.admin-students-page .admin-student-meta{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;margin:13px 0!important}
+.admin-students-page .admin-student-meta>div{padding:9px 10px!important;border:1px solid #edf0f3!important;border-radius:11px!important;background:#f8fafc!important;min-width:0!important}
+.admin-students-page .admin-student-meta small{display:block!important;color:#7b8792!important;font-size:8px!important;text-transform:uppercase!important;letter-spacing:.06em!important}
+.admin-students-page .admin-student-meta strong{display:block!important;color:#17202b!important;font-size:11px!important;margin-top:3px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.admin-students-page .admin-student-card-actions{display:grid!important;gap:7px!important}
+@media(max-width:850px){
 @media(max-width:850px){
   *,*::before,*::after{animation:none!important}
   html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
@@ -3769,6 +3801,9 @@ body{background-attachment:scroll!important}
   .admin-students-mobile{display:grid!important;gap:10px!important}
   .admin-students-page .admin-student-card-actions{display:grid!important;grid-template-columns:1fr!important;gap:7px!important}
   .admin-students-page .admin-student-card-actions .btn{width:100%!important;min-height:42px!important}
+  .admin-students-page .admin-student-meta{grid-template-columns:1fr 1fr!important}
+  .admin-students-page .admin-student-meta>div:last-child{grid-column:1 / -1}
+  .admin-students-page .admin-student-card{padding:14px!important;border-radius:16px!important}
   .admin-student-card,.settings-tile,.publisher-student-card,.ah-key,.ah-choice{content-visibility:auto;contain-intrinsic-size:72px}
 }
 @media(min-width:851px){
@@ -4396,7 +4431,7 @@ body{background-attachment:scroll!important}
 .settings-tile:hover{{transform:translateY(-3px);border-color:#c5d8e9;box-shadow:0 18px 36px rgba(31,48,66,.11)}}
 .settings-icon{{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:#edf4ff;font-size:21px}}
 .settings-tile div{{min-width:0;flex:1}}.settings-tile b{{display:block;font-size:17px}}.settings-tile small{{display:block;margin-top:5px;color:#718090;font-size:12px;line-height:1.45}}.settings-tile>strong{{font-size:22px;color:#8a97a3}}.settings-state{{font-size:10px;font-weight:900;letter-spacing:.08em;padding:7px 9px;border-radius:999px;background:#edf4ff;color:#2f6fca;white-space:nowrap}}.settings-state.off{{background:#fff1f1;color:#c45b61}}.settings-footer-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}}.settings-mini{{text-decoration:none;color:#17202b;display:block}}.settings-mini small{{display:block;color:#718090;margin:6px 0 12px}}.settings-mini span{{font-size:12px;color:#2f6fca;font-weight:800}}
-.settings-detail-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;margin-top:20px}}.settings-editor,.settings-preview{{border-radius:24px!important}}.settings-editor-icon{{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:#edf8e6;font-size:23px;margin-bottom:12px}}.settings-check{{display:flex!important;gap:12px;align-items:flex-start;padding:13px;border:1px solid #e1e7ec;border-radius:15px;background:#f8fafb}}.settings-check input{{width:18px!important;flex:0 0 18px;margin-top:2px}}.settings-check b,.settings-check small{{display:block}}.settings-check small{{margin-top:4px;color:#718090}}.preview-row{{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e7ebef;font-size:13px}}.preview-row b{{color:#2f6fca}}.publisher-access-note{{min-width:150px;text-align:center;padding:18px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;line-height:1.2!important}}.publisher-access-note strong{{display:block;font-size:34px}}.publisher-access-note small{{color:#718090}}publisher-on{{background:#edf8e6!important;color:#57952a!important}}.publisher-page .publisher-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}}.publisher-page .publisher-permission-summary{{min-width:210px;padding:16px!important}}.publisher-page .publisher-permission-summary strong{{display:block}}.publisher-page .publisher-permission-summary small{{display:block;color:#718090;margin-top:5px;line-height:1.45}}.publisher-page .publisher-grid .card{{border-radius:22px}}
+.settings-detail-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;margin-top:20px}}.settings-editor,.settings-preview{{border-radius:24px!important}}.settings-editor-icon{{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:#edf8e6;font-size:23px;margin-bottom:12px}}.settings-check{{display:flex!important;gap:12px;align-items:flex-start;padding:13px;border:1px solid #e1e7ec;border-radius:15px;background:#f8fafb}}.settings-check input{{width:18px!important;flex:0 0 18px;margin-top:2px}}.settings-check b,.settings-check small{{display:block}}.settings-check small{{margin-top:4px;color:#718090}}.preview-row{{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #e7ebef;font-size:13px}}.preview-row b{{color:#2f6fca}}.publisher-access-note{{min-width:150px;text-align:center;padding:18px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;line-height:1.2!important}}.publisher-access-note strong{{display:block;font-size:34px}}.publisher-access-note small{{color:#718090}}.publisher-on{{background:#edf8e6!important;color:#57952a!important}}.publisher-page .publisher-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}}.publisher-page .publisher-permission-summary{{min-width:210px;padding:16px!important}}.publisher-page .publisher-permission-summary strong{{display:block}}.publisher-page .publisher-permission-summary small{{display:block;color:#718090;margin-top:5px;line-height:1.45}}.publisher-page .publisher-grid .card{{border-radius:22px}}
 @media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.settings-detail-grid{{gap:12px}}}}
 
@@ -6040,7 +6075,7 @@ def assistant():
 def dashboard():
     con = db()
     s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
-    publisher_enabled = bool(publisher_permissions(session["student_db_id"], con=con))
+    publisher_enabled = publisher_is_active(session["student_db_id"], con=con) and bool(publisher_permissions(session["student_db_id"], con=con))
     anns = _active_announcements(con, 4)
     evs = _upcoming_events(con, 4)
     con.close()
@@ -8047,14 +8082,26 @@ def admin_students():
                         "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
                     ).fetchall()
         try:
-            access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
+            access_rows = con.execute(
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
+            ).fetchall()
         except Exception:
             access_rows = []
-        publisher_by_student = {
-            str(r["key"])[len("content_manager_"):]: str(r["value"]) == "1"
-            for r in access_rows
-            if str(r["key"]).startswith("content_manager_")
-        }
+        publisher_by_student = {}
+        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
+        for ar in access_rows:
+            key = str(ar["key"] or "")
+            value = str(ar["value"] or "")
+            try:
+                if key.startswith("content_manager_") and value == "1":
+                    publisher_by_student[key[len("content_manager_"):]] = True
+                elif key.startswith("publisher_permissions_"):
+                    sid_key = key[len("publisher_permissions_"):]
+                    data = json.loads(value or "[]")
+                    if isinstance(data, list) and any(str(x) in allowed_publisher_keys for x in data):
+                        publisher_by_student.setdefault(sid_key, True)
+            except Exception:
+                continue
         for row in raw_students:
             students.append({
                 "id": int(row["id"]),
@@ -8368,7 +8415,10 @@ def admin_content_access(sid, action):
         set_setting(con, f"publisher_permissions_{sid}", json.dumps([]))
         flash(f"Publisher access revoked from {student['name']}.")
     con.commit(); con.close()
-    return redirect(url_for("admin_publisher_access"))
+    # Publisher access is managed from Students / Access. Return there so the
+    # same row immediately changes between "Give publisher access" and
+    # "Revoke publisher access" without sending the admin to another page.
+    return redirect(url_for("admin_students"))
 
 
 @app.route("/admin/publisher-access", methods=["GET", "POST"])
@@ -8410,30 +8460,32 @@ def admin_publisher_access():
         # Query active publisher students directly from the relationship between
         # students and their content-manager setting. This avoids stale/incomplete
         # in-memory lists and guarantees the selector reflects Students & Access.
+        # Read publisher access settings once and build the active publisher set in Python.
+        # This works consistently on both PostgreSQL and SQLite and also recognizes
+        # older records where permissions were saved before content_manager_* existed.
+        publisher_ids=set()
         try:
-            approved = con.execute(
-                "SELECT s.id,s.name,s.student_id,s.status FROM students s "
-                "JOIN settings pm ON pm.key=('content_manager_' || CAST(s.id AS TEXT)) "
-                "WHERE s.status='approved' AND pm.value='1' ORDER BY s.name,s.id LIMIT 300"
+            access_rows=con.execute(
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'"
             ).fetchall()
         except Exception:
-            approved = []
+            access_rows=[]
+        for r in access_rows:
+            key=str(r["key"] or "")
+            value=str(r["value"] or "")
+            if key.startswith("content_manager_") and value == "1":
+                try:
+                    publisher_ids.add(int(key[len("content_manager_"):]))
+                except (TypeError,ValueError,OverflowError):
+                    continue
+        approved=[]
+        if publisher_ids:
+            placeholders=",".join("?" for _ in publisher_ids)
             try:
-                access_rows = con.execute("SELECT key,value FROM settings WHERE key LIKE 'content_manager_%'").fetchall()
-                publisher_ids = []
-                for r in access_rows:
-                    key = str(r["key"])
-                    if key.startswith("content_manager_") and str(r["value"] or "") == "1":
-                        try:
-                            publisher_ids.append(int(key[len("content_manager_"):]))
-                        except (TypeError,ValueError):
-                            pass
-                if publisher_ids:
-                    placeholders=",".join("?" for _ in publisher_ids)
-                    approved=con.execute(
-                        f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name,id LIMIT 300",
-                        publisher_ids,
-                    ).fetchall()
+                approved=con.execute(
+                    f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name,id LIMIT 300",
+                    tuple(sorted(publisher_ids)),
+                ).fetchall()
             except Exception:
                 approved=[]
 
@@ -8441,10 +8493,13 @@ def admin_publisher_access():
         selected = set()
         if selected_sid:
             selected_student = next((r for r in approved if int(r["id"]) == selected_sid), None)
-            if not selected_student:
+            if not selected_student or not publisher_is_active(selected_sid, con=con):
                 selected_sid = 0
+                selected_student = None
             else:
                 selected = publisher_permissions(selected_sid, con=con)
+                if not selected:
+                    selected = {"announcements", "events", "timetable"}
 
         options = ['<option value="">Choose a publisher…</option>']
         for row in approved:
