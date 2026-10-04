@@ -113,6 +113,14 @@ SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
 
 app = Flask(__name__)
+
+# Browser requests /favicon.ico automatically. Keep that request harmless so it
+# never produces a noisy VYBE 404 (and never interferes with page/API requests).
+@app.route("/favicon.ico")
+def vybe_favicon():
+    _png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    return send_file(io.BytesIO(_png), mimetype="image/png", max_age=86400)
+
 _PRODUCTION = bool(DATABASE_URL)
 _COOKIE_SECURE = True if _PRODUCTION else (os.environ.get("VYBE_COOKIE_SECURE", "1") == "1")
 _COOKIE_NAME = "__Host-vybe_session" if _COOKIE_SECURE else "vybe_session"
@@ -251,12 +259,6 @@ def _close_request_db(_exc=None):
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _valid_student_id(value):
-    """VYBE student IDs must be exactly 12 ASCII digits."""
-    import re
-    return bool(re.fullmatch(r"[0-9]{12}", (value or "").strip()))
 
 def _ensure_password_reset_schema(con):
     if con.is_pg:
@@ -2137,7 +2139,7 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
 .password-toggle.is-visible .eye-open{display:none}
 .password-toggle.is-visible .eye-closed{display:block}
 .password-wrap input{padding-right:58px!important}
-.student-id-wrap.student-id-error input{border-color:#ef4b5f!important;background:rgba(74,10,22,.38)!important;box-shadow:0 0 0 3px rgba(239,75,95,.13),0 8px 28px rgba(120,0,25,.16)!important}.student-id-error-note{color:#ff8290;font-size:12px;margin-top:6px}.password-wrap.password-error input{border-color:#ef4b5f!important;background:rgba(74,10,22,.38)!important;box-shadow:0 0 0 3px rgba(239,75,95,.13),0 8px 28px rgba(120,0,25,.16)!important}
+.password-wrap.password-error input{border-color:#ef4b5f!important;background:rgba(74,10,22,.38)!important;box-shadow:0 0 0 3px rgba(239,75,95,.13),0 8px 28px rgba(120,0,25,.16)!important}
 .password-wrap.password-error .password-toggle{border-color:rgba(239,75,95,.42)!important;color:#ff8290!important;background:rgba(70,10,20,.72)!important}
 .password-error-note{color:#ff8290;font-size:12px;margin-top:6px}
 
@@ -3775,7 +3777,7 @@ def layout(title, body, admin=False):
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x["unread"])
+        _unread_count=sum(1 for x in _header_updates if x.get("unread", True))
         _alert_items=[]
         for x in _header_updates:
             # Bell entries are informational only. They deliberately contain no
@@ -4849,12 +4851,8 @@ def register():
         name = request.form.get("name", "").strip()[:80]
         sid = request.form.get("student_id", "").strip()[:80]
         password = request.form.get("password", "")
-        if not _valid_student_id(sid):
-            session["student_register_student_id_error"] = True
-            flash("Student ID must be exactly 12 digits.")
-            return redirect(url_for("register"))
-        if len(name) < 2 or len(password) < 10:
-            flash("Enter a valid name and a password of at least 10 characters.")
+        if len(name) < 2 or len(sid) < 2 or len(password) < 10:
+            flash("Enter a valid name, unique Student ID and a password of at least 10 characters.")
             return redirect(url_for("register"))
         con = db()
         try:
@@ -4871,10 +4869,7 @@ def register():
         finally:
             con.close()
         return redirect(url_for("login"))
-    register_student_id_error = bool(session.pop("student_register_student_id_error", False))
-    register_sid_class = " student-id-error" if register_student_id_error else ""
-    register_sid_note = '<div class="student-id-error-note">Student ID must be exactly 12 digits.</div>' if register_student_id_error else ''
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div class="student-id-wrap{register_sid_class}"><div class="label">Student ID</div><input name="student_id" required type="text" minlength="12" maxlength="12" pattern="[0-9]{{12}}" inputmode="numeric" autocomplete="username" placeholder="12-digit Student ID" title="Student ID must be exactly 12 digits">{register_sid_note}</div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
+    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -4882,12 +4877,8 @@ def login():
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()
         password = request.form.get("password", "")
-        if not _valid_student_id(sid):
-            session["student_login_student_id_error"] = True
-            flash("Student ID must be exactly 12 digits.")
-            return redirect(url_for("login"))
-        if not password:
-            flash("Password is required.")
+        if not sid or not password:
+            flash("Student ID and password are required.")
             return redirect(url_for("login"))
         con = db()
         row = con.execute("SELECT id,name,status,password_hash FROM students WHERE student_id=?", (sid,)).fetchone()
@@ -4911,10 +4902,7 @@ def login():
         session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
         return redirect(url_for("dashboard"))
     password_error = bool(session.pop("student_login_password_error", False))
-    login_student_id_error = bool(session.pop("student_login_student_id_error", False))
-    login_sid_class = " student-id-error" if login_student_id_error else ""
-    login_sid_note = '<div class="student-id-error-note">Student ID must be exactly 12 digits.</div>' if login_student_id_error else ''
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div class="student-id-wrap{login_sid_class}"><div class="label">Student ID</div><input name="student_id" required type="text" minlength="12" maxlength="12" pattern="[0-9]{{12}}" inputmode="numeric" autocomplete="username" placeholder="12-digit Student ID" title="Student ID must be exactly 12 digits">{login_sid_note}</div><div><div class="label">Password</div><div class="password-wrap{" password-error" if password_error else ""}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>'''
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div class="password-wrap{" password-error" if password_error else ""}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>'''
     return layout("Student Login", body)
 
 @app.route("/forgot-password", methods=["GET", "POST"])
