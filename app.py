@@ -111,16 +111,27 @@ RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
+ADMIN_DEVICE_SALT = "vybe-trusted-admin-device-v1"
+admin_device_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=ADMIN_DEVICE_SALT)
+ADMIN_DEVICE_COOKIE = "vybe_admin_device"
+ADMIN_DEVICE_MAX_AGE = 365 * 24 * 60 * 60
+
+def _admin_device_is_trusted():
+    token = request.cookies.get(ADMIN_DEVICE_COOKIE, "").strip()
+    if not token:
+        return False
+    try:
+        payload = admin_device_serializer.loads(token, max_age=ADMIN_DEVICE_MAX_AGE)
+        return isinstance(payload, dict) and payload.get("v") == 1
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return False
+
+def _mark_admin_device_trusted(response):
+    token = admin_device_serializer.dumps({"v": 1, "created": int(time.time())})
+    response.set_cookie(ADMIN_DEVICE_COOKIE, token, max_age=ADMIN_DEVICE_MAX_AGE, secure=_COOKIE_SECURE, httponly=True, samesite="Lax", path="/")
+    return response
 
 app = Flask(__name__)
-
-# Browser requests /favicon.ico automatically. Keep that request harmless so it
-# never produces a noisy VYBE 404 (and never interferes with page/API requests).
-@app.route("/favicon.ico")
-def vybe_favicon():
-    _png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-    return send_file(io.BytesIO(_png), mimetype="image/png", max_age=86400)
-
 _PRODUCTION = bool(DATABASE_URL)
 _COOKIE_SECURE = True if _PRODUCTION else (os.environ.get("VYBE_COOKIE_SECURE", "1") == "1")
 _COOKIE_NAME = "__Host-vybe_session" if _COOKIE_SECURE else "vybe_session"
@@ -143,39 +154,6 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
-_DB_LOCAL = threading.local()
-
-
-def _warm_database_connection():
-    """Reuse one database connection per warm worker/thread.
-
-    The old implementation opened a brand-new PostgreSQL TLS connection for
-    every HTTP request. On serverless/mobile traffic that connection setup can
-    dominate the actual page query time. A warm connection is rolled back at
-    the end of each request and reused safely by the next request handled by
-    the same worker. Broken/closed connections are discarded automatically.
-    """
-    cached = getattr(_DB_LOCAL, "connection", None)
-    if cached is not None:
-        try:
-            if not bool(getattr(cached, "closed", False)) and not bool(getattr(cached, "broken", False)):
-                return cached
-        except Exception:
-            pass
-        try:
-            cached.close()
-        except Exception:
-            pass
-        _DB_LOCAL.connection = None
-
-    pg_url = DATABASE_URL
-    if _PRODUCTION and "sslmode=" not in pg_url.lower():
-        pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
-    conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
-    _DB_LOCAL.connection = conn
-    return conn
-
-
 class DB:
     """Tiny database abstraction for SQLite and PostgreSQL.
 
@@ -185,14 +163,16 @@ class DB:
     def __init__(self):
         self.is_pg = bool(DATABASE_URL)
         self._request_scoped = False
-        self._persistent = False
         if self.is_pg:
             if psycopg is None:
                 raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
-            # Reuse a warm connection instead of paying a PostgreSQL/TLS
-            # connection handshake on every request.
-            self.conn = _warm_database_connection()
-            self._persistent = True
+            # psycopg uses the DATABASE_URL supplied by the managed database.
+            # Enforce TLS unless the URL explicitly requests a local/insecure
+            # connection (useful only for local development).
+            pg_url = DATABASE_URL
+            if _PRODUCTION and "sslmode=" not in pg_url.lower():
+                pg_url += ("&" if "?" in pg_url else "?") + "sslmode=require"
+            self.conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=10)
         else:
             self.conn = sqlite3.connect(SQLITE_PATH, timeout=20)
             self.conn.row_factory = sqlite3.Row
@@ -248,13 +228,10 @@ def _close_request_db(_exc=None):
             con.conn.rollback()
         except Exception:
             pass
-        # Keep the warm PostgreSQL connection for the next request handled by
-        # this worker. SQLite remains request-scoped as before.
-        if not getattr(con, "_persistent", False):
-            try:
-                con.conn.close()
-            except Exception:
-                pass
+        try:
+            con.conn.close()
+        except Exception:
+            pass
 
 
 def now():
@@ -1075,37 +1052,6 @@ def _student_status_cached(sid):
     return status
 
 _HEADER_CACHE_TTL = 30.0
-_DASHBOARD_CACHE_TTL = 8.0
-def _dashboard_snapshot_cached(sid):
-    """Short-lived dashboard data cache to avoid repeated mobile page queries."""
-    sid = int(sid)
-    key = ("dashboard_snapshot", sid)
-    now_m = time.monotonic()
-    with _AUTHZ_CACHE_LOCK:
-        item = _AUTHZ_CACHE.get(key)
-        if item and item[0] > now_m:
-            return item[1]
-
-    con = db()
-    try:
-        student = con.execute("SELECT name FROM students WHERE id=?", (sid,)).fetchone()
-        permissions = publisher_permissions(sid, con=con)
-        anns = [dict(row) for row in _active_announcements(con, 4)]
-        evs = [dict(row) for row in _upcoming_events(con, 4)]
-        value = {
-            "name": str(student["name"] if student else "Student"),
-            "publisher_enabled": bool(permissions),
-            "announcements": anns,
-            "events": evs,
-        }
-    finally:
-        con.close()
-
-    with _AUTHZ_CACHE_LOCK:
-        _AUTHZ_CACHE[key] = (now_m + _DASHBOARD_CACHE_TTL, value)
-    return value
-
-
 def _student_header_updates_cached(sid):
     key=("header_updates",int(sid))
     now_m=time.monotonic()
@@ -1574,8 +1520,7 @@ def _security_successful_login(con, area, student_id):
         device_hash = _security_device_hash()
         account_key = hashlib.sha256((str(area).lower() + "|" + str(student_id).lower()).encode("utf-8")).hexdigest()
         con.execute("DELETE FROM vybe_security_attempts WHERE account_key=? AND device_hash=? AND area=?", (account_key, device_hash, area))
-        # The caller commits the login transaction together with last_login/
-        # last_seen. Avoid a second PostgreSQL round-trip here.
+        con.commit()
     except Exception:
         try: con.rollback()
         except Exception: pass
@@ -1799,7 +1744,7 @@ def global_online_gate():
     # making the admin Online/Offline switch propagate quickly.
     global _VYBE_ONLINE_CACHE
     now_m = time.monotonic()
-    if now_m - _VYBE_ONLINE_CACHE["at"] >= 10.0:
+    if now_m - _VYBE_ONLINE_CACHE["at"] >= 1.5:
         try:
             con = db()
             _VYBE_ONLINE_CACHE["value"] = setting(con, "vybe_online", "1") == "1"
@@ -1876,7 +1821,7 @@ def security_headers(response):
         # The public VYBE landing page is database-free and safe to edge-cache.
         # This lets repeat visits/opening the VYBE link come from the Vercel
         # edge instead of invoking a Python function every time.
-        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -3777,7 +3722,7 @@ def layout(title, body, admin=False):
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x.get("unread", True))
+        _unread_count=sum(1 for x in _header_updates if bool(x.get("unread", True)))
         _alert_items=[]
         for x in _header_updates:
             # Bell entries are informational only. They deliberately contain no
@@ -4831,6 +4776,13 @@ def _vybe_public_shell(title, body):
 @media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
 </style></head><body><main class="vybe-public">{body}</main></body></html>'''
 
+@app.route("/favicon.ico")
+def favicon():
+    svg = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='#071426'/><text x='32' y='45' text-anchor='middle' font-family='Arial,sans-serif' font-size='38' font-weight='800' fill='white'>V</text></svg>"
+    response = app.response_class(svg, mimetype='image/svg+xml')
+    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
+
 @app.route("/offline")
 def offline():
     body='''<header class="vybe-top"><a class="vybe-brand" href="/offline"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-status-mark">V</div><span class="badge">VYBE STATUS</span><h1>We'll be right back.</h1><p>VYBE is temporarily offline while the campus system is being updated or maintained. Student access is paused for now.</p><div class="status-actions"><a class="vybe-action primary" href="/admin">Admin Login</a></div></div></section>'''
@@ -4842,7 +4794,9 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    admin_button = '<a class="vybe-action" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    admin_mini = '<a class="vybe-admin-mini" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
@@ -5009,6 +4963,17 @@ def forgot_password():
         return redirect(url_for("forgot_password"))
 
     request_id = session.get("password_reset_request_id")
+    status_block = ""
+    if request_id and str(request_id).isdigit():
+        rid = int(request_id)
+        status_block = """<div class="card" style="margin-top:16px;padding:18px"><div class="badge">REQUEST STATUS</div><h2 style="margin:8px 0 6px">Checking your request…</h2><p id="resetStatusText" class="small">Your request is waiting for admin approval. This page will update automatically.</p><a id="resetContinue" class="btn accent" href="/reset-password" style="display:none;margin-top:10px">Continue to password reset →</a></div><script>
+(function(){
+ const rid=__RID__, text=document.getElementById('resetStatusText'), go=document.getElementById('resetContinue');
+ async function check(){try{const r=await fetch('/forgot-password/status?request_id='+encodeURIComponent(rid),{credentials:'same-origin',cache:'no-store'});if(!r.ok)return;const d=await r.json();if(d.status==='approved'){text.textContent='Approved. You can now set a new password.';go.style.display='inline-flex';setTimeout(()=>location.href='/reset-password',600);}else if(d.status==='rejected'){text.textContent='This request was rejected. You can submit a new request below.';}else if(d.status==='expired'||d.status==='used'){text.textContent='This password-change request is no longer active. Submit a new request below.';}}catch(e){}}
+ check();setInterval(check,4000);
+})();
+</script>""".replace("__RID__", str(rid))
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot your password?</h1><p class="muted">Submit your full name and Student ID. An admin will review the request before you can create a new password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Request password change →</button></form>{status_block}<div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Back to login</a><span class="vybe-auth-hint">Your current password is never shown to the admin.</span></div></div></div>'''
     return layout("Forgot Password", body)
 
 
@@ -6161,11 +6126,14 @@ def assistant():
 @app.route("/dashboard")
 @student_required
 def dashboard():
-    snapshot = _dashboard_snapshot_cached(session["student_db_id"])
-    name = snapshot["name"]
-    publisher_enabled = snapshot["publisher_enabled"]
-    anns = snapshot["announcements"]
-    evs = snapshot["events"]
+    con = db()
+    s = con.execute("SELECT name FROM students WHERE id=?", (session["student_db_id"],)).fetchone()
+    publisher_enabled = publisher_is_active(session["student_db_id"], con=con)
+    if publisher_enabled:
+        publisher_enabled = bool(publisher_permissions(session["student_db_id"], con=con))
+    anns = _active_announcements(con, 4)
+    evs = _upcoming_events(con, 4)
+    con.close()
     ann_html="".join(f'<a class="home-update" href="/announcements"><span class="home-update-icon"></span><span><strong>{esc(a["title"])}</strong><small>{esc(a["message"][:140])}</small></span><b>›</b></a>' for a in anns)
     event_html="".join(f'<a class="home-update" href="/events"><span class="home-update-icon"></span><span><strong>{esc(e["title"])}</strong><small>{esc(e["event_date"])} · {esc(e["event_time"] or "TBA")}</small></span><b>›</b></a>' for e in evs)
     if not ann_html:
@@ -6175,7 +6143,7 @@ def dashboard():
     body = f'''<section class="student-home clean-home live-home">
 <div class="home-live-hero">
   <div class="home-live-glow home-live-glow-one"></div><div class="home-live-glow home-live-glow-two"></div>
-  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(name)}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a></div></div>
+  <div class="home-live-copy"><div class="student-space-pill">YOUR CAMPUS</div><h1>Welcome back, {esc(s["name"])}.</h1><p>Everything important for your day at VYBE, in one simple space.</p><div class="home-hero-actions"><a class="btn accent" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a></div></div>
   <div class="home-live-orbit"><span class="orbit-dot orbit-dot-a"></span><span class="orbit-dot orbit-dot-b"></span><div class="orbit-core">V</div></div>
 </div>
 <div class="home-section-label">QUICK ACCESS</div>
@@ -7777,8 +7745,10 @@ def admin_login():
 
         if passkey_count == 0:
             flash("Password accepted. Register your first admin passkey before using the dashboard.")
-            return redirect(url_for("admin_password"))
-        return redirect(url_for("admin_verify"))
+            response = redirect(url_for("admin_password"))
+            return _mark_admin_device_trusted(response)
+        response = redirect(url_for("admin_verify"))
+        return _mark_admin_device_trusted(response)
 
     password_error = bool(session.pop("admin_login_password_error", False))
     body = f"""<div class=\"auth vybe-auth-page\"><div class=\"card authbox\"><a class=\"vybe-auth-logo\" href=\"/\" aria-label=\"VYBE home\">V</a><div class=\"badge\">PRIVATE CONTROL CENTER</div>
@@ -7850,7 +7820,8 @@ def admin_login_passkey_verify():
         session["admin_authenticated"] = True
         session["passkey_verified"] = True
         session["_csrf_token"] = secrets.token_urlsafe(32)
-        return jsonify(ok=True)
+        response = jsonify(ok=True)
+        return _mark_admin_device_trusted(response)
     except Exception as exc:
         try:
             con = db()
@@ -8168,16 +8139,29 @@ def admin_students():
                     raw_students = con.execute(
                         "SELECT id,name,student_id FROM students ORDER BY id DESC LIMIT 300"
                     ).fetchall()
-        # Use the exact same resolver that protects the student publisher route.
-        # The admin page must never infer access from a separate settings scan.
+        try:
+            access_rows = con.execute(
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
+            ).fetchall()
+        except Exception:
+            access_rows = []
         publisher_by_student = {}
-        for row in raw_students:
+        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
+        for ar in access_rows:
+            key = str(ar["key"] or "").strip()
+            value = str(ar["value"] or "").strip()
             try:
-                publisher_by_student[str(int(row["id"]))] = bool(
-                    publisher_is_active(int(row["id"]), con=con)
-                )
+                if key.startswith("content_manager_"):
+                    sid_key = key[len("content_manager_"):].strip()
+                    if value.lower() in {"1", "true", "yes", "on"}:
+                        publisher_by_student[sid_key] = True
+                elif key.startswith("publisher_permissions_"):
+                    sid_key = key[len("publisher_permissions_"):].strip()
+                    data = json.loads(value or "[]")
+                    if isinstance(data, list) and any(str(x) in allowed_publisher_keys for x in data):
+                        publisher_by_student[sid_key] = True
             except Exception:
-                publisher_by_student[str(int(row["id"]))] = False
+                continue
         for row in raw_students:
             students.append({
                 "id": int(row["id"]),
@@ -8528,20 +8512,42 @@ def admin_publisher_access():
             flash(f"Publisher controls updated for {student['name']}." if selected else f"Publisher access revoked for {student['name']} because no publishing controls were selected.")
             return redirect(url_for("admin_publisher_access", student_id=selected_sid))
 
-        # Use the exact same source of truth as the student publisher guard.
-        # Previously this page rebuilt access from a broad settings scan, which
-        # could disagree with publisher_is_active() and leave the selector empty.
-        approved=[]
-        raw_approved=con.execute(
-            "SELECT id,name,student_id,status FROM students "
-            "WHERE status='approved' ORDER BY name,id LIMIT 300"
-        ).fetchall()
-        for row in raw_approved:
+        # Query active publisher students directly from the relationship between
+        # students and their content-manager setting. This avoids stale/incomplete
+        # in-memory lists and guarantees the selector reflects Students & Access.
+        # Read publisher access settings once and build the active publisher set in Python.
+        # This works consistently on both PostgreSQL and SQLite and also recognizes
+        # older records where permissions were saved before content_manager_* existed.
+        publisher_ids=set()
+        allowed_publisher_keys = {k for k, _, _ in PUBLISHER_PERMISSION_CATALOG}
+        try:
+            access_rows=con.execute(
+                "SELECT key,value FROM settings WHERE key LIKE 'content_manager_%' OR key LIKE 'publisher_permissions_%'"
+            ).fetchall()
+        except Exception:
+            access_rows=[]
+        for r in access_rows:
+            key=str(r["key"] or "").strip()
+            value=str(r["value"] or "").strip()
             try:
-                if publisher_is_active(int(row["id"]), con=con):
-                    approved.append(row)
-            except Exception:
+                if key.startswith("content_manager_") and value.lower() in {"1","true","yes","on"}:
+                    publisher_ids.add(int(key[len("content_manager_"):].strip()))
+                elif key.startswith("publisher_permissions_"):
+                    data=json.loads(value or "[]")
+                    if isinstance(data,list) and any(str(x) in allowed_publisher_keys for x in data):
+                        publisher_ids.add(int(key[len("publisher_permissions_"):].strip()))
+            except (TypeError,ValueError,OverflowError,json.JSONDecodeError):
                 continue
+        approved=[]
+        if publisher_ids:
+            placeholders=",".join("?" for _ in publisher_ids)
+            try:
+                approved=con.execute(
+                    f"SELECT id,name,student_id,status FROM students WHERE status='approved' AND id IN ({placeholders}) ORDER BY name,id LIMIT 300",
+                    tuple(sorted(publisher_ids)),
+                ).fetchall()
+            except Exception:
+                approved=[]
 
         selected_student = None
         selected = set()
@@ -9363,7 +9369,7 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||d.message||('Request failed (HTTP '+r.status+')'));return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||('Synced '+(d.synced||0)+' file(s).');}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 def _drive_iter_file_tree(folder_id, max_depth=3, _depth=0):
@@ -9444,34 +9450,16 @@ def _drive_repair_and_sync_library():
                         if meta.get("trashed") or meta.get("mimeType")=="application/vnd.google-apps.folder":
                             continue
                         fid=str(meta.get("id") or "")
-                        if not fid:
-                            continue
                         row=resource_by_fid.get(fid)
+                        if not row:
+                            continue
                         try:
-                            # Canonical Drive folders are authoritative for files
-                            # that are not indexed yet. Older versions only repaired
-                            # rows that already existed in Neon, which meant a file
-                            # could visibly exist in Drive but never appear to
-                            # students. Index it here using the unambiguous
-                            # Section/Semester/Subject path.
-                            if not row:
-                                if _drive_record_file(
-                                    con, category, meta,
-                                    semester=canonical_sem,
-                                    subject=subject_name,
-                                ):
-                                    indexed += 1
-                                    resource_by_fid[fid] = con.execute(
-                                        "SELECT id,resource_type,semester,subject,drive_file_id,drive_folder_id FROM resources WHERE drive_file_id=?",
-                                        (fid,)
-                                    ).fetchone()
-                            else:
-                                if str(row["semester"] or "").strip()!=canonical_sem or str(row["subject"] or "").strip()!=subject_name:
-                                    con.execute("UPDATE resources SET semester=?,subject=? WHERE id=?",(canonical_sem,subject_name,row["id"]))
-                                    normalized+=1
-                            con.execute("UPDATE resources SET drive_folder_id=? WHERE drive_file_id=?",(subject_folder.get("id"),fid))
+                            if str(row["semester"] or "").strip()!=canonical_sem or str(row["subject"] or "").strip()!=subject_name:
+                                con.execute("UPDATE resources SET semester=?,subject=? WHERE id=?",(canonical_sem,subject_name,row["id"]))
+                                normalized+=1
+                            con.execute("UPDATE resources SET drive_folder_id=? WHERE id=?",(subject_folder.get("id"),row["id"]))
                         except Exception as exc:
-                            errors.append(f"canonical {category}/{fid}: {type(exc).__name__}: {exc}")
+                            errors.append(f"canonical {category}/{fid}: {exc}")
 
         # Then repair the legacy Academic Hub / Semester / Section layout.
         hub_root=_drive_find_or_create_folder(VYBE_DRIVE_ROOT_FOLDER_ID,"Academic Hub")
@@ -9556,34 +9544,12 @@ def _drive_repair_and_sync_library():
 @app.route("/admin/drive/organize-subjects", methods=["POST"])
 @admin_required
 def admin_drive_organize_subjects():
-    # This endpoint is a repair/reconciliation action, not a single all-or-nothing
-    # migration.  A transient problem with one Drive item must never make the
-    # whole admin page report a generic failure, and successfully indexed files
-    # must remain committed for students.
     result=_drive_repair_and_sync_library()
     errors=result["errors"]
     if errors:
-        app.logger.warning("Drive library repair completed with partial errors: %s",errors[:20])
-        detail="; ".join(errors[:3])
-        return jsonify(
-            **result,
-            ok=False,
-            partial=True,
-            message=(
-                f"Drive repair completed: {result['moved']} moved, {result['indexed']} indexed, "
-                f"{result['normalized']} normalized. {len(errors)} item(s) need attention. "
-                f"First issue: {detail}"
-            ),
-        ),200
-    return jsonify(
-        **result,
-        ok=True,
-        partial=False,
-        message=(
-            f"Drive repaired: {result['moved']} file(s) moved, {result['indexed']} file(s) indexed "
-            f"and {result['normalized']} record(s) normalized."
-        ),
-    ),200
+        app.logger.warning("Drive library repair finished with errors: %s",errors[:20])
+        return jsonify(**result,ok=False,message=f"Drive repair moved {result['moved']} file(s), indexed {result['indexed']}; {len(errors)} item(s) still need attention."),502
+    return jsonify(**result,ok=True,message=f"Drive repaired: {result['moved']} file(s) moved, {result['indexed']} file(s) indexed and {result['normalized']} record(s) normalized.")
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
 @admin_required
@@ -9830,22 +9796,8 @@ def admin_drive_register_timetable():
 @app.route("/admin/drive/sync", methods=["POST"])
 @admin_required
 def admin_drive_sync():
-    try:
-        result=drive_sync_all()
-        # A Drive sync is deliberately best-effort.  One inaccessible/trashed
-        # item must not turn a successful partial sync into a 500/502 for the
-        # administrator, especially with a large student population.
-        if result.get("errors"):
-            app.logger.warning("Drive sync completed with partial errors: %s",result["errors"][:20])
-            result["partial"]=True
-            result["message"]=f"Drive sync completed: {result.get('synced',0)} file(s) indexed. {len(result['errors'])} item(s) need attention."
-        else:
-            result["partial"]=False
-            result["message"]=f"Drive sync completed: {result.get('synced',0)} file(s) indexed."
-        return jsonify(result),200
-    except Exception as e:
-        app.logger.exception("Drive sync failed")
-        return jsonify(ok=False,error=f"Drive sync failed: {type(e).__name__}: {e}"),502
+    try: return jsonify(drive_sync_all())
+    except Exception as e: return jsonify(error=str(e)),502
 
 @app.route("/admin/drive/watch", methods=["POST"])
 @admin_required
