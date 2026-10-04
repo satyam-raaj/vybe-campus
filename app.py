@@ -9363,7 +9363,7 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||d.message||('Request failed (HTTP '+r.status+')'));return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||('Synced '+(d.synced||0)+' file(s).');}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 def _drive_iter_file_tree(folder_id, max_depth=3, _depth=0):
@@ -9444,16 +9444,34 @@ def _drive_repair_and_sync_library():
                         if meta.get("trashed") or meta.get("mimeType")=="application/vnd.google-apps.folder":
                             continue
                         fid=str(meta.get("id") or "")
-                        row=resource_by_fid.get(fid)
-                        if not row:
+                        if not fid:
                             continue
+                        row=resource_by_fid.get(fid)
                         try:
-                            if str(row["semester"] or "").strip()!=canonical_sem or str(row["subject"] or "").strip()!=subject_name:
-                                con.execute("UPDATE resources SET semester=?,subject=? WHERE id=?",(canonical_sem,subject_name,row["id"]))
-                                normalized+=1
-                            con.execute("UPDATE resources SET drive_folder_id=? WHERE id=?",(subject_folder.get("id"),row["id"]))
+                            # Canonical Drive folders are authoritative for files
+                            # that are not indexed yet. Older versions only repaired
+                            # rows that already existed in Neon, which meant a file
+                            # could visibly exist in Drive but never appear to
+                            # students. Index it here using the unambiguous
+                            # Section/Semester/Subject path.
+                            if not row:
+                                if _drive_record_file(
+                                    con, category, meta,
+                                    semester=canonical_sem,
+                                    subject=subject_name,
+                                ):
+                                    indexed += 1
+                                    resource_by_fid[fid] = con.execute(
+                                        "SELECT id,resource_type,semester,subject,drive_file_id,drive_folder_id FROM resources WHERE drive_file_id=?",
+                                        (fid,)
+                                    ).fetchone()
+                            else:
+                                if str(row["semester"] or "").strip()!=canonical_sem or str(row["subject"] or "").strip()!=subject_name:
+                                    con.execute("UPDATE resources SET semester=?,subject=? WHERE id=?",(canonical_sem,subject_name,row["id"]))
+                                    normalized+=1
+                            con.execute("UPDATE resources SET drive_folder_id=? WHERE drive_file_id=?",(subject_folder.get("id"),fid))
                         except Exception as exc:
-                            errors.append(f"canonical {category}/{fid}: {exc}")
+                            errors.append(f"canonical {category}/{fid}: {type(exc).__name__}: {exc}")
 
         # Then repair the legacy Academic Hub / Semester / Section layout.
         hub_root=_drive_find_or_create_folder(VYBE_DRIVE_ROOT_FOLDER_ID,"Academic Hub")
@@ -9538,12 +9556,34 @@ def _drive_repair_and_sync_library():
 @app.route("/admin/drive/organize-subjects", methods=["POST"])
 @admin_required
 def admin_drive_organize_subjects():
+    # This endpoint is a repair/reconciliation action, not a single all-or-nothing
+    # migration.  A transient problem with one Drive item must never make the
+    # whole admin page report a generic failure, and successfully indexed files
+    # must remain committed for students.
     result=_drive_repair_and_sync_library()
     errors=result["errors"]
     if errors:
-        app.logger.warning("Drive library repair finished with errors: %s",errors[:20])
-        return jsonify(**result,ok=False,message=f"Drive repair moved {result['moved']} file(s), indexed {result['indexed']}; {len(errors)} item(s) still need attention."),502
-    return jsonify(**result,ok=True,message=f"Drive repaired: {result['moved']} file(s) moved, {result['indexed']} file(s) indexed and {result['normalized']} record(s) normalized.")
+        app.logger.warning("Drive library repair completed with partial errors: %s",errors[:20])
+        detail="; ".join(errors[:3])
+        return jsonify(
+            **result,
+            ok=False,
+            partial=True,
+            message=(
+                f"Drive repair completed: {result['moved']} moved, {result['indexed']} indexed, "
+                f"{result['normalized']} normalized. {len(errors)} item(s) need attention. "
+                f"First issue: {detail}"
+            ),
+        ),200
+    return jsonify(
+        **result,
+        ok=True,
+        partial=False,
+        message=(
+            f"Drive repaired: {result['moved']} file(s) moved, {result['indexed']} file(s) indexed "
+            f"and {result['normalized']} record(s) normalized."
+        ),
+    ),200
 
 @app.route("/admin/drive/upload-session", methods=["POST"])
 @admin_required
@@ -9790,8 +9830,22 @@ def admin_drive_register_timetable():
 @app.route("/admin/drive/sync", methods=["POST"])
 @admin_required
 def admin_drive_sync():
-    try: return jsonify(drive_sync_all())
-    except Exception as e: return jsonify(error=str(e)),502
+    try:
+        result=drive_sync_all()
+        # A Drive sync is deliberately best-effort.  One inaccessible/trashed
+        # item must not turn a successful partial sync into a 500/502 for the
+        # administrator, especially with a large student population.
+        if result.get("errors"):
+            app.logger.warning("Drive sync completed with partial errors: %s",result["errors"][:20])
+            result["partial"]=True
+            result["message"]=f"Drive sync completed: {result.get('synced',0)} file(s) indexed. {len(result['errors'])} item(s) need attention."
+        else:
+            result["partial"]=False
+            result["message"]=f"Drive sync completed: {result.get('synced',0)} file(s) indexed."
+        return jsonify(result),200
+    except Exception as e:
+        app.logger.exception("Drive sync failed")
+        return jsonify(ok=False,error=f"Drive sync failed: {type(e).__name__}: {e}"),502
 
 @app.route("/admin/drive/watch", methods=["POST"])
 @admin_required
