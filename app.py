@@ -10864,9 +10864,71 @@ def _ensure_login_security_schema():
     finally:
         con.close()
 
-init_db()
-_ensure_login_security_schema()
-init_drive_db()
+# ---------------------------------------------------------------------------
+# Fast production startup.
+#
+# Vercel can create a fresh Python worker when traffic arrives after an idle
+# period. The old startup path re-ran every idempotent CREATE/ALTER/index check
+# on every cold start. That is safe, but it makes the first mobile request wait
+# for unnecessary Neon round-trips. A schema-version marker lets already
+# migrated deployments take the fast path. If the marker is missing or changed,
+# the complete legacy-safe migrations still run exactly as before.
+#
+# IMPORTANT: bump VYBE_SCHEMA_VERSION whenever a future code change adds a
+# database migration that must run once on existing deployments.
+# ---------------------------------------------------------------------------
+VYBE_SCHEMA_VERSION = "2026-10-04-v1"
+
+def _schema_version_is_current():
+    con = None
+    try:
+        con = db()
+        if con.is_pg:
+            exists = con.execute("SELECT to_regclass('public.settings') AS table_name").fetchone()
+            if not exists or not exists["table_name"]:
+                return False
+        else:
+            exists = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone()
+            if not exists:
+                return False
+        row = con.execute("SELECT value FROM settings WHERE key=?", ("vybe_schema_version",)).fetchone()
+        return bool(row and str(row["value"] or "") == VYBE_SCHEMA_VERSION)
+    except Exception:
+        # Never block startup because the optimization check failed. The full
+        # idempotent migration path below remains the source of truth.
+        return False
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _initialize_vybe_schema():
+    if _schema_version_is_current():
+        return
+
+    # Existing migration functions are intentionally retained unchanged. They
+    # are the compatibility path for older VYBE databases and local SQLite.
+    init_db()
+    _ensure_login_security_schema()
+    init_drive_db()
+
+    con = None
+    try:
+        con = db()
+        set_setting(con, "vybe_schema_version", VYBE_SCHEMA_VERSION)
+        con.commit()
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+_initialize_vybe_schema()
 
 
 # Admin login history deletion
