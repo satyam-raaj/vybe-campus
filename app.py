@@ -6339,11 +6339,6 @@ def academic_hub_exam_forms():
 def academic_hub_assessment():
     return _academic_update_collection("Assessment","Assessments","Official assessment links published by the admin.","ASSESSMENTS")
 
-@app.route("/academic-hub/assignments")
-@student_required
-def academic_hub_assignments():
-    return redirect(url_for("academic_hub_assessment"))
-
 @app.route("/papers")
 @student_required
 def academic_papers():
