@@ -4467,6 +4467,107 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
 }}
 
 
+
+  /* ===== VYBE MENU: SINGLE SOURCE OF TRUTH ===== */
+  #vybeMobileNav.student-mobile-menu{{
+    display:none !important;
+    position:absolute !important;
+    top:72px !important;
+    right:18px !important;
+    left:auto !important;
+    width:270px !important;
+    max-width:calc(100vw - 36px) !important;
+    max-height:calc(100vh - 96px) !important;
+    overflow-y:auto !important;
+    overflow-x:hidden !important;
+    box-sizing:border-box !important;
+    padding:10px !important;
+    z-index:60000 !important;
+    flex-direction:column !important;
+    gap:7px !important;
+    border:1px solid rgba(105,177,220,.28) !important;
+    border-radius:16px !important;
+    background:linear-gradient(145deg,#0b2238 0%,#071827 100%) !important;
+    color:#eef8ff !important;
+    box-shadow:0 20px 48px rgba(0,0,0,.40),inset 0 1px rgba(255,255,255,.05) !important;
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu.open{{display:flex !important;}}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
+    display:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{
+    display:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+    display:flex !important;
+    align-items:center !important;
+    justify-content:flex-start !important;
+    width:100% !important;
+    min-height:44px !important;
+    margin:0 !important;
+    padding:0 13px !important;
+    box-sizing:border-box !important;
+    border:1px solid rgba(105,177,220,.20) !important;
+    border-radius:11px !important;
+    background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;
+    color:#eaf6ff !important;
+    -webkit-text-fill-color:#eaf6ff !important;
+    text-decoration:none !important;
+    font-size:13px !important;
+    font-weight:750 !important;
+    line-height:1.2 !important;
+    opacity:1 !important;
+    visibility:visible !important;
+    box-shadow:inset 0 1px rgba(255,255,255,.035) !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu > a:focus-visible,
+  #vybeMobileNav.student-mobile-menu > a:active,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{
+    background:#174d70 !important;
+    color:#fff !important;
+    -webkit-text-fill-color:#fff !important;
+    border-color:rgba(88,193,245,.42) !important;
+    outline:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a *,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a *{{
+    color:inherit !important;
+    -webkit-text-fill-color:inherit !important;
+    opacity:1 !important;
+    visibility:visible !important;
+  }}
+  #vybeMobileNav.student-mobile-menu .student-menu-icon{{
+    color:#62c5f7 !important;
+    -webkit-text-fill-color:#62c5f7 !important;
+  }}
+  @media(max-width:850px){{
+    #vybeMobileNav.student-mobile-menu{{
+      position:fixed !important;
+      top:108px !important;
+      left:8px !important;
+      right:auto !important;
+      bottom:76px !important;
+      width:min(82vw,270px) !important;
+      max-width:270px !important;
+      max-height:none !important;
+      padding:10px !important;
+      border-radius:0 16px 16px 0 !important;
+      z-index:30000 !important;
+      box-shadow:18px 0 42px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.05) !important;
+    }}
+    #vybeMobileNav.student-mobile-menu.open{{display:flex !important;}}
+    #vybeMobileNav.student-mobile-menu > a,
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+      min-height:42px !important;
+      font-size:12px !important;
+    }}
+  }}
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
@@ -6484,205 +6585,6 @@ def issues():
         .campus-note{{font-size:12px}}
       }}
     
-  /* ===== VYBE FINAL MONOCHROME NAVIGATION ===== */
-  .student-desktop-links,
-  .admin-navlinks,
-  .navlinks {{
-    display:flex !important;
-    align-items:center !important;
-    gap:8px !important;
-  }}
-  .student-desktop-links > a,
-  .admin-navlinks > a,
-  .navlinks > a {{
-    display:inline-flex !important;
-    align-items:center !important;
-    justify-content:center !important;
-    min-height:36px !important;
-    padding:0 12px !important;
-    border:1px solid #b9bdc2 !important;
-    border-radius:8px !important;
-    background:#ffffff !important;
-    color:#17191c !important;
-    box-shadow:none !important;
-    text-decoration:none !important;
-    box-sizing:border-box !important;
-  }}
-  .student-desktop-links > a:hover,
-  .admin-navlinks > a:hover,
-  .navlinks > a:hover {{
-    background:#f0f1f2 !important;
-    border-color:#777c82 !important;
-    color:#000000 !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {{
-    display:flex !important;
-    align-items:center !important;
-    justify-content:flex-start !important;
-    width:calc(100% - 16px) !important;
-    min-height:42px !important;
-    margin:5px 8px !important;
-    padding:0 12px !important;
-    border:1px solid #b9bdc2 !important;
-    border-radius:8px !important;
-    background:#ffffff !important;
-    color:#17191c !important;
-    box-sizing:border-box !important;
-    text-decoration:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover {{
-    background:#f0f1f2 !important;
-    border-color:#777c82 !important;
-  }}
-  .student-bottom-nav {{
-    background:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
-    background-image:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
-    border-top:1px solid #b9d4ea !important;
-    box-shadow:0 -8px 24px rgba(38,75,105,.14) !important;
-  }}
-  .student-bottom-nav > .mobile-menu-nav,
-  .student-bottom-nav > .mobile-home-nav,
-  .student-bottom-nav > .mobile-profile-nav {{
-    width:100% !important;
-    min-width:0 !important;
-    max-width:none !important;
-    height:46px !important;
-    margin:0 !important;
-    padding:0 6px !important;
-    display:flex !important;
-    align-items:center !important;
-    justify-content:center !important;
-    border:1px solid #b9cfe0 !important;
-    border-radius:9px !important;
-    background:#ffffff !important;
-    color:#15191d !important;
-    box-sizing:border-box !important;
-    text-decoration:none !important;
-    box-shadow:none !important;
-  }}
-  .student-bottom-nav > .mobile-home-nav.active {{
-    background:#dceeff !important;
-    color:#111827 !important;
-    border-color:#8fbce0 !important;
-    box-shadow:inset 0 1px rgba(255,255,255,.75),0 2px 8px rgba(56,104,145,.10) !important;
-  }}
-  .student-bottom-nav > .mobile-menu-nav:hover,
-  .student-bottom-nav > .mobile-profile-nav:hover {{
-    background:#f3f8fc !important;
-    color:#111827 !important;
-    border-color:#8fbce0 !important;
-  }}
-  .student-bottom-nav .mobile-menu-label,
-  .student-bottom-nav .mobile-home-nav,
-  .student-bottom-nav .mobile-profile-nav {{
-    font-size:12px !important;
-    font-weight:800 !important;
-    line-height:1 !important;
-  }}
-
-  /* ===== FINAL MOBILE GLASS OVERRIDE ===== */
-  @media(max-width:850px){{
-    .nav:has(.student-nav-compact){{
-      background:rgba(2,10,18,.58)!important;
-      border-bottom:1px solid rgba(120,190,230,.18)!important;
-      box-shadow:0 8px 30px rgba(0,0,0,.22)!important;
-      backdrop-filter:blur(24px) saturate(150%)!important;
-      -webkit-backdrop-filter:blur(24px) saturate(150%)!important;
-    }}
-    .nav:has(.student-nav-compact) .student-nav-compact,
-    .nav:has(.student-nav-compact) .student-control-row{{
-      background:transparent!important;
-    }}
-    .student-nav-compact .student-header-back,
-    .student-nav-compact .student-header-updates{{
-      background:rgba(20,48,70,.48)!important;
-      border:1px solid rgba(125,195,235,.25)!important;
-      color:#e5f4ff!important;
-      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 18px rgba(0,0,0,.12)!important;
-      backdrop-filter:blur(14px)!important;
-      -webkit-backdrop-filter:blur(14px)!important;
-    }}
-    .student-search input{{
-      background:rgba(7,25,42,.48)!important;
-      border:1px solid rgba(91,165,215,.25)!important;
-      color:#fff!important;
-      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
-      backdrop-filter:blur(16px)!important;
-      -webkit-backdrop-filter:blur(16px)!important;
-    }}
-    .student-search input:focus{{
-      background:rgba(10,34,55,.62)!important;
-      border-color:rgba(80,184,245,.55)!important;
-      box-shadow:0 0 0 3px rgba(40,160,225,.10),inset 0 1px rgba(255,255,255,.05)!important;
-    }}
-    #vybeMobileNav.student-mobile-menu{{
-      background:rgba(4,17,29,.58)!important;
-      border:1px solid rgba(108,178,220,.25)!important;
-      box-shadow:0 20px 55px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.055)!important;
-      backdrop-filter:blur(26px) saturate(155%)!important;
-      -webkit-backdrop-filter:blur(26px) saturate(155%)!important;
-    }}
-    #vybeMobileNav.student-mobile-menu > a,
-    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
-      background:rgba(18,45,66,.42)!important;
-      border:1px solid rgba(110,178,218,.20)!important;
-      color:#e6f4ff!important;
-      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
-    }}
-    #vybeMobileNav.student-mobile-menu > a:hover,
-    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover{{
-      background:rgba(40,91,126,.55)!important;
-      border-color:rgba(93,190,242,.42)!important;
-      color:#fff!important;
-    }}
-    .student-bottom-nav{{
-      background:rgba(2,10,18,.62)!important;
-      background-image:none!important;
-      border-top:1px solid rgba(105,177,220,.22)!important;
-      box-shadow:0 -12px 34px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.045)!important;
-      backdrop-filter:blur(26px) saturate(160%)!important;
-      -webkit-backdrop-filter:blur(26px) saturate(160%)!important;
-    }}
-    .student-bottom-nav > .mobile-menu-nav,
-    .student-bottom-nav > .mobile-home-nav,
-    .student-bottom-nav > .mobile-profile-nav{{
-      background:rgba(14,39,59,.42)!important;
-      border:1px solid rgba(102,175,218,.22)!important;
-      color:#bcd7ea!important;
-      box-shadow:inset 0 1px rgba(255,255,255,.045)!important;
-      backdrop-filter:blur(12px)!important;
-      -webkit-backdrop-filter:blur(12px)!important;
-    }}
-    .student-bottom-nav > .mobile-home-nav.active{{
-      background:rgba(10,73,108,.58)!important;
-      color:#6fd0ff!important;
-      border-color:rgba(62,190,248,.48)!important;
-      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 20px rgba(0,110,180,.16)!important;
-    }}
-    .student-bottom-nav > .mobile-menu-nav:hover,
-    .student-bottom-nav > .mobile-profile-nav:hover{{
-      background:rgba(34,72,99,.52)!important;
-      color:#eaf8ff!important;
-      border-color:rgba(107,190,232,.38)!important;
-    }}
-    .mobile-direct-suggestions,
-    .vybe-search-suggestions{{
-      background:rgba(4,17,29,.72)!important;
-      border-color:rgba(105,177,220,.25)!important;
-      box-shadow:0 18px 45px rgba(0,0,0,.38)!important;
-      backdrop-filter:blur(22px)!important;
-      -webkit-backdrop-filter:blur(22px)!important;
-    }}
-    .mobile-direct-suggestions .vybe-search-suggestion{{
-      background:rgba(18,45,66,.35)!important;
-      color:#e6f4ff!important;
-    }}
-    .mobile-direct-suggestions .vybe-search-suggestion:hover{{background:rgba(40,91,126,.48)!important}}
-  }}
-
-
 /* ===== FINAL VYBE LOGIN EXPERIENCE — DESKTOP + PHONE ===== */
 @media (min-width:851px){{
   body:has(.authbox){{
@@ -9022,98 +8924,6 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
   /* Avoid expensive visual effects while the finger is moving. */
   .student-bottom-nav,.nav,.vybe-assistant-panel{
     will-change:transform;
-  }
-}
-/* ===== VYBE FINAL MENU PANEL — DARK BLUE, LOW-COST RENDERING ===== */
-/* One final override so older page-specific menu styles cannot turn the panel white. */
-#vybeMobileNav.student-mobile-menu {
-  background: linear-gradient(145deg, #0b2238 0%, #071827 100%) !important;
-  color: #eef8ff !important;
-  border: 1px solid rgba(92, 177, 225, .30) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 18px 42px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.055) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-#vybeMobileNav.student-mobile-menu.open { display:flex !important; }
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links {
-  display:flex !important;
-  flex-direction:column !important;
-  gap:8px !important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-head {
-  display:flex !important;
-  align-items:center !important;
-  justify-content:flex-start !important;
-  min-height:30px !important;
-  padding:2px 5px 9px !important;
-  margin:0 1px 2px !important;
-  border-bottom:1px solid rgba(126,193,229,.16) !important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-title {
-  color:#f5fbff !important;
-  font-size:13px !important;
-  font-weight:850 !important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-close { display:none !important; }
-#vybeMobileNav.student-mobile-menu > a,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {
-  display:flex !important;
-  align-items:center !important;
-  justify-content:flex-start !important;
-  width:100% !important;
-  min-height:46px !important;
-  margin:0 !important;
-  padding:0 13px !important;
-  box-sizing:border-box !important;
-  border:1px solid rgba(102,182,226,.20) !important;
-  border-radius:12px !important;
-  background:linear-gradient(180deg, rgba(18,55,82,.88), rgba(10,35,56,.88)) !important;
-  color:#e9f6ff !important;
-  text-decoration:none !important;
-  font-size:12px !important;
-  font-weight:750 !important;
-  line-height:1.15 !important;
-  box-shadow:inset 0 1px rgba(255,255,255,.035) !important;
-  transition:background .12s ease, border-color .12s ease, transform .12s ease !important;
-}
-#vybeMobileNav.student-mobile-menu > a:hover,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
-#vybeMobileNav.student-mobile-menu > a:active,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active {
-  background:#174d70 !important;
-  border-color:rgba(88,193,245,.42) !important;
-  color:#fff !important;
-}
-#vybeMobileNav.student-mobile-menu .student-menu-icon {
-  color:#62c5f7 !important;
-}
-/* Desktop menu uses the same dark-blue panel language. */
-@media (min-width:851px) {
-  #vybeMobileNav.student-mobile-menu {
-    width:270px !important;
-    max-width:270px !important;
-    max-height:calc(100vh - 110px) !important;
-    overflow-y:auto !important;
-    padding:12px !important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links { gap:7px !important; }
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {
-    min-height:44px !important;
-  }
-}
-@media (max-width:850px) {
-  #vybeMobileNav.student-mobile-menu {
-    left:8px !important;
-    top:62px !important;
-    bottom:76px !important;
-    width:min(82vw,270px) !important;
-    max-width:270px !important;
-    max-height:calc(100vh - 150px) !important;
-    padding:12px !important;
-    overflow-y:auto !important;
-    overflow-x:hidden !important;
   }
 }
 
