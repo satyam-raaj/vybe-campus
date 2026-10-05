@@ -111,6 +111,25 @@ RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
+ADMIN_DEVICE_SALT = "vybe-trusted-admin-device-v1"
+admin_device_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=ADMIN_DEVICE_SALT)
+ADMIN_DEVICE_COOKIE = "vybe_admin_device"
+ADMIN_DEVICE_MAX_AGE = 365 * 24 * 60 * 60
+
+def _admin_device_is_trusted():
+    token = request.cookies.get(ADMIN_DEVICE_COOKIE, "").strip()
+    if not token:
+        return False
+    try:
+        payload = admin_device_serializer.loads(token, max_age=ADMIN_DEVICE_MAX_AGE)
+        return isinstance(payload, dict) and payload.get("v") == 1
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return False
+
+def _mark_admin_device_trusted(response):
+    token = admin_device_serializer.dumps({"v": 1, "created": int(time.time())})
+    response.set_cookie(ADMIN_DEVICE_COOKIE, token, max_age=ADMIN_DEVICE_MAX_AGE, secure=_COOKIE_SECURE, httponly=True, samesite="Lax", path="/")
+    return response
 
 app = Flask(__name__)
 _PRODUCTION = bool(DATABASE_URL)
@@ -1802,7 +1821,9 @@ def security_headers(response):
         # The public VYBE landing page is database-free and safe to edge-cache.
         # This lets repeat visits/opening the VYBE link come from the Vercel
         # edge instead of invoking a Python function every time.
-        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
+        # The landing page varies by the signed trusted-admin-device cookie, so do not
+        # edge-cache one device's Admin Login visibility for everyone.
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -4762,7 +4783,9 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    admin_button = '<a class="vybe-action" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    admin_mini = '<a class="vybe-admin-mini" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
@@ -7705,8 +7728,10 @@ def admin_login():
 
         if passkey_count == 0:
             flash("Password accepted. Register your first admin passkey before using the dashboard.")
-            return redirect(url_for("admin_password"))
-        return redirect(url_for("admin_verify"))
+            response = redirect(url_for("admin_password"))
+            return _mark_admin_device_trusted(response)
+        response = redirect(url_for("admin_verify"))
+        return _mark_admin_device_trusted(response)
 
     password_error = bool(session.pop("admin_login_password_error", False))
     body = f"""<div class=\"auth vybe-auth-page\"><div class=\"card authbox\"><a class=\"vybe-auth-logo\" href=\"/\" aria-label=\"VYBE home\">V</a><div class=\"badge\">PRIVATE CONTROL CENTER</div>
@@ -7778,7 +7803,8 @@ def admin_login_passkey_verify():
         session["admin_authenticated"] = True
         session["passkey_verified"] = True
         session["_csrf_token"] = secrets.token_urlsafe(32)
-        return jsonify(ok=True)
+        response = jsonify(ok=True)
+        return _mark_admin_device_trusted(response)
     except Exception as exc:
         try:
             con = db()
@@ -8119,6 +8145,14 @@ def admin_students():
                         publisher_by_student[sid_key] = True
             except Exception:
                 continue
+        for srow in raw_students:
+            sid_key=str(srow["id"])
+            if sid_key not in publisher_by_student:
+                try:
+                    if publisher_is_active(int(srow["id"]), con=con):
+                        publisher_by_student[sid_key]=True
+                except Exception:
+                    pass
         for row in raw_students:
             students.append({
                 "id": int(row["id"]),
@@ -9198,7 +9232,12 @@ def contact_terms():
         admin_identity_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
         revealed_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
     wa_link=setting(con,"whatsapp_link","").strip()
-    wa_html=f'<a class="contact-terms-whatsapp" href="{esc(wa_link)}" target="_blank" rel="noopener">WhatsApp Support ↗</a>' if consented and wa_link.startswith(("https://wa.me/","https://chat.whatsapp.com/","https://api.whatsapp.com/")) else ""
+    if not wa_link:
+        wa_number=re.sub(r"[^0-9]", "", setting(con,"whatsapp_admin_number","").strip())
+        if len(wa_number) >= 8:
+            wa_link=f"https://wa.me/{wa_number}"
+    wa_host=urlparse(wa_link).netloc.lower() if wa_link else ""
+    wa_html=f'<a class="contact-terms-whatsapp" href="{esc(wa_link)}" target="_blank" rel="noopener">WhatsApp Support ↗</a>' if consented and valid_url(wa_link) and (wa_host=="wa.me" or wa_host=="whatsapp.com" or wa_host.endswith(".whatsapp.com")) else ""
     if consented and admin_email:
         email_html=f'<div class="contact-terms-email"><small>DIRECT VYBE ADMIN CONTACT</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a>{wa_html}</div><div class="contact-revealed-admin">{revealed_photo}<div><strong>Contact revealed</strong><span>{esc(admin_name)} · VYBE Admin</span></div></div>'
     elif consented:
@@ -9870,6 +9909,22 @@ ADMIN_DESKTOP_POLISH_CSS = r"""
   }
   body:has(.settings-detail) .settings-detail-grid{grid-template-columns:1.2fr .8fr!important;gap:18px!important}
 }
+  /* ===== ADMIN ALIGNMENT FIX ===== */
+  body:has(.admin-header) .wrap{width:min(1320px,calc(100vw - 48px))!important;max-width:none!important;margin:0 auto!important;box-sizing:border-box!important}
+  body:has(.admin-header) .admin-page-head > div{min-width:0!important}
+  body:has(.admin-header) .admin-students-page, body:has(.admin-header) .publisher-access-page, body:has(.admin-header) .settings-hub, body:has(.admin-header) .settings-detail{width:100%!important;max-width:none!important;box-sizing:border-box!important}
+  body:has(.admin-header) .admin-students-desktop, body:has(.admin-header) .admin-table-card, body:has(.admin-header) .admin-list-card{width:100%!important;box-sizing:border-box!important}
+  @media(max-width:850px){
+    body:has(.admin-header) .wrap{width:100%!important;max-width:100%!important;padding:22px 12px 40px!important}
+    body:has(.admin-header) .admin-page-head{gap:14px!important;margin-bottom:18px!important}
+    body:has(.admin-header) .admin-page-head h1{font-size:clamp(32px,10vw,44px)!important}
+    body:has(.admin-header) .admin-student-actions{display:grid!important;grid-template-columns:1fr!important;gap:9px!important}
+    body:has(.admin-header) .admin-student-actions .btn{width:100%!important;box-sizing:border-box!important}
+    body:has(.admin-header) .admin-students-desktop{display:none!important}
+    body:has(.admin-header) .admin-students-mobile{display:grid!important;gap:10px!important}
+    body:has(.admin-header) .publisher-picker-card, body:has(.admin-header) .publisher-controls-card{width:100%!important;box-sizing:border-box!important}
+  }
+  @media(min-width:851px){body:has(.admin-header) .admin-students-mobile{display:none!important}}
 </style>
 """
 
