@@ -107,8 +107,6 @@ ALLOWED_EXT = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xlsx", ".odt", ".odp"
 CATEGORIES = ["Wi-Fi", "Systems / computers", "Classroom", "Electricity", "Facilities", "Other"]
 STATUSES = ["Open", "In progress", "Resolved"]
 
-RESET_CODE_SALT = "vybe-password-reset-code-v1"
-reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
 ADMIN_DEVICE_SALT = "vybe-trusted-admin-device-v1"
@@ -3633,6 +3631,7 @@ body:has(.vybe-auth-page) .flash{display:none!important}
 .vybe-auth-page input,.vybe-auth-page select,.vybe-auth-page textarea{background:#fff!important;color:#17202b!important;border:1px solid #dce4ea!important;box-shadow:inset 0 1px 2px rgba(30,45,60,.02)!important}.vybe-auth-page input::placeholder{color:#9aa5af!important}.vybe-auth-page input:focus,.vybe-auth-page textarea:focus,.vybe-auth-page select:focus{border-color:#2f6fca!important;background:#fff!important;box-shadow:0 0 0 4px rgba(47,111,202,.10)!important}.vybe-auth-page .btn.accent,.vybe-auth-page .btn.dark{background:#172033!important;color:#fff!important;border-color:#172033!important;box-shadow:0 12px 25px rgba(23,32,51,.16)!important}.vybe-auth-page .small{color:#7a8793!important}.vybe-auth-page .small a{color:#2f6fca!important;font-weight:800!important}
 .vybe-auth-back-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:22px;padding-top:18px;border-top:1px solid #e8edf1}.vybe-auth-back{display:inline-flex!important;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:9px 15px!important;border-radius:12px!important;background:#172033!important;color:#fff!important;border:1px solid #172033!important;font-size:12px!important;font-weight:850!important;box-shadow:0 9px 22px rgba(23,32,51,.14)!important;transition:transform .18s ease,box-shadow .18s ease,background .18s ease!important}.vybe-auth-back:hover{transform:translateY(-2px);box-shadow:0 13px 28px rgba(23,32,51,.18)!important;background:#0f1727!important}.vybe-auth-hint{font-size:11px;color:#8a96a2;line-height:1.4;text-align:right}
 .vybe-auth-page .authbox>.card{background:#f8fafc!important;color:#17202b!important;border:1px solid #e2e8ed!important;box-shadow:none!important;border-radius:18px!important}.vybe-auth-page .authbox>.card h2{color:#17202b!important}.vybe-auth-page .authbox>.card p,.vybe-auth-page .authbox>.card .small{color:#71808e!important}
+.auth-status-plate{text-align:center!important}.auth-status-plate h1{margin-right:0!important}.auth-status-plate>p.muted{margin-left:auto!important;margin-right:auto!important}.auth-status-actions{display:flex!important;justify-content:center!important;margin-top:22px!important}.auth-status-actions .btn{min-width:170px!important}.auth-status-plate .vybe-auth-back-row{justify-content:center!important}
 @keyframes vybeAuthIn{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:none}}@keyframes vybeAuthFloat{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,14px,0)}}
 @media(max-width:600px){.vybe-auth-page{padding:16px 12px 22px!important}.vybe-auth-page .authbox{padding:26px 18px 20px!important;border-radius:23px!important}.vybe-auth-logo{width:46px;height:46px;right:17px;top:17px;border-radius:14px;font-size:19px}.vybe-auth-page .authbox h1{font-size:31px!important;margin-right:58px!important}.vybe-auth-page .authbox>p.muted{font-size:13px!important}.vybe-auth-back-row{align-items:stretch;flex-direction:column-reverse}.vybe-auth-back{width:100%!important}.vybe-auth-hint{text-align:center}.vybe-auth-page .authbox>.card{padding:15px!important}}
 @media(max-width:380px){.vybe-auth-page{padding:10px 8px 16px!important}.vybe-auth-page .authbox{padding:22px 14px 17px!important;border-radius:20px!important}.vybe-auth-logo{width:42px;height:42px;right:14px;top:14px}.vybe-auth-page .authbox h1{font-size:28px!important;margin-top:8px!important}}
@@ -4788,15 +4787,40 @@ def home():
     body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
+ROLL_NUMBER_RE = re.compile(r"^\d{11,12}$")
+
+def _valid_roll_number(value):
+    return bool(ROLL_NUMBER_RE.fullmatch((value or "").strip()))
+
+
+def _auth_status_plate(title, badge, heading, message, primary_href=None, primary_label=None, back_href="/"):
+    primary = ""
+    if primary_href and primary_label:
+        primary = f'<a class="btn accent" href="{esc(primary_href)}">{esc(primary_label)}</a>'
+    back = f'<a class="vybe-auth-back" href="{esc(back_href)}">← Back</a>'
+    body = f"""<div class="auth vybe-auth-page"><div class="card authbox auth-status-plate">
+        <a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a>
+        <div class="badge">{esc(badge)}</div>
+        <h1>{esc(heading)}</h1>
+        <p class="muted">{esc(message)}</p>
+        {f'<div class="auth-status-actions">{primary}</div>' if primary else ''}
+        <div class="vybe-auth-back-row">{back}</div>
+    </div></div>"""
+    return layout(title, body)
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
         name = request.form.get("name", "").strip()[:80]
         sid = request.form.get("student_id", "").strip()[:80]
         password = request.form.get("password", "")
-        if len(name) < 2 or len(sid) < 2 or len(password) < 10:
-            flash("Enter a valid name, unique Student ID and a password of at least 10 characters.")
-            return redirect(url_for("register"))
+        if len(name) < 2:
+            return _auth_status_plate("Register", "REGISTRATION", "Name is required.", "Please enter your full name before requesting VYBE access.", back_href="/register")
+        if not _valid_roll_number(sid):
+            return _auth_status_plate("Register", "REGISTRATION", "Enter a valid roll number.", "Your roll number must contain only digits and be 11 to 12 digits long.", back_href="/register")
+        if len(password) < 10:
+            return _auth_status_plate("Register", "REGISTRATION", "Password is too short.", "Your personal password must be at least 10 characters long.", back_href="/register")
         con = db()
         try:
             password_hash_value = hash_password(password)
@@ -4805,155 +4829,160 @@ def register():
                 (name, sid, password_hash_value, "pending", now(), None),
             )
             con.commit()
-            flash("Registration submitted. Your account is pending admin approval.")
         except Exception:
             con.rollback()
-            flash("That Student ID is already registered, or could not be saved.")
-        finally:
             con.close()
-        return redirect(url_for("login"))
-    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, unique Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your unique Student ID"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
+            return _auth_status_plate("Register", "REGISTRATION", "Request could not be sent.", "That roll number may already be registered, or the request could not be saved. Please try again.", back_href="/register")
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+        return _auth_status_plate("Registration sent", "REQUEST SENT", "Your request is sent to the admin.", "Kindly try to login after some time.", back_href="/")
+    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, roll number and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        sid = request.form.get("student_id", "").strip()
+        sid = request.form.get("student_id", "").strip()[:80]
         password = request.form.get("password", "")
         if not sid or not password:
-            flash("Student ID and password are required.")
-            return redirect(url_for("login"))
+            return _auth_status_plate("Student Login", "STUDENT LOGIN", "Enter your roll number and password.", "Both fields are required to log in to VYBE.", back_href="/login")
         con = db()
         row = con.execute("SELECT id,name,status,password_hash FROM students WHERE student_id=?", (sid,)).fetchone()
         if not row:
             blocked, until, _ = _security_failed_login(con, "Unknown student", sid, "Student")
             con.close()
-            if blocked: return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
-            session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
+            if blocked:
+                return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
+            return _auth_status_plate("Student Login", "NEW STUDENT", "Kindly register first.", "We could not find a registered VYBE account for this roll number.", primary_href="/register", primary_label="Register", back_href="/")
         if row["status"] == "pending":
-            con.close(); flash("Your registration is still pending admin approval."); return redirect(url_for("login"))
+            con.close()
+            return _auth_status_plate("Student Login", "ACCOUNT PENDING", "Wait for admin approval.", "Your registration has been received. Please wait until the admin approves your account.", back_href="/login")
         if row["status"] == "blocked":
-            con.close(); flash("Your student access is currently blocked."); return redirect(url_for("login"))
+            con.close()
+            flash("Your student access is currently blocked.")
+            return redirect(url_for("login"))
         if not check_password(password, row["password_hash"]):
+            try:
+                pending_reset = con.execute(
+                    "SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
+                    (row["id"],),
+                ).fetchone()
+            except Exception:
+                pending_reset = None
+            if pending_reset:
+                con.close()
+                return _auth_status_plate("Student Login", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", back_href="/login")
             blocked, until, _ = _security_failed_login(con, row["name"], sid, "Student")
             con.close()
-            if blocked: return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
-            session["student_login_password_error"] = True; flash("Student ID or password is incorrect."); return redirect(url_for("login"))
+            if blocked:
+                return _security_block_page(until), 429, {"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow"}
+            session["student_login_password_error"] = True
+            flash("Roll number or password is incorrect.")
+            return redirect(url_for("login"))
         _security_successful_login(con, "Student", sid)
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
         session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
         return redirect(url_for("dashboard"))
     password_error = bool(session.pop("student_login_password_error", False))
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your Student ID and personal password.</p><form class="form" method="post"><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><div><div class="label">Password</div><div class="password-wrap{" password-error" if password_error else ""}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Enter VYBE →</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>'''
+    body = f"""<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your roll number and personal password.</p><form class="form" method="post"><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{{11,12}}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Password</div><div class="password-wrap{' password-error' if password_error else ''}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 6.8 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Login</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>"""
     return layout("Student Login", body)
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
-    """Student password-change request flow.
-
-    The password request itself is the source of truth for the admin panel.
-    Optional admin notifications are created only AFTER the request has been
-    committed, so a notification/WhatsApp/schema problem can never prevent the
-    password request from reaching the admin.
-    """
+    """Student password-change request flow."""
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
-        if not sid or not name:
-            flash("Enter your full name and Student ID.")
-            return redirect(url_for("forgot_password"))
+        if len(name) < 2 or not _valid_roll_number(sid):
+            return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Enter valid details.", "Please enter your full name and an 11 to 12 digit roll number.", back_href="/forgot-password")
 
         con = db()
         request_id = None
         student = None
         try:
-            # Always make sure the actual source-of-truth table exists before
-            # doing anything else. This also repairs older Render databases.
             _ensure_password_reset_schema(con)
             con.commit()
-
             student = con.execute(
                 "SELECT id,name,student_id,status FROM students WHERE student_id=?",
                 (sid,),
             ).fetchone()
 
             if not student or student["name"].strip().lower() != name.lower() or str(student["status"]).lower() != "approved":
-                # Keep the response generic so account status/existence is not
-                # disclosed to an unauthenticated requester. Password recovery
-                # is available only to approved student accounts.
-                flash("If the account is eligible, the password-change request has been sent to the admin.")
-                return redirect(url_for("forgot_password"))
+                con.close()
+                return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Password request sent.", "If the account is eligible, the password request has been sent to the admin. Kindly wait for some time.", primary_href="/login", primary_label="Login", back_href="/")
 
-            # Do not create duplicate active requests. If an approved request
-            # exists, the same recovery session can continue to reset the password.
             existing = con.execute(
-                "SELECT id,status FROM password_reset_requests "
-                "WHERE student_id=? AND status IN ('pending','approved') "
-                "ORDER BY id DESC LIMIT 1",
+                "SELECT id,status FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') ORDER BY id DESC LIMIT 1",
                 (student["id"],),
             ).fetchone()
 
             if existing:
                 request_id = int(existing["id"])
                 session["password_reset_request_id"] = request_id
+                con.close()
                 if existing["status"] == "approved":
-                    flash("Your password-change request is already approved. You can continue to set a new password.")
-                else:
-                    flash("Your password-change request is already waiting for admin approval.")
-                return redirect(url_for("forgot_password"))
+                    return redirect(url_for("reset_password"))
+                return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
 
-            # IMPORTANT: only the password_reset_requests table is written in
-            # this transaction. Nothing optional can roll it back.
             con.execute(
                 "INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)",
                 (student["id"], "pending", now()),
             )
             request_row = con.execute(
-                "SELECT id FROM password_reset_requests "
-                "WHERE student_id=? AND status='pending' "
-                "ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
                 (student["id"],),
             ).fetchone()
             if not request_row:
                 raise RuntimeError("Password reset request was not created")
-
             request_id = int(request_row["id"])
             con.commit()
-
         except Exception as exc:
             try:
                 con.rollback()
             except Exception:
                 pass
             app.logger.exception("PASSWORD RESET REQUEST FAILED: %s", exc)
-            flash("We couldn't send the password-change request right now. Please try again in a moment.")
-            return redirect(url_for("forgot_password"))
-        finally:
-            con.close()
-
-        # Store the committed request ID in the student's session.
-        session["password_reset_request_id"] = request_id
-
-        # Create the admin alert only AFTER the request is safely committed.
-        # This is best-effort and can never cancel the request.
-        if student is not None:
             try:
-                create_admin_notification(
-                    "password_reset",
-                    "Password change request",
-                    f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
-                    student_id=student["id"],
-                )
-            except Exception as exc:
-                app.logger.warning("Password reset admin notification failed: %s", exc)
+                con.close()
+            except Exception:
+                pass
+            return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Request could not be sent.", "We couldn't send the password-change request right now. Please try again in a moment.", back_href="/forgot-password")
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
 
-        flash("Request sent successfully. The admin can now see it in Password Access.")
-        return redirect(url_for("forgot_password"))
+        session["password_reset_request_id"] = request_id
+        try:
+            create_admin_notification(
+                "password_reset",
+                "Password change request",
+                f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
+                student_id=student["id"],
+            )
+        except Exception as exc:
+            app.logger.warning("Password reset admin notification failed: %s", exc)
+        return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
 
     request_id = session.get("password_reset_request_id")
-    return layout("Forgot Password", body)
+    if request_id:
+        con = db()
+        try:
+            row = con.execute("SELECT status,expires_at FROM password_reset_requests WHERE id=?", (int(request_id),)).fetchone()
+        finally:
+            con.close()
+        if row and row["status"] == "pending":
+            return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
+        if row and row["status"] == "approved":
+            return redirect(url_for("reset_password"))
 
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot password?</h1><p class="muted">Enter your registered name and roll number. Your password-change request will be sent to the admin for approval.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><button class="btn accent" type="submit">Forgot password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Login</a><span class="vybe-auth-hint">Password changes require admin approval.</span></div></div></div>"""
+    return layout("Forgot Password", body)
 
 @app.route("/forgot-password/status")
 def forgot_password_status():
@@ -6819,7 +6848,7 @@ def issues():
   body:has(.authbox) .auth{{
     width:100%!important;min-height:calc(100svh - 58px)!important;height:auto!important;
     margin:0!important;padding:20px 12px 34px!important;box-sizing:border-box!important;
-    display:flex!important;align-items:flex-start!important;justify-content:center!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;overflow-y:auto!important;
   }}
   body:has(.authbox) .authbox{{
     width:100%!important;max-width:520px!important;min-width:0!important;margin:0!important;
