@@ -2831,7 +2831,7 @@ main,.main,.wrap{position:relative}
   .navin{width:100%!important;box-sizing:border-box!important;padding:10px 12px!important}
   .auth{
     min-height:calc(100svh - 62px)!important;width:100%!important;
-    display:flex!important;align-items:flex-start!important;justify-content:center!important;
+    display:flex!important;align-items:center!important;justify-content:center!important;
     padding:18px 12px 28px!important;box-sizing:border-box!important;
   }
   .authbox{
@@ -3641,8 +3641,31 @@ body:has(.vybe-auth-page) .flash{display:none!important}
 .vybe-auth-page .authbox>.card{background:#f8fafc!important;color:#17202b!important;border:1px solid #e2e8ed!important;box-shadow:none!important;border-radius:18px!important}.vybe-auth-page .authbox>.card h2{color:#17202b!important}.vybe-auth-page .authbox>.card p,.vybe-auth-page .authbox>.card .small{color:#71808e!important}
 .auth-status-plate{text-align:center!important}.auth-status-plate h1{margin-right:0!important}.auth-status-plate>p.muted{margin-left:auto!important;margin-right:auto!important}.auth-status-actions{display:flex!important;justify-content:center!important;margin-top:22px!important}.auth-status-actions .btn{min-width:170px!important}.auth-status-plate .vybe-auth-back-row{justify-content:center!important}
 @keyframes vybeAuthIn{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:none}}@keyframes vybeAuthFloat{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,14px,0)}}
-@media(max-width:600px){.vybe-auth-page{padding:16px 12px 22px!important}.vybe-auth-page .authbox{padding:26px 18px 20px!important;border-radius:23px!important}.vybe-auth-logo{width:46px;height:46px;right:17px;top:17px;border-radius:14px;font-size:19px}.vybe-auth-page .authbox h1{font-size:31px!important;margin-right:58px!important}.vybe-auth-page .authbox>p.muted{font-size:13px!important}.vybe-auth-back-row{align-items:stretch;flex-direction:column-reverse}.vybe-auth-back{width:100%!important}.vybe-auth-hint{text-align:center}.vybe-auth-page .authbox>.card{padding:15px!important}}
-@media(max-width:380px){.vybe-auth-page{padding:10px 8px 16px!important}.vybe-auth-page .authbox{padding:22px 14px 17px!important;border-radius:20px!important}.vybe-auth-logo{width:42px;height:42px;right:14px;top:14px}.vybe-auth-page .authbox h1{font-size:28px!important;margin-top:8px!important}}
+@media(max-width:600px){
+  .vybe-auth-page{padding:16px 12px 22px!important;display:flex!important;align-items:center!important;justify-content:center!important;min-height:100svh!important}
+  .vybe-auth-page .authbox{width:min(500px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;margin:0 auto!important;padding:26px 18px 20px!important;border-radius:23px!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  .vybe-auth-page::before,.vybe-auth-page::after{display:none!important}
+  .vybe-auth-logo{width:46px;height:46px;right:17px;top:17px;border-radius:14px;font-size:19px}
+  .vybe-auth-page .authbox h1{font-size:31px!important;margin-right:58px!important}
+  .vybe-auth-page .authbox>p.muted{font-size:13px!important}
+  .vybe-auth-page .auth-status-plate{width:min(500px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;margin:0 auto!important;padding:28px 18px 22px!important;text-align:center!important}
+  .vybe-auth-page .auth-status-plate h1{margin:12px 0 10px!important;text-align:center!important}
+  .vybe-auth-page .auth-status-plate>p.muted{max-width:100%!important;margin:0 auto!important;text-align:center!important;overflow-wrap:anywhere!important}
+  .vybe-auth-page .auth-status-actions{width:100%!important;display:flex!important;justify-content:center!important}
+  .vybe-auth-page .auth-status-actions .btn{width:100%!important;min-width:0!important}
+  .vybe-auth-page .auth-status-plate .vybe-auth-back-row{width:100%!important;justify-content:center!important;align-items:stretch!important}
+  .vybe-auth-back-row{align-items:stretch;flex-direction:column-reverse}
+  .vybe-auth-back{width:100%!important}
+  .vybe-auth-hint{text-align:center}
+  .vybe-auth-page .authbox>.card{padding:15px!important}
+}
+@media(max-width:380px){
+  .vybe-auth-page{padding:10px 8px 16px!important}
+  .vybe-auth-page .authbox{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;padding:22px 14px 17px!important;border-radius:20px!important}
+  .vybe-auth-page .auth-status-plate{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;padding:24px 14px 18px!important}
+  .vybe-auth-logo{width:42px;height:42px;right:14px;top:14px}
+  .vybe-auth-page .authbox h1{font-size:28px!important;margin-top:8px!important}
+}
 """
 
 ADMIN_PROBLEM_ALERT_CSS = r"""
