@@ -9190,6 +9190,82 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
   }
 }
 
+
+/* ===== DESKTOP MENU VISIBILITY / POSITION FINAL FIX =====
+   Scoped to desktop only. Mobile navigation is intentionally untouched. */
+@media (min-width:851px) {{
+  #vybeMobileNav.student-mobile-menu {{
+    position:fixed !important;
+    top:76px !important;
+    right:22px !important;
+    left:auto !important;
+    bottom:auto !important;
+    width:292px !important;
+    max-width:calc(100vw - 44px) !important;
+    max-height:calc(100vh - 94px) !important;
+    min-height:0 !important;
+    box-sizing:border-box !important;
+    display:none !important;
+    flex-direction:column !important;
+    gap:8px !important;
+    padding:12px !important;
+    overflow-x:hidden !important;
+    overflow-y:auto !important;
+    z-index:20000 !important;
+    border:1px solid rgba(92,177,225,.30) !important;
+    border-radius:16px !important;
+    background:linear-gradient(145deg,#0b2238 0%,#071827 100%) !important;
+    color:#eef8ff !important;
+    box-shadow:0 18px 50px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.055) !important;
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu.open {{
+    display:flex !important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {{
+    display:flex !important;
+    align-items:center !important;
+    justify-content:flex-start !important;
+    width:100% !important;
+    min-height:46px !important;
+    margin:0 !important;
+    padding:0 13px !important;
+    box-sizing:border-box !important;
+    border:1px solid rgba(102,182,226,.20) !important;
+    border-radius:11px !important;
+    background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;
+    color:#f5fbff !important;
+    font-size:13px !important;
+    font-weight:750 !important;
+    line-height:1.2 !important;
+    text-decoration:none !important;
+    opacity:1 !important;
+    visibility:visible !important;
+    text-shadow:none !important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
+  #vybeMobileNav.student-mobile-menu > a:focus-visible,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible {{
+    background:#174d70 !important;
+    border-color:rgba(88,193,245,.42) !important;
+    color:#ffffff !important;
+    outline:none !important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head {{
+    display:none !important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links {{
+    display:none !important;
+  }}
+}}
 </style>"""
 @app.route("/contact-terms", methods=["GET","POST"])
 def contact_terms():
