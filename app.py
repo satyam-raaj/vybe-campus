@@ -245,10 +245,12 @@ def _ensure_password_reset_schema(con):
             approved_at TEXT,
             approval_code_hash TEXT,
             approval_code_token TEXT,
+            proposed_password_hash TEXT,
             expires_at TEXT,
             used_at TEXT
         )""")
         con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
     else:
         con.execute("""CREATE TABLE IF NOT EXISTS password_reset_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,6 +260,7 @@ def _ensure_password_reset_schema(con):
             approved_at TEXT,
             approval_code_hash TEXT,
             approval_code_token TEXT,
+            proposed_password_hash TEXT,
             expires_at TEXT,
             used_at TEXT,
             FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
@@ -265,6 +268,8 @@ def _ensure_password_reset_schema(con):
         cols={r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
         if "approval_code_token" not in cols:
             con.execute("ALTER TABLE password_reset_requests ADD COLUMN approval_code_token TEXT")
+        if "proposed_password_hash" not in cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN proposed_password_hash TEXT")
 
 
 def _ensure_password_reset_active_index(con):
@@ -957,8 +962,11 @@ def init_db():
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
         if "approval_code_token" not in reset_cols:
             con.execute("ALTER TABLE password_reset_requests ADD COLUMN approval_code_token TEXT")
+        if "proposed_password_hash" not in reset_cols:
+            con.execute("ALTER TABLE password_reset_requests ADD COLUMN proposed_password_hash TEXT")
     else:
         con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
 
     try:
         _ensure_password_reset_active_index(con)
@@ -4893,12 +4901,16 @@ def login():
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
-    """Student password-change request flow."""
+    """Student submits a complete password-reset request for admin approval."""
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
         name = request.form.get("name", "").strip()[:80]
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
         if len(name) < 2 or not _valid_roll_number(sid):
             return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Enter valid details.", "Please enter your full name and an 11 to 12 digit roll number.", back_href="/forgot-password")
+        if len(new_password) < 10 or len(new_password) > 128 or new_password != confirm_password:
+            return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Password details are invalid.", "Your new password and confirm password must match and be at least 10 characters long.", back_href="/forgot-password")
 
         con = db()
         request_id = None
@@ -4915,22 +4927,31 @@ def forgot_password():
                 con.close()
                 return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Password request sent.", "If the account is eligible, the password request has been sent to the admin. Kindly wait for some time.", primary_href="/login", primary_label="Login", back_href="/")
 
+            proposed_hash = hash_password(new_password)
             existing = con.execute(
-                "SELECT id,status FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') ORDER BY id DESC LIMIT 1",
+                "SELECT id,status,proposed_password_hash FROM password_reset_requests WHERE student_id=? AND status IN ('pending','approved') ORDER BY id DESC LIMIT 1",
                 (student["id"],),
             ).fetchone()
 
             if existing:
                 request_id = int(existing["id"])
-                session["password_reset_request_id"] = request_id
-                con.close()
-                if existing["status"] == "approved":
-                    return redirect(url_for("reset_password"))
-                return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
+                if existing["status"] == "pending":
+                    if not existing["proposed_password_hash"]:
+                        con.execute("UPDATE password_reset_requests SET proposed_password_hash=? WHERE id=?", (proposed_hash, request_id))
+                        con.commit()
+                    session["password_reset_request_id"] = request_id
+                    con.close()
+                    return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
+                if existing["proposed_password_hash"]:
+                    session["password_reset_request_id"] = request_id
+                    con.close()
+                    return _auth_status_plate("Forgot Password", "PASSWORD APPROVED", "Your new password is ready.", "Your password request has already been approved. Please log in with the new password.", primary_href="/login", primary_label="Login", back_href="/")
+                con.execute("UPDATE password_reset_requests SET status='superseded' WHERE id=?", (request_id,))
+                con.commit()
 
             con.execute(
-                "INSERT INTO password_reset_requests(student_id,status,requested_at) VALUES(?,?,?)",
-                (student["id"], "pending", now()),
+                "INSERT INTO password_reset_requests(student_id,status,requested_at,proposed_password_hash) VALUES(?,?,?,?)",
+                (student["id"], "pending", now(), proposed_hash),
             )
             request_row = con.execute(
                 "SELECT id FROM password_reset_requests WHERE student_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
@@ -4962,7 +4983,7 @@ def forgot_password():
             create_admin_notification(
                 "password_reset",
                 "Password change request",
-                f"{student['name']} ({student['student_id']}) requested access to change their VYBE password.",
+                f"{student['name']} ({student['student_id']}) requested a new VYBE password.",
                 student_id=student["id"],
             )
         except Exception as exc:
@@ -4973,15 +4994,17 @@ def forgot_password():
     if request_id:
         con = db()
         try:
-            row = con.execute("SELECT status,expires_at FROM password_reset_requests WHERE id=?", (int(request_id),)).fetchone()
+            row = con.execute("SELECT status,expires_at,proposed_password_hash FROM password_reset_requests WHERE id=?", (int(request_id),)).fetchone()
         finally:
             con.close()
         if row and row["status"] == "pending":
             return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
-        if row and row["status"] == "approved":
-            return redirect(url_for("reset_password"))
+        if row and row["status"] == "approved" and row["proposed_password_hash"]:
+            return _auth_status_plate("Forgot Password", "PASSWORD APPROVED", "Your new password is ready.", "Your password request has already been approved. Please log in with the new password.", primary_href="/login", primary_label="Login", back_href="/")
+        if row and row["status"] == "approved" and not row["proposed_password_hash"]:
+            session.pop("password_reset_request_id", None)
 
-    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot password?</h1><p class="muted">Enter your registered name and roll number. Your password-change request will be sent to the admin for approval.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><button class="btn accent" type="submit">Forgot password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Login</a><span class="vybe-auth-hint">Password changes require admin approval.</span></div></div></div>"""
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot password?</h1><p class="muted">Enter your registered name, roll number and your new password. Your request will be sent to the admin for approval.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">New password</div><div class="password-wrap"><input id="forgotNewPassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="forgotNewPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm password</div><div class="password-wrap"><input id="forgotConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm password"><button type="button" class="password-toggle toggle-password" data-target="forgotConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s-3.3 6-3.9 6-9.5-6-9.5-6Z"/></svg></button></div></div><button class="btn accent" type="submit">Forgot password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Login</a><span class="vybe-auth-hint">Your new password becomes active after admin approval.</span></div></div></div>"""
     return layout("Forgot Password", body)
 
 @app.route("/forgot-password/status")
@@ -5017,46 +5040,9 @@ def forgot_password_status():
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
-    request_id = session.get("password_reset_request_id")
-    if not request_id:
-        flash("Please request a password change first.")
-        return redirect(url_for("forgot_password"))
-    con = db()
-    try:
-        row = con.execute("SELECT r.id,r.student_id,r.status,r.expires_at,s.status AS student_status FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (int(request_id),)).fetchone()
-        if not row or row["status"] != "approved" or row["student_status"] != "approved":
-            flash("Your password-change request has not been approved yet or is no longer active.")
-            return redirect(url_for("forgot_password"))
-        if row["expires_at"]:
-            try:
-                exp = datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) >= exp:
-                    con.execute("UPDATE password_reset_requests SET status='expired' WHERE id=? AND status='approved'", (row["id"],))
-                    con.commit()
-                    flash("The password-change approval has expired. Please request access again.")
-                    return redirect(url_for("forgot_password"))
-            except Exception:
-                pass
-        if request.method == "POST":
-            posted_request_id = request.form.get("request_id", "").strip()
-            new_password = request.form.get("password", "")
-            confirm = request.form.get("confirm_password", "")
-            if posted_request_id != str(request_id):
-                flash("This password-change session is invalid. Please start again.")
-                return redirect(url_for("forgot_password"))
-            if len(new_password) < 10 or new_password != confirm:
-                flash("New passwords must match and be at least 10 characters.")
-                return redirect(url_for("forgot_password"))
-            con.execute("UPDATE students SET password_hash=? WHERE id=?", (hash_password(new_password), row["student_id"]))
-            con.execute("UPDATE password_reset_requests SET status='used', used_at=? WHERE id=?", (now(), row["id"]))
-            con.commit()
-            session.pop("password_reset_request_id", None)
-            flash("Password changed successfully. You can now log in with your new password.")
-            return redirect(url_for("login"))
-    finally:
-        con.close()
-    body = """<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">APPROVED RESET</div><h1>Set a new password.</h1><p class="muted">Admin has approved your password-change request. Create your new password below. Your existing password is never visible to the admin.</p><form class="form" method="post"><input type="hidden" name="request_id" value="{rid}"><div><div class="label">New password</div><div class="password-wrap"><input id="resetPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="resetPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="resetConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="resetConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Change password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/forgot-password">← Password recovery</a><span class="vybe-auth-hint">Secure password change · admin approved</span></div></div></div>""".format(rid=int(request_id))
-    return layout("Reset Password", body)
+    """Legacy compatibility route; password changes now happen at admin approval."""
+    session.pop("password_reset_request_id", None)
+    return redirect(url_for("forgot_password"))
 
 
 @app.route("/account/password", methods=["GET", "POST"])
@@ -10255,11 +10241,11 @@ def admin_password_requests():
         if r["status"] == "pending":
             action = f'''<div class="actions"><form method="post" action="/admin/password-request/{r['id']}/approve"><button class="btn good">Approve</button></form><form method="post" action="/admin/password-request/{r['id']}/reject"><button class="btn danger">Reject</button></form><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         elif r["status"] == "approved":
-            action = f'''<div class="actions"><span class="pill status-good">Approved · password form unlocked</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
+            action = f'''<div class="actions"><span class="pill status-good">Approved · password active</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         else:
             action = f'''<div class="actions"><span class="pill">{esc(r["status"])}</span><form method="post" action="/admin/password-request/{r['id']}/delete" onsubmit="return confirm(\'Delete this password request permanently?\')"><button class="btn danger">Delete</button></form></div>'''
         html_rows.append(f'''<tr><td>{esc(r["requested_at"])}</td><td><strong>{esc(r["student_name"])}</strong><br><span class="small">{esc(r["student_sid"])}</span></td><td><span class="pill">{esc(r["status"])}</span></td><td>{esc(r["approved_at"] or '—')}<br><span class="small">{esc(r["expires_at"] or '')}</span></td><td>{action}</td></tr>''')
-    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students can request a password change. After admin approval, the student's open VYBE password-recovery page automatically unlocks a new-password form. No reset code is shown, and admins never see the student's existing password.</p><div class="notice">After approval, the student is taken directly to the new-password page. No reset code is required. The approval can only be used once.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
+    body=f'''<section class="section"><div class="badge">ACCOUNT RECOVERY</div><h1>Password requests.</h1><p class="muted">Students submit their new password with the recovery request. After admin approval, that password becomes active immediately and the student can log in directly. Admins never see the password.</p><div class="notice">After approval, the submitted new password becomes active immediately. The student can log in directly. The approval can only be used once.</div><div class="card tablewrap" style="margin-top:18px"><table><tr><th>Requested</th><th>Student</th><th>Status</th><th>Approval</th><th>Action</th></tr>{''.join(html_rows) or '<tr><td colspan="5">No password requests.</td></tr>'}</table></div></section>'''
     return layout("Password Requests", body, admin=True)
 
 
@@ -10284,10 +10270,15 @@ def admin_password_request_action(rid, action):
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
 
     approved = now()
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    con.execute("UPDATE password_reset_requests SET status='approved', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=? WHERE id=?", (approved, expires, rid))
+    proposed_hash = row["proposed_password_hash"]
+    if not proposed_hash:
+        con.close()
+        flash("This password request was created before the new recovery flow. Ask the student to submit a new request.")
+        return redirect(url_for("admin_password_requests"))
+    con.execute("UPDATE students SET password_hash=? WHERE id=?", (proposed_hash, row["student_id"]))
+    con.execute("UPDATE password_reset_requests SET status='used', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL, used_at=? WHERE id=?", (approved, approved, rid))
     con.commit(); con.close()
-    flash("Approved. The student can now set a new password directly on their recovery page for the next 15 minutes.")
+    flash("Approved. The submitted new password is now active. The student can log in directly.")
     return redirect(url_for("admin_password_requests"))
 
 
