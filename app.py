@@ -4540,6 +4540,34 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
   .compact-home-updates .home-update>b{{font-size:16px!important}}
 }}
 
+
+/* ===== FINAL DESKTOP STUDENT MENU TEXT VISIBILITY =====
+   Keep the existing dark menu design. Only force the menu labels to a
+   high-contrast light color so older page-specific rules cannot hide them. */
+@media (min-width:851px){{
+  #vybeMobileNav.student-mobile-menu,
+  #vybeMobileNav.student-mobile-menu *{{
+    color:#f3f8fc !important;
+    -webkit-text-fill-color:#f3f8fc !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu > a span,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a span{{
+    color:#f3f8fc !important;
+    -webkit-text-fill-color:#f3f8fc !important;
+    opacity:1 !important;
+    visibility:visible !important;
+    text-shadow:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu > a:hover span,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover span{{
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+  }}
+}}
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
