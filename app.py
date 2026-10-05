@@ -111,25 +111,6 @@ RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
-ADMIN_DEVICE_SALT = "vybe-trusted-admin-device-v1"
-admin_device_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=ADMIN_DEVICE_SALT)
-ADMIN_DEVICE_COOKIE = "vybe_admin_device"
-ADMIN_DEVICE_MAX_AGE = 365 * 24 * 60 * 60
-
-def _admin_device_is_trusted():
-    token = request.cookies.get(ADMIN_DEVICE_COOKIE, "").strip()
-    if not token:
-        return False
-    try:
-        payload = admin_device_serializer.loads(token, max_age=ADMIN_DEVICE_MAX_AGE)
-        return isinstance(payload, dict) and payload.get("v") == 1
-    except (BadSignature, SignatureExpired, ValueError, TypeError):
-        return False
-
-def _mark_admin_device_trusted(response):
-    token = admin_device_serializer.dumps({"v": 1, "created": int(time.time())})
-    response.set_cookie(ADMIN_DEVICE_COOKIE, token, max_age=ADMIN_DEVICE_MAX_AGE, secure=_COOKIE_SECURE, httponly=True, samesite="Lax", path="/")
-    return response
 
 app = Flask(__name__)
 _PRODUCTION = bool(DATABASE_URL)
@@ -1821,7 +1802,7 @@ def security_headers(response):
         # The public VYBE landing page is database-free and safe to edge-cache.
         # This lets repeat visits/opening the VYBE link come from the Vercel
         # edge instead of invoking a Python function every time.
-        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
+        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -2547,6 +2528,61 @@ main,.main,.wrap{position:relative}
 
 
 
+/* ===== FINAL MENU PANEL — MATCH ASK VYBE DARK BLUE GLASS ===== */
+#vybeMobileNav.student-mobile-menu{
+  background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+  background-color:#0b1625!important;
+  color:#f4f7fb!important;
+  border:1px solid rgba(104,142,178,.38)!important;
+  box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
+  backdrop-filter:blur(24px) saturate(135%)!important;
+  -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-head{
+  border-bottom:1px solid rgba(105,139,171,.24)!important;
+  background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-title{
+  color:#fff!important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-close{
+  background:rgba(255,255,255,.07)!important;
+  border:1px solid rgba(120,150,180,.34)!important;
+  color:#e4edf5!important;
+}
+#vybeMobileNav.student-mobile-menu > a,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+  background:rgba(255,255,255,.055)!important;
+  border:1px solid rgba(105,139,170,.28)!important;
+  color:#e8eef5!important;
+  box-shadow:none!important;
+}
+#vybeMobileNav.student-mobile-menu > a:hover,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
+#vybeMobileNav.student-mobile-menu > a:focus-visible,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:focus-visible,
+#vybeMobileNav.student-mobile-menu > a:active,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
+  background:rgba(47,111,202,.20)!important;
+  border-color:rgba(104,160,216,.48)!important;
+  color:#fff!important;
+}
+@media(max-width:850px){
+  #vybeMobileNav.student-mobile-menu{
+    background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
+    border:1px solid rgba(104,142,178,.38)!important;
+    box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
+    backdrop-filter:blur(24px) saturate(135%)!important;
+    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{color:#fff!important}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    background:rgba(255,255,255,.055)!important;
+    border:1px solid rgba(105,139,170,.28)!important;
+    color:#e8eef5!important;
+  }
+}
 /* ===== VYBE COMPACT HEADER / NO FOOTER ===== */
 .student-nav-compact{max-width:1280px!important;min-height:58px!important;padding:7px 18px!important;gap:16px!important}
 .student-nav-compact .student-brand-compact{font-size:20px!important;min-width:76px!important}
@@ -3659,7 +3695,7 @@ def layout(title, body, admin=False):
         # Keep the desktop student navigation exactly as it was.
         links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/updates">Updates</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
         # Mobile gets its own drawer links so desktop navigation is never changed.
-        mobile_links = '<a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/dashboard"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Home</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/academics"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Academics</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/updates"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Updates</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/apps"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Study Apps</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/papers"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Previous Papers</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/issues"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Help Desk</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/community"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Community</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/chat"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Chat</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/search"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Search</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/announcements"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Announcements</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/events"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Events</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/profile"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Profile</span></a><a style="display:flex !important;align-items:center !important;width:100% !important;box-sizing:border-box !important;min-height:44px !important;padding:0 13px !important;margin:0 !important;border:1px solid rgba(105,177,220,.20) !important;border-radius:11px !important;background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;color:#eaf6ff !important;-webkit-text-fill-color:#eaf6ff !important;text-decoration:none !important;font-size:13px !important;font-weight:750 !important;line-height:1.2 !important;opacity:1 !important;visibility:visible !important;" href="/logout"><span style="color:#eaf6ff!important;-webkit-text-fill-color:#eaf6ff!important;opacity:1!important;visibility:visible!important">Logout</span></a>'
+        mobile_links = '<a href="/dashboard"><span>Home</span></a><a href="/academics"><span>Academics</span></a><a href="/updates"><span>Updates</span></a><a href="/apps"><span>Study Apps</span></a><a href="/papers"><span>Previous Papers</span></a><a href="/issues"><span>Help Desk</span></a><a href="/community"><span>Community</span></a><a href="/chat"><span>Chat</span></a><a href="/search"><span>Search</span></a><a href="/announcements"><span>Announcements</span></a><a href="/events"><span>Events</span></a><a href="/profile"><span>Profile</span></a><a href="/logout"><span>Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
@@ -3667,7 +3703,7 @@ def layout(title, body, admin=False):
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if bool(x.get("unread", True)))
+        _unread_count=sum(1 for x in _header_updates if x["unread"])
         _alert_items=[]
         for x in _header_updates:
             # Bell entries are informational only. They deliberately contain no
@@ -4413,6 +4449,25 @@ body{background-attachment:scroll!important}
 @media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.settings-detail-grid{{gap:12px}}}}
 
+/* ===== FINAL VYBE MENU PANEL — DARK BLUE, LIGHTWEIGHT, ALL DEVICES ===== */
+#vybeMobileNav.student-mobile-menu{{
+  background:linear-gradient(145deg,#142a43 0%,#0b1b2d 58%,#071321 100%)!important;
+  border:1px solid rgba(116,171,214,.34)!important;
+  box-shadow:0 22px 55px rgba(4,12,22,.42),inset 0 1px rgba(255,255,255,.055)!important;
+  color:#eef7ff!important;
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+  isolation:isolate!important;
+}}
+#vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-head{{background:transparent!important;border-bottom:1px solid rgba(145,190,220,.16)!important;color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .mobile-menu-close{{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,195,225,.20)!important;color:#eaf6ff!important}}
+#vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
+#vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
+#vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
+@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
+@media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
+
 /* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
 html{{scroll-behavior:auto!important}}
 body{{background-attachment:scroll!important}}
@@ -4466,110 +4521,8 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
   .compact-home-updates .home-update>b{{font-size:16px!important}}
 }}
 
-
-
-  /* ===== VYBE MENU: SINGLE SOURCE OF TRUTH ===== */
-  #vybeMobileNav.student-mobile-menu{{
-    display:none !important;
-    position:absolute !important;
-    top:72px !important;
-    right:18px !important;
-    left:auto !important;
-    width:270px !important;
-    max-width:calc(100vw - 36px) !important;
-    max-height:calc(100vh - 96px) !important;
-    overflow-y:auto !important;
-    overflow-x:hidden !important;
-    box-sizing:border-box !important;
-    padding:10px !important;
-    z-index:60000 !important;
-    flex-direction:column !important;
-    gap:7px !important;
-    border:1px solid rgba(105,177,220,.28) !important;
-    border-radius:16px !important;
-    background:linear-gradient(145deg,#0b2238 0%,#071827 100%) !important;
-    color:#eef8ff !important;
-    box-shadow:0 20px 48px rgba(0,0,0,.40),inset 0 1px rgba(255,255,255,.05) !important;
-    backdrop-filter:none !important;
-    -webkit-backdrop-filter:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu.open{{display:flex !important;}}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
-    display:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{
-    display:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
-    display:flex !important;
-    align-items:center !important;
-    justify-content:flex-start !important;
-    width:100% !important;
-    min-height:44px !important;
-    margin:0 !important;
-    padding:0 13px !important;
-    box-sizing:border-box !important;
-    border:1px solid rgba(105,177,220,.20) !important;
-    border-radius:11px !important;
-    background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;
-    color:#eaf6ff !important;
-    -webkit-text-fill-color:#eaf6ff !important;
-    text-decoration:none !important;
-    font-size:13px !important;
-    font-weight:750 !important;
-    line-height:1.2 !important;
-    opacity:1 !important;
-    visibility:visible !important;
-    box-shadow:inset 0 1px rgba(255,255,255,.035) !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu > a:focus-visible,
-  #vybeMobileNav.student-mobile-menu > a:active,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{
-    background:#174d70 !important;
-    color:#fff !important;
-    -webkit-text-fill-color:#fff !important;
-    border-color:rgba(88,193,245,.42) !important;
-    outline:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a *,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a *{{
-    color:inherit !important;
-    -webkit-text-fill-color:inherit !important;
-    opacity:1 !important;
-    visibility:visible !important;
-  }}
-  #vybeMobileNav.student-mobile-menu .student-menu-icon{{
-    color:#62c5f7 !important;
-    -webkit-text-fill-color:#62c5f7 !important;
-  }}
-  @media(max-width:850px){{
-    #vybeMobileNav.student-mobile-menu{{
-      position:fixed !important;
-      top:108px !important;
-      left:8px !important;
-      right:auto !important;
-      bottom:76px !important;
-      width:min(82vw,270px) !important;
-      max-width:270px !important;
-      max-height:none !important;
-      padding:10px !important;
-      border-radius:0 16px 16px 0 !important;
-      z-index:30000 !important;
-      box-shadow:18px 0 42px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.05) !important;
-    }}
-    #vybeMobileNav.student-mobile-menu.open{{display:flex !important;}}
-    #vybeMobileNav.student-mobile-menu > a,
-    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
-      min-height:42px !important;
-      font-size:12px !important;
-    }}
-  }}
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
-<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav" style="background:linear-gradient(145deg,#0b2238 0%,#071827 100%) !important;color:#eaf6ff !important;border:1px solid rgba(105,177,220,.28) !important;box-shadow:0 20px 48px rgba(0,0,0,.40) !important;">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
+<div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
 <script>(function(){{
 const toggle=document.getElementById("vybeNavToggle");
@@ -4804,13 +4757,6 @@ def _vybe_public_shell(title, body):
 @media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
 </style></head><body><main class="vybe-public">{body}</main></body></html>'''
 
-@app.route("/favicon.ico")
-def favicon():
-    svg = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='#071426'/><text x='32' y='45' text-anchor='middle' font-family='Arial,sans-serif' font-size='38' font-weight='800' fill='white'>V</text></svg>"
-    response = app.response_class(svg, mimetype='image/svg+xml')
-    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-    return response
-
 @app.route("/offline")
 def offline():
     body='''<header class="vybe-top"><a class="vybe-brand" href="/offline"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-status-mark">V</div><span class="badge">VYBE STATUS</span><h1>We'll be right back.</h1><p>VYBE is temporarily offline while the campus system is being updated or maintained. Student access is paused for now.</p><div class="status-actions"><a class="vybe-action primary" href="/admin">Admin Login</a></div></div></section>'''
@@ -4822,9 +4768,7 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    admin_button = '<a class="vybe-action" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
-    admin_mini = '<a class="vybe-admin-mini" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
-    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
@@ -4991,17 +4935,6 @@ def forgot_password():
         return redirect(url_for("forgot_password"))
 
     request_id = session.get("password_reset_request_id")
-    status_block = ""
-    if request_id and str(request_id).isdigit():
-        rid = int(request_id)
-        status_block = """<div class="card" style="margin-top:16px;padding:18px"><div class="badge">REQUEST STATUS</div><h2 style="margin:8px 0 6px">Checking your request…</h2><p id="resetStatusText" class="small">Your request is waiting for admin approval. This page will update automatically.</p><a id="resetContinue" class="btn accent" href="/reset-password" style="display:none;margin-top:10px">Continue to password reset →</a></div><script>
-(function(){
- const rid=__RID__, text=document.getElementById('resetStatusText'), go=document.getElementById('resetContinue');
- async function check(){try{const r=await fetch('/forgot-password/status?request_id='+encodeURIComponent(rid),{credentials:'same-origin',cache:'no-store'});if(!r.ok)return;const d=await r.json();if(d.status==='approved'){text.textContent='Approved. You can now set a new password.';go.style.display='inline-flex';setTimeout(()=>location.href='/reset-password',600);}else if(d.status==='rejected'){text.textContent='This request was rejected. You can submit a new request below.';}else if(d.status==='expired'||d.status==='used'){text.textContent='This password-change request is no longer active. Submit a new request below.';}}catch(e){}}
- check();setInterval(check,4000);
-})();
-</script>""".replace("__RID__", str(rid))
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot your password?</h1><p class="muted">Submit your full name and Student ID. An admin will review the request before you can create a new password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Request password change →</button></form>{status_block}<div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Back to login</a><span class="vybe-auth-hint">Your current password is never shown to the admin.</span></div></div></div>'''
     return layout("Forgot Password", body)
 
 
@@ -6585,6 +6518,205 @@ def issues():
         .campus-note{{font-size:12px}}
       }}
     
+  /* ===== VYBE FINAL MONOCHROME NAVIGATION ===== */
+  .student-desktop-links,
+  .admin-navlinks,
+  .navlinks {{
+    display:flex !important;
+    align-items:center !important;
+    gap:8px !important;
+  }}
+  .student-desktop-links > a,
+  .admin-navlinks > a,
+  .navlinks > a {{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    min-height:36px !important;
+    padding:0 12px !important;
+    border:1px solid #b9bdc2 !important;
+    border-radius:8px !important;
+    background:#ffffff !important;
+    color:#17191c !important;
+    box-shadow:none !important;
+    text-decoration:none !important;
+    box-sizing:border-box !important;
+  }}
+  .student-desktop-links > a:hover,
+  .admin-navlinks > a:hover,
+  .navlinks > a:hover {{
+    background:#f0f1f2 !important;
+    border-color:#777c82 !important;
+    color:#000000 !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {{
+    display:flex !important;
+    align-items:center !important;
+    justify-content:flex-start !important;
+    width:calc(100% - 16px) !important;
+    min-height:42px !important;
+    margin:5px 8px !important;
+    padding:0 12px !important;
+    border:1px solid #b9bdc2 !important;
+    border-radius:8px !important;
+    background:#ffffff !important;
+    color:#17191c !important;
+    box-sizing:border-box !important;
+    text-decoration:none !important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover {{
+    background:#f0f1f2 !important;
+    border-color:#777c82 !important;
+  }}
+  .student-bottom-nav {{
+    background:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
+    background-image:linear-gradient(180deg,#ffffff 0%,#eef7ff 55%,#dceeff 100%) !important;
+    border-top:1px solid #b9d4ea !important;
+    box-shadow:0 -8px 24px rgba(38,75,105,.14) !important;
+  }}
+  .student-bottom-nav > .mobile-menu-nav,
+  .student-bottom-nav > .mobile-home-nav,
+  .student-bottom-nav > .mobile-profile-nav {{
+    width:100% !important;
+    min-width:0 !important;
+    max-width:none !important;
+    height:46px !important;
+    margin:0 !important;
+    padding:0 6px !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    border:1px solid #b9cfe0 !important;
+    border-radius:9px !important;
+    background:#ffffff !important;
+    color:#15191d !important;
+    box-sizing:border-box !important;
+    text-decoration:none !important;
+    box-shadow:none !important;
+  }}
+  .student-bottom-nav > .mobile-home-nav.active {{
+    background:#dceeff !important;
+    color:#111827 !important;
+    border-color:#8fbce0 !important;
+    box-shadow:inset 0 1px rgba(255,255,255,.75),0 2px 8px rgba(56,104,145,.10) !important;
+  }}
+  .student-bottom-nav > .mobile-menu-nav:hover,
+  .student-bottom-nav > .mobile-profile-nav:hover {{
+    background:#f3f8fc !important;
+    color:#111827 !important;
+    border-color:#8fbce0 !important;
+  }}
+  .student-bottom-nav .mobile-menu-label,
+  .student-bottom-nav .mobile-home-nav,
+  .student-bottom-nav .mobile-profile-nav {{
+    font-size:12px !important;
+    font-weight:800 !important;
+    line-height:1 !important;
+  }}
+
+  /* ===== FINAL MOBILE GLASS OVERRIDE ===== */
+  @media(max-width:850px){{
+    .nav:has(.student-nav-compact){{
+      background:rgba(2,10,18,.58)!important;
+      border-bottom:1px solid rgba(120,190,230,.18)!important;
+      box-shadow:0 8px 30px rgba(0,0,0,.22)!important;
+      backdrop-filter:blur(24px) saturate(150%)!important;
+      -webkit-backdrop-filter:blur(24px) saturate(150%)!important;
+    }}
+    .nav:has(.student-nav-compact) .student-nav-compact,
+    .nav:has(.student-nav-compact) .student-control-row{{
+      background:transparent!important;
+    }}
+    .student-nav-compact .student-header-back,
+    .student-nav-compact .student-header-updates{{
+      background:rgba(20,48,70,.48)!important;
+      border:1px solid rgba(125,195,235,.25)!important;
+      color:#e5f4ff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 18px rgba(0,0,0,.12)!important;
+      backdrop-filter:blur(14px)!important;
+      -webkit-backdrop-filter:blur(14px)!important;
+    }}
+    .student-search input{{
+      background:rgba(7,25,42,.48)!important;
+      border:1px solid rgba(91,165,215,.25)!important;
+      color:#fff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
+      backdrop-filter:blur(16px)!important;
+      -webkit-backdrop-filter:blur(16px)!important;
+    }}
+    .student-search input:focus{{
+      background:rgba(10,34,55,.62)!important;
+      border-color:rgba(80,184,245,.55)!important;
+      box-shadow:0 0 0 3px rgba(40,160,225,.10),inset 0 1px rgba(255,255,255,.05)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu{{
+      background:rgba(4,17,29,.58)!important;
+      border:1px solid rgba(108,178,220,.25)!important;
+      box-shadow:0 20px 55px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.055)!important;
+      backdrop-filter:blur(26px) saturate(155%)!important;
+      -webkit-backdrop-filter:blur(26px) saturate(155%)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu > a,
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+      background:rgba(18,45,66,.42)!important;
+      border:1px solid rgba(110,178,218,.20)!important;
+      color:#e6f4ff!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.035)!important;
+    }}
+    #vybeMobileNav.student-mobile-menu > a:hover,
+    #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover{{
+      background:rgba(40,91,126,.55)!important;
+      border-color:rgba(93,190,242,.42)!important;
+      color:#fff!important;
+    }}
+    .student-bottom-nav{{
+      background:rgba(2,10,18,.62)!important;
+      background-image:none!important;
+      border-top:1px solid rgba(105,177,220,.22)!important;
+      box-shadow:0 -12px 34px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.045)!important;
+      backdrop-filter:blur(26px) saturate(160%)!important;
+      -webkit-backdrop-filter:blur(26px) saturate(160%)!important;
+    }}
+    .student-bottom-nav > .mobile-menu-nav,
+    .student-bottom-nav > .mobile-home-nav,
+    .student-bottom-nav > .mobile-profile-nav{{
+      background:rgba(14,39,59,.42)!important;
+      border:1px solid rgba(102,175,218,.22)!important;
+      color:#bcd7ea!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.045)!important;
+      backdrop-filter:blur(12px)!important;
+      -webkit-backdrop-filter:blur(12px)!important;
+    }}
+    .student-bottom-nav > .mobile-home-nav.active{{
+      background:rgba(10,73,108,.58)!important;
+      color:#6fd0ff!important;
+      border-color:rgba(62,190,248,.48)!important;
+      box-shadow:inset 0 1px rgba(255,255,255,.07),0 6px 20px rgba(0,110,180,.16)!important;
+    }}
+    .student-bottom-nav > .mobile-menu-nav:hover,
+    .student-bottom-nav > .mobile-profile-nav:hover{{
+      background:rgba(34,72,99,.52)!important;
+      color:#eaf8ff!important;
+      border-color:rgba(107,190,232,.38)!important;
+    }}
+    .mobile-direct-suggestions,
+    .vybe-search-suggestions{{
+      background:rgba(4,17,29,.72)!important;
+      border-color:rgba(105,177,220,.25)!important;
+      box-shadow:0 18px 45px rgba(0,0,0,.38)!important;
+      backdrop-filter:blur(22px)!important;
+      -webkit-backdrop-filter:blur(22px)!important;
+    }}
+    .mobile-direct-suggestions .vybe-search-suggestion{{
+      background:rgba(18,45,66,.35)!important;
+      color:#e6f4ff!important;
+    }}
+    .mobile-direct-suggestions .vybe-search-suggestion:hover{{background:rgba(40,91,126,.48)!important}}
+  }}
+
+
 /* ===== FINAL VYBE LOGIN EXPERIENCE — DESKTOP + PHONE ===== */
 @media (min-width:851px){{
   body:has(.authbox){{
@@ -7574,10 +7706,8 @@ def admin_login():
 
         if passkey_count == 0:
             flash("Password accepted. Register your first admin passkey before using the dashboard.")
-            response = redirect(url_for("admin_password"))
-            return _mark_admin_device_trusted(response)
-        response = redirect(url_for("admin_verify"))
-        return _mark_admin_device_trusted(response)
+            return redirect(url_for("admin_password"))
+        return redirect(url_for("admin_verify"))
 
     password_error = bool(session.pop("admin_login_password_error", False))
     body = f"""<div class=\"auth vybe-auth-page\"><div class=\"card authbox\"><a class=\"vybe-auth-logo\" href=\"/\" aria-label=\"VYBE home\">V</a><div class=\"badge\">PRIVATE CONTROL CENTER</div>
@@ -7649,8 +7779,7 @@ def admin_login_passkey_verify():
         session["admin_authenticated"] = True
         session["passkey_verified"] = True
         session["_csrf_token"] = secrets.token_urlsafe(32)
-        response = jsonify(ok=True)
-        return _mark_admin_device_trusted(response)
+        return jsonify(ok=True)
     except Exception as exc:
         try:
             con = db()
@@ -8848,7 +8977,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,
 .contact-terms-form{position:relative;display:grid;gap:13px}.contact-terms-form label:not(.contact-terms-consent){display:grid;gap:7px;color:#7e8ca0;font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.contact-terms-form input:not([type="checkbox"]){width:100%;padding:15px 16px;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:rgba(0,0,0,.28);color:#fff;font:inherit;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);transition:.2s}.contact-terms-form input:not([type="checkbox"]):focus{border-color:rgba(101,163,255,.65);box-shadow:0 0 0 4px rgba(63,132,255,.10)}
 .contact-terms-consent{display:flex;gap:11px;align-items:flex-start;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.24);color:#aeb9c8;font-size:11px;line-height:1.55;cursor:pointer}.contact-terms-consent input{margin-top:3px;accent-color:#6cc84a}.contact-terms-consent strong{display:block;color:#fff;font-size:11px;margin-bottom:3px}
 .contact-terms-form .btn{position:relative;overflow:hidden;border:0;border-radius:15px;padding:15px 18px;cursor:pointer;font-weight:900;background:linear-gradient(135deg,#3276dc,#245aa8);color:#fff;box-shadow:0 14px 35px rgba(37,91,168,.28);transition:transform .18s,box-shadow .18s}.contact-terms-form .btn:hover{transform:translateY(-2px);box-shadow:0 18px 42px rgba(37,91,168,.38)}
-.contact-reveal{position:relative;margin-top:15px}.contact-terms-email{padding:17px;border:1px solid rgba(104,184,46,.20);border-radius:18px;background:linear-gradient(145deg,rgba(104,184,46,.09),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.contact-terms-email small{display:block;color:#8ed66d;font-size:8px;font-weight:950;letter-spacing:.16em}.contact-terms-email a{display:block;margin-top:7px;color:#fff;font-size:16px;font-weight:850;text-decoration:none;word-break:break-word}.contact-terms-email a:hover{text-decoration:underline}.contact-revealed-admin{display:flex;align-items:center;gap:11px;margin-top:10px;padding:10px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.07)}.contact-revealed-admin img,.contact-revealed-admin .contact-admin-photo-fallback{width:48px;height:48px;flex-basis:48px;border-radius:14px;font-size:17px}.contact-revealed-admin strong{display:block;color:#fff;font-size:11px}.contact-revealed-admin span{display:block;margin-top:3px;color:#7f8da1;font-size:10px}
+.contact-reveal{position:relative;margin-top:15px}.contact-terms-support{margin-top:10px;}
+.contact-terms-support a{color:#f4f8ff!important;}
+.contact-terms-email{padding:17px;border:1px solid rgba(104,184,46,.20);border-radius:18px;background:linear-gradient(145deg,rgba(104,184,46,.09),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.contact-terms-email small{display:block;color:#8ed66d;font-size:8px;font-weight:950;letter-spacing:.16em}.contact-terms-email a{display:block;margin-top:7px;color:#fff;font-size:16px;font-weight:850;text-decoration:none;word-break:break-word}.contact-terms-email a:hover{text-decoration:underline}.contact-revealed-admin{display:flex;align-items:center;gap:11px;margin-top:10px;padding:10px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.07)}.contact-revealed-admin img,.contact-revealed-admin .contact-admin-photo-fallback{width:48px;height:48px;flex-basis:48px;border-radius:14px;font-size:17px}.contact-revealed-admin strong{display:block;color:#fff;font-size:11px}.contact-revealed-admin span{display:block;margin-top:3px;color:#7f8da1;font-size:10px}
 .contact-terms-locked{padding:16px;border:1px dashed rgba(255,255,255,.13);border-radius:18px;background:rgba(0,0,0,.20);color:#7f8da0;font-size:11px;line-height:1.6}.contact-terms-foot{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:17px}.contact-terms-ip{color:#66758a;font-size:9px;line-height:1.5}.contact-terms-foot .btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 14px;border-radius:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#cbd6e5;text-decoration:none;font-size:10px;font-weight:850}
 .contact-friend-note{position:relative;z-index:1;display:flex;align-items:center;gap:15px;margin:0 18px 18px;padding:22px 24px;border:1px solid rgba(255,255,255,.09);border-radius:24px;background:linear-gradient(100deg,rgba(47,111,202,.10),rgba(104,184,46,.07),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.friend-mark{display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;border-radius:16px;background:linear-gradient(145deg,#2f6fca,#68b82e);color:#fff;font-size:18px;font-weight:950;box-shadow:0 10px 28px rgba(47,111,202,.25)}.contact-friend-note small{display:block;color:#7eaaf0;font-size:8px;font-weight:950;letter-spacing:.16em}.contact-friend-note strong{display:block;margin-top:4px;color:#fff;font-size:15px;letter-spacing:-.02em}.contact-friend-note span{display:block;margin-top:5px;color:#8593a6;font-size:11px;line-height:1.6}
 .contact-terms-success{position:relative;z-index:2;margin:0 18px 0;padding:11px 14px;border:1px solid rgba(104,184,46,.2);border-radius:14px;background:rgba(104,184,46,.08);color:#a7e18d;font-size:10px;font-weight:800}
@@ -8926,7 +9057,98 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
     will-change:transform;
   }
 }
-
+/* ===== VYBE FINAL MENU PANEL — DARK BLUE, LOW-COST RENDERING ===== */
+/* One final override so older page-specific menu styles cannot turn the panel white. */
+#vybeMobileNav.student-mobile-menu {
+  background: linear-gradient(145deg, #0b2238 0%, #071827 100%) !important;
+  color: #eef8ff !important;
+  border: 1px solid rgba(92, 177, 225, .30) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.055) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+#vybeMobileNav.student-mobile-menu.open { display:flex !important; }
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links {
+  display:flex !important;
+  flex-direction:column !important;
+  gap:8px !important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-head {
+  display:flex !important;
+  align-items:center !important;
+  justify-content:flex-start !important;
+  min-height:30px !important;
+  padding:2px 5px 9px !important;
+  margin:0 1px 2px !important;
+  border-bottom:1px solid rgba(126,193,229,.16) !important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-title {
+  color:#f5fbff !important;
+  font-size:13px !important;
+  font-weight:850 !important;
+}
+#vybeMobileNav.student-mobile-menu .mobile-menu-close { display:none !important; }
+#vybeMobileNav.student-mobile-menu > a,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {
+  display:flex !important;
+  align-items:center !important;
+  justify-content:flex-start !important;
+  width:100% !important;
+  min-height:46px !important;
+  margin:0 !important;
+  padding:0 13px !important;
+  box-sizing:border-box !important;
+  border:1px solid rgba(102,182,226,.20) !important;
+  border-radius:12px !important;
+  background:linear-gradient(180deg, rgba(18,55,82,.88), rgba(10,35,56,.88)) !important;
+  color:#e9f6ff !important;
+  text-decoration:none !important;
+  font-size:12px !important;
+  font-weight:750 !important;
+  line-height:1.15 !important;
+  box-shadow:inset 0 1px rgba(255,255,255,.035) !important;
+  transition:background .12s ease, border-color .12s ease, transform .12s ease !important;
+}
+#vybeMobileNav.student-mobile-menu > a:hover,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
+#vybeMobileNav.student-mobile-menu > a:active,
+#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active {
+  background:#174d70 !important;
+  border-color:rgba(88,193,245,.42) !important;
+  color:#fff !important;
+}
+#vybeMobileNav.student-mobile-menu .student-menu-icon {
+  color:#62c5f7 !important;
+}
+/* Desktop menu uses the same dark-blue panel language. */
+@media (min-width:851px) {
+  #vybeMobileNav.student-mobile-menu {
+    width:270px !important;
+    max-width:270px !important;
+    max-height:calc(100vh - 110px) !important;
+    overflow-y:auto !important;
+    padding:12px !important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links { gap:7px !important; }
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {
+    min-height:44px !important;
+  }
+}
+@media (max-width:850px) {
+  #vybeMobileNav.student-mobile-menu {
+    left:8px !important;
+    top:62px !important;
+    bottom:76px !important;
+    width:min(82vw,270px) !important;
+    max-width:270px !important;
+    max-height:calc(100vh - 150px) !important;
+    padding:12px !important;
+    overflow-y:auto !important;
+    overflow-x:hidden !important;
+  }
+}
 
 </style>"""
 @app.route("/contact-terms", methods=["GET","POST"])
@@ -8935,6 +9157,7 @@ def contact_terms():
     _ensure_contact_terms_table(con)
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
+    whatsapp_support_link=setting(con,"whatsapp_link","")
     custom_terms=setting(con,"contact_terms_text","")
     admin_photo=setting(con,"contact_admin_photo","")
     name_prefill=""; sid_prefill=""
@@ -8978,12 +9201,18 @@ def contact_terms():
         initial=esc((admin_name or "V")[:1].upper())
         admin_identity_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
         revealed_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
-    if consented and admin_email:
-        email_html=f'<div class="contact-terms-email"><small>DIRECT VYBE ADMIN CONTACT</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a></div><div class="contact-revealed-admin">{revealed_photo}<div><strong>Contact revealed</strong><span>{esc(admin_name)} · VYBE Admin</span></div></div>'
-    elif consented:
-        email_html='<div class="contact-terms-locked">Consent recorded. The admin has not configured an email yet.</div>'
+    if consented:
+        reveal_blocks=[]
+        if admin_email:
+            reveal_blocks.append(f'<div class="contact-terms-email"><small>DIRECT VYBE ADMIN CONTACT</small><a href="mailto:{esc(admin_email)}?subject=VYBE%20Support">{esc(admin_email)}</a></div>')
+        if valid_url(whatsapp_support_link):
+            reveal_blocks.append(f'<div class="contact-terms-email contact-terms-support"><small>SUPPORT GROUP</small><a href="{esc(whatsapp_support_link)}" target="_blank" rel="noopener noreferrer">Join VYBE Support Group →</a></div>')
+        reveal_blocks.append(f'<div class="contact-revealed-admin">{revealed_photo}<div><strong>Contact revealed</strong><span>{esc(admin_name)} · VYBE Admin</span></div></div>')
+        email_html="".join(reveal_blocks)
+        if not admin_email and not valid_url(whatsapp_support_link):
+            email_html='<div class="contact-terms-locked">Consent recorded. The admin has not configured direct contact details yet.</div>'
     else:
-        email_html='<div class="contact-terms-locked">Your admin contact and photo will appear here after you enter your details and accept the terms.</div>'
+        email_html='<div class="contact-terms-locked">Your admin contact and support group will appear here after you enter your details and accept the terms.</div>'
     checked=" checked" if consented else ""
     body=f"""{CONTACT_TERMS_CSS}<section class="contact-terms-page"><div class="contact-terms-shell"><div class="contact-terms-hero"><div><span class="contact-terms-kicker">CONTACT · TERMS · PRIVACY</span><h1>Contact VYBE.</h1><p>A transparent space to understand what VYBE keeps, give the required consent, and connect directly with the person running it.</p><div class="contact-terms-admin">Here when you need me · keeping VYBE simple and human</div></div><div class="contact-admin-identity">{admin_identity_photo}<div><small>VYBE ADMIN</small><strong>{esc(admin_name)}</strong><span>Campus support &amp; administration</span></div></div></div><div class="contact-terms-grid"><section class="contact-terms-card"><h2>What VYBE keeps.</h2><p>These are the main categories of information used to operate and support the platform.</p>{terms_html}</section><section class="contact-terms-card"><h2>Unlock direct contact.</h2><p>Your details are required before the admin contact is revealed.</p><form class="contact-terms-form" method="post"><input type="hidden" name="csrf_token" value="{esc(session.get("_csrf_token", ""))}"><div><label>Your name</label><input name="name" value="{name_display}" maxlength="160" required placeholder="Enter your name"></div><div><label>Student ID</label><input name="student_id" value="{sid_display}" maxlength="80" required placeholder="Enter your Student ID"></div><label class="contact-terms-consent"><input type="checkbox" name="agree_terms" value="1"{checked} required><span><strong>I understand and agree.</strong>I allow my name, Student ID and IP address from this consent to appear on the VYBE admin desk.</span></label><button class="btn accent" type="submit">Accept &amp; reveal contact →</button></form><div class="contact-reveal">{email_html}</div><div class="contact-terms-foot"><span class="contact-terms-ip">Consent records the IP address used for this submission.</span><a class="btn dark" href="/">Back to VYBE</a></div></section></div><div class="contact-friend-note"><div class="friend-mark">V</div><div><small>THE VYBE PROMISE</small><strong>Running VYBE with you, not above you.</strong><span>Questions, ideas or a campus problem? Reach out directly. I’ll keep the platform useful, transparent and easy to talk to.</span></div></div></div></section>"""
     success_message = "" if not session.pop("contact_terms_just_consented", False) else "Contact unlocked. You can now reach the VYBE admin directly."
@@ -9013,11 +9242,20 @@ def admin_contact_terms():
             con.close(); flash("Invalid consent record."); return redirect(url_for("admin_contact_terms"))
         admin_name=request.form.get("admin_name","").strip()[:160]
         admin_email=request.form.get("admin_email","").strip()[:254]
+        whatsapp_support_link=request.form.get("whatsapp_support_link","").strip()[:500]
         custom_terms=request.form.get("custom_terms","").strip()[:10000]
         if not admin_name or not admin_email or "@" not in admin_email:
             con.close(); flash("Please enter a valid admin name and email."); return redirect(url_for("admin_contact_terms"))
+        if whatsapp_support_link:
+            try:
+                wa_host=(urlparse(whatsapp_support_link).hostname or "").lower().rstrip(".")
+            except Exception:
+                wa_host=""
+            if not valid_url(whatsapp_support_link) or not (wa_host == "whatsapp.com" or wa_host.endswith(".whatsapp.com")):
+                con.close(); flash("Please enter a valid WhatsApp group/community link."); return redirect(url_for("admin_contact_terms"))
         set_setting(con,"contact_admin_name",admin_name)
         set_setting(con,"contact_admin_email",admin_email)
+        set_setting(con,"whatsapp_link",whatsapp_support_link)
         set_setting(con,"contact_terms_text",custom_terms)
         photo=request.files.get("admin_photo")
         if photo and photo.filename:
@@ -9029,13 +9267,14 @@ def admin_contact_terms():
         con.commit(); con.close(); flash("Contact / Terms settings saved."); return redirect(url_for("admin_contact_terms"))
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
+    whatsapp_support_link=setting(con,"whatsapp_link","")
     custom_terms=setting(con,"contact_terms_text","")
     admin_photo=setting(con,"contact_admin_photo","")
     rows=con.execute("SELECT id,name,student_id,ip_address,consented_at FROM contact_terms_consents ORDER BY id DESC LIMIT 200").fetchall()
     con.close()
     photo_html=(f'<img class="admin-photo-preview" src="{esc(admin_photo)}" alt="Admin photo">' if admin_photo else f'<div class="admin-photo-fallback">{esc((admin_name or "V")[:1].upper())}</div>')
     rows_html="".join(f'<div class="admin-consent-row"><div><strong>{esc(r["name"])}</strong><small>ID: {esc(r["student_id"])}</small></div><div><small>IP address</small><strong>{esc(r["ip_address"])}</strong></div><div><small>Consent time</small><strong>{esc(r["consented_at"])}</strong></div><span class="admin-consent-pill">CONSENTED</span><form method="post" onsubmit="return confirm(\'Delete this consent record?\')"><input type="hidden" name="action" value="delete_consent"><input type="hidden" name="consent_id" value="{int(r["id"])}"><button class="admin-consent-delete" type="submit">Delete</button></form></div>' for r in rows)
-    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
+    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Support group / WhatsApp Community link</label><input name="whatsapp_support_link" value="{esc(whatsapp_support_link)}" placeholder="https://chat.whatsapp.com/..." autocomplete="off"><small class="muted">After a student accepts the contact terms, this appears as <b>Support Group</b>. Leave blank to hide it.</small><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email, Support Group link and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
     return layout("Contact / Terms",body,admin=True)
 
 
