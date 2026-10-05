@@ -111,6 +111,25 @@ RESET_CODE_SALT = "vybe-password-reset-code-v1"
 reset_code_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=RESET_CODE_SALT)
 SECURITY_LOCK_SALT = "vybe-login-lock-v1"
 security_lock_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=SECURITY_LOCK_SALT)
+ADMIN_DEVICE_SALT = "vybe-trusted-admin-device-v1"
+admin_device_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=ADMIN_DEVICE_SALT)
+ADMIN_DEVICE_COOKIE = "vybe_admin_device"
+ADMIN_DEVICE_MAX_AGE = 365 * 24 * 60 * 60
+
+def _admin_device_is_trusted():
+    token = request.cookies.get(ADMIN_DEVICE_COOKIE, "").strip()
+    if not token:
+        return False
+    try:
+        payload = admin_device_serializer.loads(token, max_age=ADMIN_DEVICE_MAX_AGE)
+        return isinstance(payload, dict) and payload.get("v") == 1
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return False
+
+def _mark_admin_device_trusted(response):
+    token = admin_device_serializer.dumps({"v": 1, "created": int(time.time())})
+    response.set_cookie(ADMIN_DEVICE_COOKIE, token, max_age=ADMIN_DEVICE_MAX_AGE, secure=_COOKIE_SECURE, httponly=True, samesite="Lax", path="/")
+    return response
 
 app = Flask(__name__)
 _PRODUCTION = bool(DATABASE_URL)
@@ -1802,7 +1821,7 @@ def security_headers(response):
         # The public VYBE landing page is database-free and safe to edge-cache.
         # This lets repeat visits/opening the VYBE link come from the Vercel
         # edge instead of invoking a Python function every time.
-        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -2528,61 +2547,6 @@ main,.main,.wrap{position:relative}
 
 
 
-/* ===== FINAL MENU PANEL — MATCH ASK VYBE DARK BLUE GLASS ===== */
-#vybeMobileNav.student-mobile-menu{
-  background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
-  background-color:#0b1625!important;
-  color:#f4f7fb!important;
-  border:1px solid rgba(104,142,178,.38)!important;
-  box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
-  backdrop-filter:blur(24px) saturate(135%)!important;
-  -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-head{
-  border-bottom:1px solid rgba(105,139,171,.24)!important;
-  background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-title{
-  color:#fff!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-close{
-  background:rgba(255,255,255,.07)!important;
-  border:1px solid rgba(120,150,180,.34)!important;
-  color:#e4edf5!important;
-}
-#vybeMobileNav.student-mobile-menu > a,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
-  background:rgba(255,255,255,.055)!important;
-  border:1px solid rgba(105,139,170,.28)!important;
-  color:#e8eef5!important;
-  box-shadow:none!important;
-}
-#vybeMobileNav.student-mobile-menu > a:hover,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
-#vybeMobileNav.student-mobile-menu > a:focus-visible,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:focus-visible,
-#vybeMobileNav.student-mobile-menu > a:active,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
-  background:rgba(47,111,202,.20)!important;
-  border-color:rgba(104,160,216,.48)!important;
-  color:#fff!important;
-}
-@media(max-width:850px){
-  #vybeMobileNav.student-mobile-menu{
-    background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
-    border:1px solid rgba(104,142,178,.38)!important;
-    box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
-    backdrop-filter:blur(24px) saturate(135%)!important;
-    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-menu-title{color:#fff!important}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
-    background:rgba(255,255,255,.055)!important;
-    border:1px solid rgba(105,139,170,.28)!important;
-    color:#e8eef5!important;
-  }
-}
 /* ===== VYBE COMPACT HEADER / NO FOOTER ===== */
 .student-nav-compact{max-width:1280px!important;min-height:58px!important;padding:7px 18px!important;gap:16px!important}
 .student-nav-compact .student-brand-compact{font-size:20px!important;min-width:76px!important}
@@ -3695,7 +3659,7 @@ def layout(title, body, admin=False):
         # Keep the desktop student navigation exactly as it was.
         links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/updates">Updates</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
         # Mobile gets its own drawer links so desktop navigation is never changed.
-        mobile_links = '<a href="/dashboard"><span>Home</span></a><a href="/academics"><span>Academics</span></a><a href="/updates"><span>Updates</span></a><a href="/apps"><span>Study Apps</span></a><a href="/papers"><span>Previous Papers</span></a><a href="/issues"><span>Help Desk</span></a><a href="/community"><span>Community</span></a><a href="/chat"><span>Chat</span></a><a href="/search"><span>Search</span></a><a href="/announcements"><span>Announcements</span></a><a href="/events"><span>Events</span></a><a href="/profile"><span>Profile</span></a><a href="/logout"><span>Logout</span></a>'
+        mobile_links = '<a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/dashboard"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Home</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/academics"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Academics</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/updates"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Updates</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/apps"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Study Apps</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/papers"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Previous Papers</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/issues"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Help Desk</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/community"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Community</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/chat"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Chat</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/search"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Search</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/announcements"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Announcements</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/events"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Events</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/profile"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Profile</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/logout"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
@@ -3703,7 +3667,7 @@ def layout(title, body, admin=False):
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x.get("unread", True))
+        _unread_count=sum(1 for x in _header_updates if bool(x.get("unread", True)))
         _alert_items=[]
         for x in _header_updates:
             # Bell entries are informational only. They deliberately contain no
@@ -4449,25 +4413,6 @@ body{background-attachment:scroll!important}
 @media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.settings-detail-grid{{gap:12px}}}}
 
-/* ===== FINAL VYBE MENU PANEL — DARK BLUE, LIGHTWEIGHT, ALL DEVICES ===== */
-#vybeMobileNav.student-mobile-menu{{
-  background:linear-gradient(145deg,#142a43 0%,#0b1b2d 58%,#071321 100%)!important;
-  border:1px solid rgba(116,171,214,.34)!important;
-  box-shadow:0 22px 55px rgba(4,12,22,.42),inset 0 1px rgba(255,255,255,.055)!important;
-  color:#eef7ff!important;
-  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
-  isolation:isolate!important;
-}}
-#vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-head{{background:transparent!important;border-bottom:1px solid rgba(145,190,220,.16)!important;color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-close{{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,195,225,.20)!important;color:#eaf6ff!important}}
-#vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
-#vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
-@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
-@media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
-
 /* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
 html{{scroll-behavior:auto!important}}
 body{{background-attachment:scroll!important}}
@@ -4520,6 +4465,7 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
   .compact-home-updates .home-update small{{font-size:9px!important;line-height:1.25!important}}
   .compact-home-updates .home-update>b{{font-size:16px!important}}
 }}
+
 
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
@@ -4757,6 +4703,13 @@ def _vybe_public_shell(title, body):
 @media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
 </style></head><body><main class="vybe-public">{body}</main></body></html>'''
 
+@app.route("/favicon.ico")
+def favicon():
+    svg = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='#071426'/><text x='32' y='45' text-anchor='middle' font-family='Arial,sans-serif' font-size='38' font-weight='800' fill='white'>V</text></svg>"
+    response = app.response_class(svg, mimetype='image/svg+xml')
+    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
+
 @app.route("/offline")
 def offline():
     body='''<header class="vybe-top"><a class="vybe-brand" href="/offline"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-status-mark">V</div><span class="badge">VYBE STATUS</span><h1>We'll be right back.</h1><p>VYBE is temporarily offline while the campus system is being updated or maintained. Student access is paused for now.</p><div class="status-actions"><a class="vybe-action primary" href="/admin">Admin Login</a></div></div></section>'''
@@ -4768,7 +4721,9 @@ def home():
         return redirect(url_for("dashboard"))
     if session.get("admin_authenticated"):
         return redirect(url_for("admin_panel"))
-    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Enter VYBE →</a><a class="vybe-action green" href="/register">Request Access</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a><a class="vybe-action" href="/admin">Admin Login</a></div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    admin_button = '<a class="vybe-action" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    admin_mini = '<a class="vybe-admin-mini" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
+    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 @app.route("/register", methods=["GET", "POST"])
@@ -4935,6 +4890,17 @@ def forgot_password():
         return redirect(url_for("forgot_password"))
 
     request_id = session.get("password_reset_request_id")
+    status_block = ""
+    if request_id and str(request_id).isdigit():
+        rid = int(request_id)
+        status_block = """<div class="card" style="margin-top:16px;padding:18px"><div class="badge">REQUEST STATUS</div><h2 style="margin:8px 0 6px">Checking your request…</h2><p id="resetStatusText" class="small">Your request is waiting for admin approval. This page will update automatically.</p><a id="resetContinue" class="btn accent" href="/reset-password" style="display:none;margin-top:10px">Continue to password reset →</a></div><script>
+(function(){
+ const rid=__RID__, text=document.getElementById('resetStatusText'), go=document.getElementById('resetContinue');
+ async function check(){try{const r=await fetch('/forgot-password/status?request_id='+encodeURIComponent(rid),{credentials:'same-origin',cache:'no-store'});if(!r.ok)return;const d=await r.json();if(d.status==='approved'){text.textContent='Approved. You can now set a new password.';go.style.display='inline-flex';setTimeout(()=>location.href='/reset-password',600);}else if(d.status==='rejected'){text.textContent='This request was rejected. You can submit a new request below.';}else if(d.status==='expired'||d.status==='used'){text.textContent='This password-change request is no longer active. Submit a new request below.';}}catch(e){}}
+ check();setInterval(check,4000);
+})();
+</script>""".replace("__RID__", str(rid))
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">PASSWORD RECOVERY</div><h1>Forgot your password?</h1><p class="muted">Submit your full name and Student ID. An admin will review the request before you can create a new password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Student ID</div><input name="student_id" required maxlength="80" autocomplete="username" placeholder="Your Student ID"></div><button class="btn accent" type="submit">Request password change →</button></form>{status_block}<div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Back to login</a><span class="vybe-auth-hint">Your current password is never shown to the admin.</span></div></div></div>'''
     return layout("Forgot Password", body)
 
 
@@ -6137,6 +6103,7 @@ def academics():
         "Study material":"/academic-hub/study-material",
         "Previous Year Questions":"/academic-hub/pyq",
         "Syllabus":"/academic-hub/syllabus",
+        "Assignments":"/academic-hub/assignments",
     }.get(request.args.get("resource_type", "").strip())
     if legacy_type:
         return redirect(legacy_type)
@@ -6145,6 +6112,7 @@ def academics():
         ("Study Material","Books, PDFs and reference material.","/academic-hub/study-material","▦"),
         ("Previous Year Questions","Previous papers by semester and subject.","/academic-hub/pyq","◫"),
         ("Syllabus","Syllabus files for each semester and subject.","/academic-hub/syllabus","✓"),
+        ("Assignments","Assignments organized by semester and subject.","/academic-hub/assignments","✎"),
     ]
     cards="".join(f"<a class='ah-key' href='{href}'><span class='ah-key-icon' aria-hidden='true'>{icon}</span><span class='ah-key-copy'><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b class='ah-key-arrow' aria-hidden='true'>→</b></a>" for title,desc,href,icon in shortcuts)
     body=f"""{ACADEMIC_HUB_HOME_CSS}<section class="ah-hub-home"><div class="ah-hub-head"><div class="academic-kicker">ACADEMIC HUB</div><h1>What do you need?</h1><p>Choose a section, then choose your semester and subject. VYBE will show only the material you ask for.</p></div><div class="ah-key-grid">{cards}</div></section>"""
@@ -6369,7 +6337,6 @@ def academic_updates():
         ("Date Sheets","Exam schedules and date sheets.","/academic-hub/date-sheet","◷"),
         ("Admit Cards","Official admit-card links and files.","/academic-hub/admit-card","✓"),
         ("Exam Forms & Notices","Forms and exam notices.","/academic-hub/exam-forms","!"),
-        ("Assessments","Official assessment links.","/academic-hub/assessment","✓"),
     ]
     key_html="".join(f'<a class="ah-key" href="{href}"><span class="ah-key-icon" aria-hidden="true">{icon}</span><span class="ah-key-copy"><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b class="ah-key-arrow" aria-hidden="true">→</b></a>' for title,desc,href,icon in keys)
     body=f'''{ACADEMIC_HUB_HOME_CSS}<section class="ah-hub-home"><div class="ah-hub-head"><div class="academic-kicker">ACADEMIC UPDATES</div><h1>What do you need?</h1><p>Choose an update type first. VYBE will then show the relevant choices and only the updates you select.</p></div><div class="ah-key-grid">{key_html}</div></section>'''
@@ -7711,8 +7678,10 @@ def admin_login():
 
         if passkey_count == 0:
             flash("Password accepted. Register your first admin passkey before using the dashboard.")
-            return redirect(url_for("admin_password"))
-        return redirect(url_for("admin_verify"))
+            response = redirect(url_for("admin_password"))
+            return _mark_admin_device_trusted(response)
+        response = redirect(url_for("admin_verify"))
+        return _mark_admin_device_trusted(response)
 
     password_error = bool(session.pop("admin_login_password_error", False))
     body = f"""<div class=\"auth vybe-auth-page\"><div class=\"card authbox\"><a class=\"vybe-auth-logo\" href=\"/\" aria-label=\"VYBE home\">V</a><div class=\"badge\">PRIVATE CONTROL CENTER</div>
@@ -7784,7 +7753,8 @@ def admin_login_passkey_verify():
         session["admin_authenticated"] = True
         session["passkey_verified"] = True
         session["_csrf_token"] = secrets.token_urlsafe(32)
-        return jsonify(ok=True)
+        response = jsonify(ok=True)
+        return _mark_admin_device_trusted(response)
     except Exception as exc:
         try:
             con = db()
@@ -8329,7 +8299,7 @@ def publisher():
     if "academic_updates" in permissions:
         cards.append('''<div class="card"><div class="admin-page-kicker">ACADEMIC UPDATES</div><h2>Publish academic update</h2><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="academic_updates"><select name="update_kind"><option>General Update</option><option>Result</option><option>Date Sheet</option><option>Admit Card</option><option>Exam Form</option><option>Online Class</option><option>Recorded Lecture</option><option>E-Book</option><option>Finance Support</option></select><select name="category"><option>General</option><option>Examination</option><option>Results</option><option>Admission</option><option>Schedule</option><option>Portal</option></select><input name="title" placeholder="Update title" required><textarea name="description" placeholder="What should students know?" required></textarea><div class="two"><input name="course" placeholder="Course (optional)"><input name="semester" placeholder="Semester (optional)"></div><input name="subject" placeholder="Subject (optional)"><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" placeholder="External portal URL (optional)"><input type="file" name="file"><button class="btn accent">Publish update →</button></form></div>''')
     if "academic_resources" in permissions:
-        cards.append(f'''<div class="card"><div class="admin-page-kicker">ACADEMIC HUB</div><h2>Add study resource</h2><form id="publisherResourceForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="academic_resources"><input name="resource_title" placeholder="Resource title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Study material</option></select><div class="two"><input name="resource_course" placeholder="Course" required><input name="resource_semester" placeholder="Semester" required></div><input name="resource_subject" placeholder="Subject" required><textarea name="resource_description" placeholder="Description"></textarea><input id="publisherResourceFile" type="file" name="resource_file"><input id="publisherResourceText" type="hidden" name="resource_assistant_text"><div id="publisherResourceStatus" class="small">Files are indexed for Ask VYBE when supported.</div><button class="btn accent">Add resource →</button></form>{_resource_ocr_script("publisherResourceForm","publisherResourceFile","publisherResourceText","publisherResourceStatus")}</div>''')
+        cards.append(f'''<div class="card"><div class="admin-page-kicker">ACADEMIC HUB</div><h2>Add study resource</h2><form id="publisherResourceForm" class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="kind" value="academic_resources"><input name="resource_title" placeholder="Resource title" required><select name="resource_type"><option>Notes</option><option>Previous Year Questions</option><option>Syllabus</option><option>Assignments</option><option>Study material</option></select><div class="two"><input name="resource_course" placeholder="Course" required><input name="resource_semester" placeholder="Semester" required></div><input name="resource_subject" placeholder="Subject" required><textarea name="resource_description" placeholder="Description"></textarea><input id="publisherResourceFile" type="file" name="resource_file"><input id="publisherResourceText" type="hidden" name="resource_assistant_text"><div id="publisherResourceStatus" class="small">Files are indexed for Ask VYBE when supported.</div><button class="btn accent">Add resource →</button></form>{_resource_ocr_script("publisherResourceForm","publisherResourceFile","publisherResourceText","publisherResourceStatus")}</div>''')
     if not cards:
         cards.append('<div class="card"><h2>No publishing permissions yet</h2><p class="muted">Ask an admin to enable one or more publishing categories for your account.</p></div>')
     names=[label for key,label,_ in PUBLISHER_PERMISSION_CATALOG if key in permissions]
@@ -8567,7 +8537,7 @@ window.vybeDriveUpload = async function(file,status,category){
 </script>'''
 
 VYBE_TIMETABLE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminTimetableDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file.files[0],status=document.getElementById(\'adminTimetableDriveStatus\');if(!file)return;b.disabled=true;try{const meta=await window.vybeDriveUpload(file,status,\'Timetable\');const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-timetable\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({file_id:meta.id,title:f.elements.title.value,assistant_text:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish timetable.\');status.textContent=\'✓ Timetable uploaded and published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
-VYBE_ACADEMIC_UPDATE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminAcademicDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file?f.elements.file.files[0]:document.getElementById(\'adminAcademicDriveFile\').files[0],status=document.getElementById(\'adminAcademicDriveStatus\'),kind=f.elements.kind.value,title=f.elements.title.value,external=f.elements.external_url.value.trim();if(!kind||!title||!f.elements.description.value.trim()){status.textContent=\'Choose an update type and enter the title and description.\';return}if((kind===\'Result\'||kind===\'Admit Card\')&&!external){status.textContent=\'A direct website link is required for \'+kind+\'.\';return}b.disabled=true;try{let meta=null;if(file){const category=kind===\'Result\'?\'Results\':kind===\'Date Sheet\'?\'Date Sheets\':kind===\'Admit Card\'?\'Admit Cards\':\'Exam Forms & Notices\';meta=await window.vybeDriveUpload(file,status,category)}const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-update\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({kind,title,description:f.elements.description.value,event_date:f.elements.event_date.value,external_url:external,file_id:meta?meta.id:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish update.\');status.textContent=\'✓ Update published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
+VYBE_ACADEMIC_UPDATE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminAcademicDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file?f.elements.file.files[0]:document.getElementById(\'adminAcademicDriveFile\').files[0],status=document.getElementById(\'adminAcademicDriveStatus\'),kind=f.elements.kind.value,title=f.elements.title.value,external=f.elements.external_url.value.trim();if(!kind||!title||!f.elements.description.value.trim()){status.textContent=\'Choose an update type and enter the title and description.\';return}if((kind===\'Result\'||kind===\'Admit Card\'||kind===\'Assessment\')&&!external){status.textContent=\'A direct website link is required for \'+kind+\'.\';return}b.disabled=true;try{let meta=null;if(file){const category=kind===\'Result\'?\'Results\':kind===\'Date Sheet\'?\'Date Sheets\':kind===\'Admit Card\'?\'Admit Cards\':kind===\'Assessment\'?\'Assessments\':\'Exam Forms & Notices\';meta=await window.vybeDriveUpload(file,status,category)}const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-update\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({kind,title,description:f.elements.description.value,event_date:f.elements.event_date.value,external_url:external,file_id:meta?meta.id:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish update.\');status.textContent=\'✓ Update published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
 
 @app.route("/admin/timetable", methods=["GET","POST"])
 @admin_required
@@ -8628,7 +8598,7 @@ def admin_academic_updates():
         if external_url:
             parsed=urlparse(external_url)
             if parsed.scheme not in ("http","https") or not parsed.netloc: con.close(); flash("Use a valid http or https direct website URL."); return redirect(url_for("admin_academic_updates"))
-        if kind in ("Result","Admit Card","Assessment") and not external_url: con.close(); flash(f"A direct official website link is required for {kind}."); return redirect(url_for("admin_academic_updates"))
+        if kind in ("Result","Admit Card","Assessment") and not external_url: con.close(); flash(f"A direct website link is required for {kind}."); return redirect(url_for("admin_academic_updates"))
         original_name=mime_type=None; file_data=None
         if f and f.filename:
             suffix=Path(f.filename).suffix.lower()
@@ -8645,9 +8615,9 @@ def admin_academic_updates():
             con.rollback(); con.close(); app.logger.exception("Academic update Drive upload failed")
             flash(f"Could not publish the academic update to Google Drive: {type(exc).__name__}: {exc}")
             return redirect(url_for("admin_academic_updates"))
-    rows=con.execute("SELECT id,kind,title,event_date,external_url,file_name,original_name,(file_data IS NOT NULL) AS has_local_file,created_at,drive_file_id,drive_web_url FROM academic_updates WHERE kind IN (?,?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
+    rows=con.execute("SELECT id,kind,title,event_date,external_url,file_name,original_name,(file_data IS NOT NULL) AS has_local_file,created_at,drive_file_id,drive_web_url FROM academic_updates WHERE kind IN (?,?,?,?) ORDER BY id DESC",allowed_kinds).fetchall(); con.close()
     table="".join(f'''<div class="admin-list-row"><div><span class="pill">{esc(r["kind"])}</span><strong>{esc(r["title"])}</strong><small>{esc(r["event_date"] or r["created_at"])}{(" · direct link" if r["external_url"] else (" · document" if r["file_name"] or r["has_local_file"] or r["drive_file_id"] or r["drive_web_url"] else ""))}</small></div><form method="post" action="/admin/academic-update/{r["id"]}/delete" onsubmit="return confirm('Delete this academic update?')"><button class="btn danger">Delete</button></form></div>''' for r in rows)
-    body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices, Admit Cards and Assessments. Assessment links should point directly to the official university/college assessment page.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form id="adminAcademicDriveForm" class="form" onsubmit="return false"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option><option>Assessment</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" type="url" placeholder="Direct official website link (required for Result, Admit Card and Assessment)"><input id="adminAcademicDriveFile" type="file"><div id="adminAcademicDriveStatus" class="small">Add a file, a website link, or both. Files go directly to Google Drive.</div><button class="btn accent" type="submit">Publish update →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_ACADEMIC_UPDATE_FORM_JS}</div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see these five update types. Assessment and other official links open the supplied website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
+    body=f'''<section class="section admin-content-page"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC UPDATES</span><h1>Important academic updates.</h1><p>Publish only Results, Date Sheets, Exam Notices, Admit Cards and Assessments. Results and Admit Cards require the direct website link students should open.</p></div></div><div class="admin-editor-grid"><div class="card admin-editor-card"><div class="admin-editor-label">PUBLISH NEW</div><h2>New academic update</h2><form id="adminAcademicDriveForm" class="form" onsubmit="return false"><select name="kind" required><option value="">Choose update type</option><option>Result</option><option>Date Sheet</option><option>Exam Notice</option><option>Admit Card</option><option>Assessment</option></select><input name="title" placeholder="Title e.g. Semester Result 2026" required><textarea name="description" placeholder="What should students know?" required></textarea><input name="event_date" placeholder="Date / schedule (optional)"><input name="external_url" type="url" placeholder="Direct official website link (required for Result, Admit Card and Assessment)"><input id="adminAcademicDriveFile" type="file"><div id="adminAcademicDriveStatus" class="small">Add a file, a website link, or both. Files go directly to Google Drive.</div><button class="btn accent" type="submit">Publish update →</button></form>{VYBE_DIRECT_DRIVE_JS}{VYBE_ACADEMIC_UPDATE_FORM_JS}</div><div class="card admin-editor-side"><span class="admin-side-icon" aria-hidden="true">⚑</span><h2>Student view</h2><p>Students will see only these four update types. If a direct link is supplied, the card opens that website directly.</p><div class="admin-side-rule"></div><b>{len(rows)} published updates</b></div></div><div class="admin-list-card"><div class="admin-list-head"><div><span>CONTENT LIBRARY</span><h2>Published academic updates</h2></div><small>Delete anything outdated.</small></div>{table or '<div class="admin-empty">No academic updates yet.</div>'}</div></section>'''
     return layout("Academic Updates",body,admin=True)
 
 ACADEMIC_HUB_ADMIN_CSS = """
@@ -8665,7 +8635,7 @@ AH_DIRECT_UPLOAD_JS = r'''
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
-    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions","syllabus":"Syllabus"}
+    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions","syllabus":"Syllabus","assignments":"Assignments"}
     section=request.args.get("section","notes").strip()
     if section not in allowed: section="notes"
     con=db()
@@ -9153,6 +9123,7 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
   }
 }
 
+
 </style>"""
 @app.route("/contact-terms", methods=["GET","POST"])
 def contact_terms():
@@ -9332,7 +9303,7 @@ def admin_drive():
     configured=bool(oauth_row and oauth_row["value"])
     cats=list(DRIVE_CATEGORY_MAP.keys())
     opts=''.join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats)
-    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions and Syllabus use the same hierarchy. Assessments are published through Academic Updates. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE DRIVE MASTER</span><h1>Drive Library.</h1><p>Google Drive is the master file storage for the student-facing document sections. Large files upload directly from the browser to Drive instead of through Vercel.</p></div></div><div class="two"><div class="card"><h2>Upload to Drive</h2><p class="muted">Choose the exact student section. The file goes directly to its matching Drive folder and is indexed in VYBE.</p><form id="vybeDriveUploadForm" class="form"><select name="category">{opts}</select><input name="title" placeholder="Title (optional)"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)"><input name="subject" placeholder="Subject (required for academic resources)"><textarea name="description" placeholder="Description (optional)"></textarea><input type="file" name="file" required><div id="vybeDriveStatus" class="small">Direct-to-Drive upload. No large file is sent through Vercel.</div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="card"><h2>Google Drive connection</h2><p class="muted">VYBE uses your Google account for your normal My Drive. No Shared Drive or service-account storage is required.</p><p class="small">Connected: <b>{'YES' if configured else 'NO'}</b></p><a class="btn dark" href="/admin/drive/connect">{'Reconnect Google Drive' if configured else 'Connect Google Drive'} →</a><p class="small" style="margin-top:12px">After connecting, VYBE can upload into your existing <b>My Drive → Vybe</b> folder.</p></div><div class="card"><h2>Automatic sync</h2><p class="muted">Files added directly inside the VYBE category folders are indexed through Drive change notifications, with a daily safety sync.</p><button class="btn dark" type="button" onclick="window.vybeDriveSync()">Sync Drive now</button><button class="btn" type="button" onclick="window.vybeDriveWatch()">Enable automatic Drive sync</button><div id="vybeDriveSyncStatus" class="small" style="margin-top:12px"></div></div></div><div class="card" style="margin-top:18px"><h3>Drive structure</h3><p class="small">VYBE stores every Academic Hub resource section as <b>&lt;Section&gt; / &lt;Semester&gt; / &lt;Subject&gt;</b> — for example <b>Study Material / 3rd Semester / Python</b>. Notes, Previous Year Questions, Syllabus and Assignments use the same hierarchy. Academic Updates and Timetable keep their existing structure.</p><button class="btn dark" type="button" onclick="window.vybeOrganizeSubjects()">Organize existing files into semester / subject folders →</button><div id="vybeOrganizeStatus" class="small" style="margin-top:10px"></div></div></section><script>(function(){{const form=document.getElementById('vybeDriveUploadForm'),status=document.getElementById('vybeDriveStatus');const csrf=document.querySelector('meta[name=vybe-csrf-token]')?.content||'';async function j(url,opts){{const r=await fetch(url,Object.assign({{credentials:'same-origin'}},opts||{{}}));let d={{}};try{{d=await r.json()}}catch(_ ){{}}if(!r.ok)throw new Error(d.error||'Request failed');return d}}window.vybeDriveSync=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Syncing Drive…';try{{const d=await j('/admin/drive/sync',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent='Synced '+(d.synced||0)+' file(s).';}}catch(e){{el.textContent=e.message}}}};window.vybeDriveWatch=async()=>{{const el=document.getElementById('vybeDriveSyncStatus');el.textContent='Connecting Drive change notifications…';try{{const d=await j('/admin/drive/watch',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||'Automatic sync enabled.';}}catch(e){{el.textContent=e.message}}}};window.vybeOrganizeSubjects=async()=>{{const el=document.getElementById('vybeOrganizeStatus');el.textContent='Checking Drive folder structure…';try{{const d=await j('/admin/drive/organize-subjects',{{method:'POST',headers:{{'X-VYBE-CSRF':csrf}}}});el.textContent=d.message||((d.moved||0)+' file(s) organized.');}}catch(e){{el.textContent='Drive folder organization could not complete: '+e.message}}}};form?.addEventListener('submit',async e=>{{e.preventDefault();const f=form.file.files[0];if(!f)return;status.textContent='Starting Drive upload…';try{{const init=await j('/admin/drive/upload-session',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{name:f.name,mimeType:f.type||'application/octet-stream',size:f.size,category:form.category.value,semester:form.semester.value,subject:form.subject.value}})}});status.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB directly to Drive…';const uploaded=await new Promise((resolve,reject)=>{{const xhr=new XMLHttpRequest();xhr.open('PUT',init.upload_url,true);xhr.responseType='json';xhr.upload.onprogress=e=>{{if(e.lengthComputable)status.textContent='Uploading '+(e.loaded/1048576).toFixed(1)+' / '+(e.total/1048576).toFixed(1)+' MB directly to Drive…';}};xhr.onload=()=>{{if(xhr.status>=200&&xhr.status<300){{resolve(xhr.response||JSON.parse(xhr.responseText||'{{}}'));}}else{{let detail='';try{{detail=xhr.response?.error?.message||xhr.responseText||'';}}catch(_ ){{}}reject(new Error('Drive upload failed: HTTP '+xhr.status+(detail?' — '+detail:'')));}}}};xhr.onerror=async()=>{{try{{status.textContent='Direct Google upload was blocked by the browser. Switching to a secure chunked upload…';const chunkSize=4*1024*1024;window.__vybeDriveFallbackMeta=null;const stat=await j('/admin/drive/upload-status',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{session_url:init.upload_url,total:f.size}})}});if(stat.complete&&stat.metadata){{resolve(stat.metadata);return;}}let start=Number(stat.next_start||0);if(!Number.isFinite(start)||start<0||start>f.size)throw new Error('Google Drive returned an invalid upload position.');while(start<f.size){{const end=Math.min(start+chunkSize,f.size);const chunk=f.slice(start,end);const qs=new URLSearchParams({{session_url:init.upload_url,start:String(start),end:String(end-1),total:String(f.size)}});const r=await fetch('/admin/drive/upload-chunk?'+qs.toString(),{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf,'Content-Range':'bytes '+start+'-'+(end-1)+'/'+f.size}},body:chunk}});let d={{}};try{{d=await r.json();}}catch(_){{}}if(!r.ok)throw new Error(d.error||('Chunk upload failed: HTTP '+r.status));if(d.complete&&d.metadata)window.__vybeDriveFallbackMeta=d.metadata;start=Number(d.next_start);if(!Number.isFinite(start)||start<=0&&end<f.size)throw new Error('Google Drive returned an invalid upload position.');status.textContent='Uploading '+(start/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+' MB…';}}const meta=window.__vybeDriveFallbackMeta||{{}};if(!meta.id)throw new Error('Google Drive completed the upload but did not return a file ID.');resolve(meta); }}catch(fallbackErr){{reject(new Error('Drive upload could not reach Google Drive directly, and the secure fallback also failed: '+fallbackErr.message));}}}};xhr.ontimeout=()=>reject(new Error('Drive upload timed out. Please retry.'));xhr.timeout=0;xhr.send(f);}});status.textContent='Publishing in VYBE…';const d=await j('/admin/drive/register',{{method:'POST',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf}},body:JSON.stringify({{category:form.category.value,title:form.title.value,course:form.course.value,semester:form.semester.value,subject:form.subject.value,description:form.description.value,file_id:uploaded.id,folder_id:init.folder_id}})}});status.textContent=d.message||'Uploaded and published.';form.reset();}}catch(err){{status.textContent=err.message}}}});}})();</script>'''
     return layout("Drive Library",body,admin=True)
 
 def _drive_iter_file_tree(folder_id, max_depth=3, _depth=0):
@@ -9720,14 +9691,14 @@ def admin_drive_register_update():
     title=str(data.get("title") or "").strip()[:180]
     external_url=str(data.get("external_url") or "").strip()[:500]
     fid=str(data.get("file_id") or "").strip()
-    if kind not in {"Result","Date Sheet","Exam Notice","Admit Card"} or not title:
+    if kind not in {"Result","Date Sheet","Exam Notice","Admit Card","Assessment"} or not title:
         return jsonify(error="Choose a valid update type and title."),400
     if external_url:
         parsed=urlparse(external_url)
         if parsed.scheme not in ("http","https") or not parsed.netloc:
             return jsonify(error="Please enter a valid http or https website link."),400
-    if kind in {"Result","Admit Card"} and not external_url:
-        return jsonify(error=f"A direct official website link is required for {kind}."),400
+    if kind in {"Result","Admit Card","Assessment"} and not external_url:
+        return jsonify(error=f"A direct website link is required for {kind}."),400
     try:
         meta={}
         if fid:
@@ -10245,6 +10216,7 @@ DRIVE_CATEGORY_MAP = {
     "Study Material": ("Academic Hub", "Study Material", "resource", "Study material"),
     "Previous Year Questions": ("Academic Hub", "Previous Year Questions", "resource", "Previous Year Questions"),
     "Syllabus": ("Academic Hub", "Syllabus", "resource", "Syllabus"),
+    "Assignments": ("Academic Hub", "Assignments", "resource", "Assignments"),
     "Results": ("Academic Updates", "Results", "update", "Result"),
     "Date Sheets": ("Academic Updates", "Date Sheets", "update", "Date Sheet"),
     "Exam Forms & Notices": ("Academic Updates", "Exam Forms & Notices", "update", "Exam Notice"),
