@@ -3703,7 +3703,7 @@ def layout(title, body, admin=False):
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
-        _unread_count=sum(1 for x in _header_updates if x["unread"])
+        _unread_count=sum(1 for x in _header_updates if x.get("unread", True))
         _alert_items=[]
         for x in _header_updates:
             # Bell entries are informational only. They deliberately contain no
