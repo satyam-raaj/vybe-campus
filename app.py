@@ -2547,61 +2547,6 @@ main,.main,.wrap{position:relative}
 
 
 
-/* ===== FINAL MENU PANEL — MATCH ASK VYBE DARK BLUE GLASS ===== */
-#vybeMobileNav.student-mobile-menu{
-  background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
-  background-color:#0b1625!important;
-  color:#f4f7fb!important;
-  border:1px solid rgba(104,142,178,.38)!important;
-  box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
-  backdrop-filter:blur(24px) saturate(135%)!important;
-  -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-head{
-  border-bottom:1px solid rgba(105,139,171,.24)!important;
-  background:linear-gradient(135deg,rgba(29,50,76,.92),rgba(13,29,42,.88))!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-title{
-  color:#fff!important;
-}
-#vybeMobileNav.student-mobile-menu .mobile-menu-close{
-  background:rgba(255,255,255,.07)!important;
-  border:1px solid rgba(120,150,180,.34)!important;
-  color:#e4edf5!important;
-}
-#vybeMobileNav.student-mobile-menu > a,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
-  background:rgba(255,255,255,.055)!important;
-  border:1px solid rgba(105,139,170,.28)!important;
-  color:#e8eef5!important;
-  box-shadow:none!important;
-}
-#vybeMobileNav.student-mobile-menu > a:hover,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:hover,
-#vybeMobileNav.student-mobile-menu > a:focus-visible,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:focus-visible,
-#vybeMobileNav.student-mobile-menu > a:active,
-#vybeMobileNav.student-mobile-menu .mobile-only-menu-links a:active{
-  background:rgba(47,111,202,.20)!important;
-  border-color:rgba(104,160,216,.48)!important;
-  color:#fff!important;
-}
-@media(max-width:850px){
-  #vybeMobileNav.student-mobile-menu{
-    background:linear-gradient(145deg,rgba(19,34,53,.98),rgba(7,13,22,.97))!important;
-    border:1px solid rgba(104,142,178,.38)!important;
-    box-shadow:0 26px 72px rgba(0,0,0,.46),0 6px 22px rgba(9,18,31,.34),inset 0 1px rgba(255,255,255,.07)!important;
-    backdrop-filter:blur(24px) saturate(135%)!important;
-    -webkit-backdrop-filter:blur(24px) saturate(135%)!important;
-  }
-  #vybeMobileNav.student-mobile-menu .mobile-menu-title{color:#fff!important}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
-    background:rgba(255,255,255,.055)!important;
-    border:1px solid rgba(105,139,170,.28)!important;
-    color:#e8eef5!important;
-  }
-}
 /* ===== VYBE COMPACT HEADER / NO FOOTER ===== */
 .student-nav-compact{max-width:1280px!important;min-height:58px!important;padding:7px 18px!important;gap:16px!important}
 .student-nav-compact .student-brand-compact{font-size:20px!important;min-width:76px!important}
@@ -3714,7 +3659,7 @@ def layout(title, body, admin=False):
         # Keep the desktop student navigation exactly as it was.
         links = '<a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/updates">Updates</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a><a href="/search">Search</a><a href="/profile">Profile</a><a href="/logout">Logout</a>'
         # Mobile gets its own drawer links so desktop navigation is never changed.
-        mobile_links = '<a href="/dashboard"><span>Home</span></a><a href="/academics"><span>Academics</span></a><a href="/updates"><span>Updates</span></a><a href="/apps"><span>Study Apps</span></a><a href="/papers"><span>Previous Papers</span></a><a href="/issues"><span>Help Desk</span></a><a href="/community"><span>Community</span></a><a href="/chat"><span>Chat</span></a><a href="/search"><span>Search</span></a><a href="/announcements"><span>Announcements</span></a><a href="/events"><span>Events</span></a><a href="/profile"><span>Profile</span></a><a href="/logout"><span>Logout</span></a>'
+        mobile_links = '<a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/dashboard"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Home</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/academics"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Academics</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/updates"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Updates</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/apps"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Study Apps</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/papers"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Previous Papers</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/issues"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Help Desk</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/community"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Community</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/chat"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Chat</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/search"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Search</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/announcements"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Announcements</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/events"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Events</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/profile"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Profile</span></a><a style="color:#f5fbff!important;-webkit-text-fill-color:#f5fbff!important" href="/logout"><span style="color:inherit!important;-webkit-text-fill-color:inherit!important">Logout</span></a>'
         brand = '<a class="brand" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
@@ -4468,25 +4413,6 @@ body{background-attachment:scroll!important}
 @media(max-width:800px){{.settings-grid,.settings-footer-grid,.settings-detail-grid,.publisher-page .publisher-grid{{grid-template-columns:1fr}}.settings-tile{{padding:17px}}.settings-tile small{{font-size:11px}}.publisher-access-note{{width:max-content}}.publisher-page .admin-page-head{{flex-direction:column}}.settings-detail .admin-page-head{{display:block}}}}
 @media(max-width:520px){{.settings-icon{{width:42px;height:42px;flex-basis:42px;border-radius:13px}}.settings-tile{{gap:11px;padding:15px;border-radius:18px}}.settings-tile b{{font-size:15px}}.settings-tile>strong{{font-size:18px}}.settings-state{{font-size:8px;padding:6px 7px}}.settings-detail-grid{{gap:12px}}}}
 
-/* ===== FINAL VYBE MENU PANEL — DARK BLUE, LIGHTWEIGHT, ALL DEVICES ===== */
-#vybeMobileNav.student-mobile-menu{{
-  background:linear-gradient(145deg,#142a43 0%,#0b1b2d 58%,#071321 100%)!important;
-  border:1px solid rgba(116,171,214,.34)!important;
-  box-shadow:0 22px 55px rgba(4,12,22,.42),inset 0 1px rgba(255,255,255,.055)!important;
-  color:#eef7ff!important;
-  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
-  isolation:isolate!important;
-}}
-#vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-head{{background:transparent!important;border-bottom:1px solid rgba(145,190,220,.16)!important;color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-title{{color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .mobile-menu-close{{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,195,225,.20)!important;color:#eaf6ff!important}}
-#vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
-#vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
-#vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
-@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
-@media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
-
 /* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
 html{{scroll-behavior:auto!important}}
 body{{background-attachment:scroll!important}}
@@ -4541,33 +4467,6 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
 }}
 
 
-/* ===== FINAL DESKTOP STUDENT MENU TEXT VISIBILITY =====
-   Keep the existing dark menu design. Only force the menu labels to a
-   high-contrast light color so older page-specific rules cannot hide them. */
-@media (min-width:851px){{
-  #vybeMobileNav.student-mobile-menu,
-  #vybeMobileNav.student-mobile-menu *{{
-    color:#f3f8fc !important;
-    -webkit-text-fill-color:#f3f8fc !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu > a span,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a span{{
-    color:#f3f8fc !important;
-    -webkit-text-fill-color:#f3f8fc !important;
-    opacity:1 !important;
-    visibility:visible !important;
-    text-shadow:none !important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu > a:hover span,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover span{{
-    color:#ffffff !important;
-    -webkit-text-fill-color:#ffffff !important;
-  }}
-}}
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
@@ -9219,81 +9118,6 @@ ADMIN_CONTACT_TERMS_CSS = """<style>
 }
 
 
-/* ===== DESKTOP MENU VISIBILITY / POSITION FINAL FIX =====
-   Scoped to desktop only. Mobile navigation is intentionally untouched. */
-@media (min-width:851px) {{
-  #vybeMobileNav.student-mobile-menu {{
-    position:fixed !important;
-    top:76px !important;
-    right:22px !important;
-    left:auto !important;
-    bottom:auto !important;
-    width:292px !important;
-    max-width:calc(100vw - 44px) !important;
-    max-height:calc(100vh - 94px) !important;
-    min-height:0 !important;
-    box-sizing:border-box !important;
-    display:none !important;
-    flex-direction:column !important;
-    gap:8px !important;
-    padding:12px !important;
-    overflow-x:hidden !important;
-    overflow-y:auto !important;
-    z-index:20000 !important;
-    border:1px solid rgba(92,177,225,.30) !important;
-    border-radius:16px !important;
-    background:linear-gradient(145deg,#0b2238 0%,#071827 100%) !important;
-    color:#eef8ff !important;
-    box-shadow:0 18px 50px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.055) !important;
-    backdrop-filter:none !important;
-    -webkit-backdrop-filter:none !important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu.open {{
-    display:flex !important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a {{
-    display:flex !important;
-    align-items:center !important;
-    justify-content:flex-start !important;
-    width:100% !important;
-    min-height:46px !important;
-    margin:0 !important;
-    padding:0 13px !important;
-    box-sizing:border-box !important;
-    border:1px solid rgba(102,182,226,.20) !important;
-    border-radius:11px !important;
-    background:linear-gradient(180deg,rgba(18,55,82,.88),rgba(10,35,56,.88)) !important;
-    color:#f5fbff !important;
-    font-size:13px !important;
-    font-weight:750 !important;
-    line-height:1.2 !important;
-    text-decoration:none !important;
-    opacity:1 !important;
-    visibility:visible !important;
-    text-shadow:none !important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
-  #vybeMobileNav.student-mobile-menu > a:focus-visible,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible {{
-    background:#174d70 !important;
-    border-color:rgba(88,193,245,.42) !important;
-    color:#ffffff !important;
-    outline:none !important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head {{
-    display:none !important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links {{
-    display:none !important;
-  }}
-}}
 </style>"""
 @app.route("/contact-terms", methods=["GET","POST"])
 def contact_terms():
