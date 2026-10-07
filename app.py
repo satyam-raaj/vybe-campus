@@ -6277,6 +6277,7 @@ def academics():
         ("Study Material","Books, PDFs and reference material.","/academic-hub/study-material","▦"),
         ("Previous Year Questions","Previous papers by semester and subject.","/academic-hub/pyq","◫"),
         ("Syllabus","Syllabus files for each semester and subject.","/academic-hub/syllabus","✓"),
+        ("Lab Materials","Practical files, lab manuals and lab reference material.","/academic-hub/lab-materials","⌘"),
         ("Online Classes","Class links by semester and subject.","/academic-hub/online-classes","▣"),
     ]
     cards="".join(f"<a class='ah-key' href='{href}'><span class='ah-key-icon' aria-hidden='true'>{icon}</span><span class='ah-key-copy'><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b class='ah-key-arrow' aria-hidden='true'>→</b></a>" for title,desc,href,icon in shortcuts)
@@ -6445,6 +6446,11 @@ def academic_hub_pyq():
 @student_required
 def academic_hub_syllabus():
     return _academic_resource_collection("Syllabus","Syllabus","Choose your semester and subject to see the relevant syllabus.","SYLLABUS")
+
+@app.route("/academic-hub/lab-materials")
+@student_required
+def academic_hub_lab_materials():
+    return _academic_resource_collection("Lab Materials","Lab Materials","Choose your semester and subject to see practical files, lab manuals and lab reference material.","LAB MATERIALS")
 
 @app.route("/academic-hub/assignments")
 @student_required
@@ -8895,13 +8901,13 @@ ACADEMIC_HUB_ADMIN_CSS = """
 
 
 AH_DIRECT_UPLOAD_JS = r'''
-<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status,semester,subject){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','assignments':'Assignments'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size,semester:(semester||'').toString().trim(),subject:(subject||'').toString().trim()})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+4*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');meta.__vybe_folder_id=init.folder_id||'';return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status,(data.get('semester')||'').toString().trim(),(data.get('subject')||'').toString().trim());await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','assignments':'Assignments'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description'),folder_id:meta.__vybe_folder_id||''})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
+<script>(function(){const csrf=(document.querySelector('meta[name="vybe-csrf-token"]')||{}).content||'';async function j(url,opts){opts=opts||{};opts.credentials='same-origin';opts.headers=Object.assign({'Accept':'application/json','X-VYBE-CSRF':csrf},opts.headers||{});const r=await fetch(url,opts);let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));return d}async function upload(file,status,semester,subject){const init=await j('/admin/drive/upload-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','lab_materials':'Lab Materials','assignments':'Assignments'})['__AH_SECTION__']||'Notes',name:file.name,mimeType:file.type||'application/octet-stream',size:file.size,semester:(semester||'').toString().trim(),subject:(subject||'').toString().trim()})});const xhrUpload=()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('PUT',init.upload_url,true);x.upload.onprogress=e=>{if(e.lengthComputable)status.textContent='Uploading '+file.name+' · '+Math.round(e.loaded/e.total*100)+'%'};x.onload=()=>{if(x.status>=200&&x.status<300){try{resolve(x.response?JSON.parse(x.response):JSON.parse(x.responseText||'{}'))}catch(e){reject(new Error('Drive returned an invalid upload response.'))}}else reject(new Error('Direct Drive upload failed (HTTP '+x.status+').'))};x.onerror=()=>reject(new Error('Direct Drive connection was blocked.'));x.ontimeout=()=>reject(new Error('Drive upload timed out.'));x.timeout=900000;x.responseType='json';x.send(file)});let meta;try{meta=await xhrUpload()}catch(_){let start=0,done=null;const stat=await j('/admin/drive/upload-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_url:init.upload_url,total:file.size})});if(stat.complete)done=stat.metadata;else start=Number(stat.next_start||0);while(!done&&start<file.size){const end=Math.min(start+4*1024*1024,file.size);status.textContent='Uploading '+file.name+' · '+Math.round(start/file.size*100)+'%';const r=await fetch('/admin/drive/upload-chunk?session_url='+encodeURIComponent(init.upload_url)+'&start='+start+'&end='+(end-1)+'&total='+file.size,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/octet-stream','X-VYBE-CSRF':csrf},body:file.slice(start,end)});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||('Upload chunk failed (HTTP '+r.status+').'));start=Number(d.next_start||end);if(d.complete)done=d.metadata}meta=done}if(!meta||!meta.id)throw new Error('Google Drive completed the upload but returned no file ID.');meta.__vybe_folder_id=init.folder_id||'';return meta}async function publish(form,file,status){const data=new FormData(form);status.textContent='Starting '+file.name+'…';const meta=await upload(file,status,(data.get('semester')||'').toString().trim(),(data.get('subject')||'').toString().trim());await j('/admin/drive/register-resource',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:({'notes':'Notes','study_material':'Study Material','pyq':'Previous Year Questions','syllabus':'Syllabus','lab_materials':'Lab Materials','assignments':'Assignments'})['__AH_SECTION__']||'Notes',file_id:meta.id,title:(data.get('title')||file.name.replace(/\.[^.]+$/,'')).toString(),course:data.get('course'),semester:data.get('semester'),subject:data.get('subject'),description:data.get('description'),folder_id:meta.__vybe_folder_id||''})});}const single=document.getElementById('ahSingleUpload');if(single)single.addEventListener('submit',async()=>{const status=document.getElementById('ahSingleStatus'),file=single.elements.file.files[0];if(!file)return;const b=single.querySelector('button');b.disabled=true;try{await publish(single,file,status);status.textContent='✓ Uploaded and published successfully.';single.reset()}catch(e){status.textContent='Upload failed: '+e.message}finally{b.disabled=false}});const bulk=document.getElementById('ahBulkUpload');if(bulk)bulk.addEventListener('submit',async()=>{const status=document.getElementById('ahBulkStatus'),files=Array.from(bulk.elements.files.files||[]);if(!files.length)return;const b=bulk.querySelector('button');b.disabled=true;let done=0;try{for(const file of files){await publish(bulk,file,status);done++;status.textContent='✓ '+done+'/'+files.length+' uploaded · '+file.name}status.textContent='✓ All '+done+' files uploaded and published successfully.';bulk.reset()}catch(e){status.textContent='Upload stopped after '+done+' file(s): '+e.message}finally{b.disabled=false}})})();</script>
 '''
 
 @app.route("/admin/academic-hub", methods=["GET", "POST"])
 @admin_required
 def admin_academic_hub():
-    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions","syllabus":"Syllabus"}
+    allowed={"notes":"Notes","study_material":"Study material","pyq":"Previous Year Questions","syllabus":"Syllabus","lab_materials":"Lab Materials"}
     section=request.args.get("section","notes").strip()
     if section not in allowed: section="notes"
     con=db()
@@ -8949,6 +8955,7 @@ def admin_academic_hub():
         "study_material":"Study files organized by semester and subject.",
         "pyq":"Previous-year question papers by semester and subject.",
         "syllabus":"Syllabus files organized by semester and subject.",
+        "lab_materials":"Practical files, lab manuals and lab reference material.",
         "assignments":"Assignments organized by semester and subject.",
     }
     tabs=[]
@@ -8986,6 +8993,7 @@ def admin_academic_hub_delete_resource(rid):
         "Study material":"study_material",
         "Previous Year Questions":"pyq",
         "Syllabus":"syllabus",
+        "Lab Materials":"lab_materials",
         "Assignments":"assignments",
     }.get(typ,"notes")
     con.execute("DELETE FROM resources WHERE id=?",(rid,)); con.commit(); con.close()
@@ -9929,7 +9937,7 @@ def admin_drive_register_resource():
     data=request.get_json(force=True) or {}
     category=str(data.get("category") or "").strip()
     fid=str(data.get("file_id") or "").strip()
-    if category not in {"Notes","Study Material","Previous Year Questions","Syllabus","Assignments"} or not fid:
+    if category not in {"Notes","Study Material","Previous Year Questions","Syllabus","Lab Materials","Assignments"} or not fid:
         return jsonify(error="Missing Drive file or resource category."),400
     semester=_drive_normalize_semester(data.get("semester"))
     subject=" ".join(str(data.get("subject") or "").strip().split())[:120]
@@ -9939,7 +9947,7 @@ def admin_drive_register_resource():
         meta=_drive_file_meta(fid)
         if not meta or meta.get("trashed"):
             raise RuntimeError("The uploaded Drive file could not be found.")
-        mapped={"Notes":"Notes","Study Material":"Study material","Previous Year Questions":"Previous Year Questions","Syllabus":"Syllabus","Assignments":"Assignments"}[category]
+        mapped={"Notes":"Notes","Study Material":"Study material","Previous Year Questions":"Previous Year Questions","Syllabus":"Syllabus","Lab Materials":"Lab Materials","Assignments":"Assignments"}[category]
         requested_folder=str(data.get("folder_id") or "").strip()
         parents=[str(x) for x in (meta.get("parents") or []) if x]
         target=requested_folder if requested_folder and requested_folder in parents else _drive_category_folder(category,True,semester=semester,subject=subject)
@@ -10589,6 +10597,7 @@ DRIVE_CATEGORY_MAP = {
     "Study Material": ("Academic Hub", "Study Material", "resource", "Study material"),
     "Previous Year Questions": ("Academic Hub", "Previous Year Questions", "resource", "Previous Year Questions"),
     "Syllabus": ("Academic Hub", "Syllabus", "resource", "Syllabus"),
+    "Lab Materials": ("Academic Hub", "Lab Materials", "resource", "Lab Materials"),
     "Results": ("Academic Updates", "Results", "update", "Result"),
     "Date Sheets": ("Academic Updates", "Date Sheets", "update", "Date Sheet"),
     "Exam Forms & Notices": ("Academic Updates", "Exam Forms & Notices", "update", "Exam Notice"),
@@ -10926,6 +10935,7 @@ def _drive_category_for_resource_type(resource_type):
         "Study material": "Study Material",
         "Previous Year Questions": "Previous Year Questions",
         "Syllabus": "Syllabus",
+        "Lab Materials": "Lab Materials",
         "Assignments": "Assignments",
     }
     return mapping.get(resource_type, "Study Material")
