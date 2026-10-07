@@ -481,6 +481,26 @@ def set_setting(con, key, value):
         invalidate_vybe_online_cache()
 
 
+
+def _whatsapp_groups(con):
+    """Return configured student WhatsApp groups, separate from Contact / Terms support."""
+    raw = setting(con, "whatsapp_groups", "[]") or "[]"
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = []
+    if not isinstance(data, list):
+        data = []
+    groups = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = " ".join(str(item.get("name", "")).split())[:120]
+        link = str(item.get("link", "")).strip()[:500]
+        if name and valid_url(link):
+            groups.append({"name": name, "link": link})
+    return groups
+
 def init_db():
     con = db()
     if con.is_pg:
@@ -950,6 +970,7 @@ def init_db():
 
     defaults = {
         "whatsapp_link": "",
+        "whatsapp_groups": "[]",
         "google_drive_url": DRIVE_URL,
         "vybe_online": "1",
         **({"admin_password_hash": hash_password(INITIAL_ADMIN_PASSWORD)} if INITIAL_ADMIN_PASSWORD else {}),
@@ -965,6 +986,9 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
+    if setting(con, "contact_terms_whatsapp_link", None) is None:
+        legacy_support = setting(con, "whatsapp_link", "").strip()
+        set_setting(con, "contact_terms_whatsapp_link", legacy_support if valid_url(legacy_support) else "")
 
     # Incremental chat polling uses id > after_id; keep that lookup indexed.
     # Hot-path indexes for the student library, notifications and admin queues.
@@ -2308,6 +2332,7 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
    Responsive on desktop and mobile without changing desktop nav.
    ========================================================= */
 .community-choice-section{padding-top:0}
+.whatsapp-group-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.whatsapp-group-row>div{min-width:0;flex:1}.whatsapp-group-row b{display:block;font-size:15px;color:var(--vybe-ui-text)}.community-whatsapp-page .community-choice-grid{max-width:900px;margin:0 auto}.community-whatsapp-page .community-choice-card{min-height:86px}
 .community-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1000px;margin:0 auto}
 .community-choice-card{position:relative;display:flex;align-items:center;gap:16px;min-width:0;padding:20px 22px;border:1px solid rgba(55,133,199,.30);border-radius:24px;background:linear-gradient(145deg,rgba(8,30,51,.96),rgba(3,12,22,.98));box-shadow:0 18px 55px rgba(0,0,0,.30);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
 .community-choice-card:hover{transform:translateY(-3px);border-color:rgba(75,155,224,.58);box-shadow:0 24px 65px rgba(0,30,65,.30)}
@@ -7514,12 +7539,12 @@ def _render_solution_card(row,my_student_id):
 def community():
     # Community launcher: chat, campus problems, and WhatsApp community.
     con = db()
-    wa = setting(con, "whatsapp_link", "")
+    whatsapp_groups = _whatsapp_groups(con)
     con.close()
     whatsapp_card = (
-        f'<a class="community-choice-card" href="{esc(wa)}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Join the VYBE WhatsApp community.</small></span><span class="community-choice-arrow">&#8250;</span></a>'
-        if valid_url(wa) else
-        '<div class="community-choice-card" style="opacity:.65;cursor:default"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Community link is not configured yet.</small></span></div>'
+        '<a class="community-choice-card" href="/community/whatsapp"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Choose your VYBE WhatsApp group.</small></span><span class="community-choice-arrow">&#8250;</span></a>'
+        if whatsapp_groups else
+        '<div class="community-choice-card" style="opacity:.65;cursor:default"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>No WhatsApp groups are configured yet.</small></span></div>'
     )
     body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
 <section class="section community-choice-section">
@@ -7530,6 +7555,21 @@ def community():
   </div>
 </section>'''
     return layout("Community", body)
+
+@app.route("/community/whatsapp", methods=["GET"])
+@student_required
+def community_whatsapp():
+    con = db()
+    groups = _whatsapp_groups(con)
+    con.close()
+    cards = "".join(
+        f'<a class="community-choice-card" href="{esc(g["link"])}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>{esc(g["name"])}</strong><small>Open WhatsApp group</small></span><span class="community-choice-arrow">&#8250;</span></a>'
+        for g in groups
+    )
+    if not cards:
+        cards = '<div class="card"><div class="empty">No WhatsApp groups are available right now.</div></div>'
+    body = f'''<section class="section community-page-section community-whatsapp-page"><div class="community-page-top"><a class="community-back-link" href="/community">← Community</a><div class="badge">WHATSAPP COMMUNITY</div><h1>WhatsApp groups.</h1><p class="muted">Choose the group you want to join.</p></div><div class="community-choice-grid">{cards}</div></section>'''
+    return layout("WhatsApp Community", body)
 
 @app.route("/community/chat", methods=["GET", "POST"])
 @student_required
@@ -9647,6 +9687,7 @@ def contact_terms():
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
     custom_terms=setting(con,"contact_terms_text","")
+    contact_wa=setting(con,"contact_terms_whatsapp_link","")
     admin_photo=setting(con,"contact_admin_photo","")
     name_prefill=""; sid_prefill=""
     if session.get("student_db_id"):
@@ -9689,7 +9730,7 @@ def contact_terms():
         initial=esc((admin_name or "V")[:1].upper())
         admin_identity_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
         revealed_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
-    wa_link=setting(con,"whatsapp_link","").strip()
+    wa_link=setting(con,"contact_terms_whatsapp_link","").strip()
     if not wa_link:
         wa_number=re.sub(r"[^0-9]", "", setting(con,"whatsapp_admin_number","").strip())
         if len(wa_number) >= 8:
@@ -9736,7 +9777,11 @@ def admin_contact_terms():
             con.close(); flash("Please enter a valid admin name and email."); return redirect(url_for("admin_contact_terms"))
         set_setting(con,"contact_admin_name",admin_name)
         set_setting(con,"contact_admin_email",admin_email)
+        contact_wa=request.form.get("contact_terms_whatsapp_link","").strip()[:500]
+        if contact_wa and not valid_url(contact_wa):
+            con.close(); flash("WhatsApp Support link must be a valid URL."); return redirect(url_for("admin_contact_terms"))
         set_setting(con,"contact_terms_text",custom_terms)
+        set_setting(con,"contact_terms_whatsapp_link",contact_wa)
         photo=request.files.get("admin_photo")
         if photo and photo.filename:
             mime=(photo.mimetype or "").lower()
@@ -9753,7 +9798,7 @@ def admin_contact_terms():
     con.close()
     photo_html=(f'<img class="admin-photo-preview" src="{esc(admin_photo)}" alt="Admin photo">' if admin_photo else f'<div class="admin-photo-fallback">{esc((admin_name or "V")[:1].upper())}</div>')
     rows_html="".join(f'<div class="admin-consent-row"><div><strong>{esc(r["name"])}</strong><small>ID: {esc(r["student_id"])}</small></div><div><small>IP address</small><strong>{esc(r["ip_address"])}</strong></div><div><small>Consent time</small><strong>{esc(r["consented_at"])}</strong></div><span class="admin-consent-pill">CONSENTED</span><form method="post" onsubmit="return confirm(\'Delete this consent record?\')"><input type="hidden" name="action" value="delete_consent"><input type="hidden" name="consent_id" value="{int(r["id"])}"><button class="admin-consent-delete" type="submit">Delete</button></form></div>' for r in rows)
-    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
+    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>WhatsApp Support link</label><input name="contact_terms_whatsapp_link" type="url" value="{esc(contact_wa)}" placeholder="https://chat.whatsapp.com/... or https://wa.me/..." maxlength="500"><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
     return layout("Contact / Terms",body,admin=True)
 
 
@@ -10391,11 +10436,11 @@ ADMIN_DESKTOP_POLISH_CSS = r"""
 def admin_settings():
     con=db()
     online=setting(con,"vybe_online","1")=="1"
-    wa=setting(con,"whatsapp_link","")
+    whatsapp_group_count=len(_whatsapp_groups(con))
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if whatsapp_group_count else 'off'}">{whatsapp_group_count} GROUPS</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
 
@@ -10449,22 +10494,39 @@ def admin_online_classes():
     return layout("Online Classes",body,admin=True)
 
 
-@app.route("/admin/whatsapp-community", methods=["GET","POST"])
+@app.route("/admin/whatsapp-community", methods=["GET", "POST"])
 @admin_required
 def admin_whatsapp_community():
     con=db()
     if request.method=="POST":
-        link=request.form.get("whatsapp_link","").strip()[:500]
+        action=(request.form.get("action") or "add").strip().lower()
+        groups=_whatsapp_groups(con)
         chat_enabled="1" if request.form.get("community_chat_enabled")=="1" else "0"
-        if link and not valid_url(link):
-            con.close(); flash("WhatsApp group link must be a valid URL."); return redirect(url_for("admin_whatsapp_community"))
-        set_setting(con,"whatsapp_link",link)
-        set_setting(con,"community_chat_enabled",chat_enabled)
-        con.commit(); con.close(); flash("WhatsApp Community settings saved."); return redirect(url_for("admin_whatsapp_community"))
-    link=setting(con,"whatsapp_link","")
+        if action=="add":
+            name=" ".join(request.form.get("group_name","").split())[:120]
+            link=request.form.get("group_link","").strip()[:500]
+            if not name or not valid_url(link):
+                con.close(); flash("Enter a group name and a valid WhatsApp invite link."); return redirect(url_for("admin_whatsapp_community"))
+            groups.append({"name":name,"link":link})
+            set_setting(con,"whatsapp_groups",json.dumps(groups,separators=(",",":"),ensure_ascii=False))
+            set_setting(con,"community_chat_enabled",chat_enabled)
+            con.commit(); con.close(); flash("WhatsApp group added."); return redirect(url_for("admin_whatsapp_community"))
+        if action=="delete":
+            try: index=int(request.form.get("index","-1"))
+            except (TypeError,ValueError): index=-1
+            if 0<=index<len(groups):
+                groups.pop(index)
+                set_setting(con,"whatsapp_groups",json.dumps(groups,separators=(",",":"),ensure_ascii=False))
+            set_setting(con,"community_chat_enabled",chat_enabled)
+            con.commit(); con.close(); flash("WhatsApp group removed."); return redirect(url_for("admin_whatsapp_community"))
+        if action=="save_chat":
+            set_setting(con,"community_chat_enabled",chat_enabled)
+            con.commit(); con.close(); flash("Community chat setting saved."); return redirect(url_for("admin_whatsapp_community"))
+    groups=_whatsapp_groups(con)
     chat=setting(con,"community_chat_enabled","1")=="1"
     con.close()
-    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">WHATSAPP COMMUNITY</span><h1>Community links.</h1><p>Put the current WhatsApp group link here. Students will see the same link in their Community area.</p></div></div><div class="settings-detail-grid"><div class="card settings-editor"><div class="settings-editor-icon">💬</div><h2>Student WhatsApp group</h2><p class="muted">Paste a WhatsApp invite link. Students can tap the Community button to open it.</p><form class="form" method="post"><label>WhatsApp group link</label><input name="whatsapp_link" value="{esc(link)}" placeholder="https://chat.whatsapp.com/..." autocomplete="off"><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>Enable VYBE Community Chat</b><small>Allow students to use the built-in student-to-student chat.</small></span></label><button class="btn accent">Save Community settings →</button></form></div><div class="card settings-preview"><span class="admin-page-kicker">STUDENT SIDE</span><h2>What students get</h2><div class="preview-row"><span>WhatsApp Community</span><b>{'Available' if link else 'Not configured'}</b></div><div class="preview-row"><span>VYBE Community Chat</span><b>{'ON' if chat else 'OFF'}</b></div>{('<a class="btn dark" target="_blank" rel="noopener" href="'+esc(link)+'">Test WhatsApp link →</a>') if link else '<p class="small">Save a WhatsApp link to enable the test button.</p>'}</div></div></section>'''
+    rows="".join(f'''<div class="card whatsapp-group-row"><div><b>{esc(g["name"])}</b><div class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{esc(g["link"])}</div></div><form method="post"><input type="hidden" name="action" value="delete"><input type="hidden" name="index" value="{i}"><input type="hidden" name="community_chat_enabled" value="{'1' if chat else '0'}"><button class="btn danger" type="submit">Remove</button></form></div>''' for i,g in enumerate(groups))
+    body=f'''<section class="section settings-detail whatsapp-community-settings"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">WHATSAPP COMMUNITY</span><h1>Community links.</h1><p>Add separate WhatsApp groups with their own names. Students will choose a group before WhatsApp opens.</p></div></div><div class="settings-detail-grid"><div class="card settings-editor"><div class="settings-editor-icon">💬</div><h2>Add WhatsApp group</h2><p class="muted">Give each group a clear name and paste its WhatsApp invite link.</p><form class="form" method="post"><input type="hidden" name="action" value="add"><label>Group name</label><input name="group_name" maxlength="120" required placeholder="e.g. B.Sc. Computer Science – Semester 1"><label>WhatsApp group link</label><input name="group_link" type="url" maxlength="500" required placeholder="https://chat.whatsapp.com/..."><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>Enable VYBE Community Chat</b><small>Allow students to use the built-in student-to-student chat.</small></span></label><button class="btn accent">Add WhatsApp group →</button></form></div><div class="card settings-preview"><span class="admin-page-kicker">STUDENT SIDE</span><h2>{len(groups)} group{'s' if len(groups)!=1 else ''} configured</h2><p class="muted">Students see name plates first. Tapping a plate opens that group's WhatsApp invite in a new tab.</p><form method="post"><input type="hidden" name="action" value="save_chat"><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>VYBE Community Chat</b><small>{'ON' if chat else 'OFF'}</small></span></label><button class="btn dark">Save chat setting →</button></form></div></div><section class="section" style="padding-left:0;padding-right:0"><h2>Configured WhatsApp groups</h2><div style="display:grid;gap:10px">{rows or '<div class="card"><div class="empty">No WhatsApp groups added yet.</div></div>'}</div></section></section>'''
     return layout("WhatsApp Community",body,admin=True)
 
 
