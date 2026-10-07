@@ -7334,8 +7334,6 @@ def _render_solution_card(row,my_student_id):
     button="" if row["student_id"]==my_student_id else f"<form method=\"post\" action=\"/community/solution/{row['id']}/helpful\" style=\"margin-top:9px\"><button class=\"btn dark\" type=\"submit\"> Helpful answer</button></form>"
     return f'<div class="bubble"><strong>{esc(row["author_name"])}</strong><div>{esc(row["text"])}</div><div class="small">{esc(row["created_at"])}</div>{button}</div>'
 
-@app.route("/community", methods=["GET"])
-@student_required
 def _whatsapp_community_groups(con):
     # Read student WhatsApp groups from one JSON setting; no schema change.
     raw = setting(con, "whatsapp_community_groups", "") or ""
@@ -9502,6 +9500,7 @@ def admin_contact_terms():
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
     custom_terms=setting(con,"contact_terms_text","")
+    contact_wa=setting(con,"contact_terms_whatsapp_link","")
     admin_photo=setting(con,"contact_admin_photo","")
     rows=con.execute("SELECT id,name,student_id,ip_address,consented_at FROM contact_terms_consents ORDER BY id DESC LIMIT 200").fetchall()
     con.close()
