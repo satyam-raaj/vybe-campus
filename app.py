@@ -4544,7 +4544,86 @@ body{background-attachment:scroll!important}
 #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
 #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
 #vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
-@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
+@media(min-width:851px){{
+  /* Desktop student menu: match the supplied large blue menu reference.
+     This block is desktop-only; phone navigation is untouched. */
+  #vybeMobileNav.student-mobile-menu{{
+    position:fixed!important;
+    top:0!important;
+    right:0!important;
+    bottom:0!important;
+    left:auto!important;
+    width:min(760px,100vw)!important;
+    max-width:760px!important;
+    height:100vh!important;
+    max-height:100vh!important;
+    box-sizing:border-box!important;
+    display:none!important;
+    flex-direction:column!important;
+    gap:0!important;
+    padding:28px 24px 36px!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    border:0!important;
+    border-left:1px solid rgba(86,130,166,.42)!important;
+    border-radius:0!important;
+    background:linear-gradient(180deg,#132b45 0%,#10263d 52%,#0f2236 100%)!important;
+    box-shadow:-18px 0 55px rgba(0,0,0,.34)!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    z-index:30000!important;
+  }}
+  #vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    flex:0 0 auto!important;
+    width:100%!important;
+    min-height:58px!important;
+    box-sizing:border-box!important;
+    padding:0 16px 20px!important;
+    margin:0 0 8px!important;
+    border-bottom:1px solid rgba(126,160,190,.28)!important;
+    background:transparent!important;
+  }}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{
+    color:#fff!important;
+    font-size:34px!important;
+    line-height:1!important;
+    font-weight:800!important;
+    letter-spacing:-.035em!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a{{
+    display:flex!important;
+    align-items:center!important;
+    flex:0 0 auto!important;
+    width:100%!important;
+    min-height:116px!important;
+    box-sizing:border-box!important;
+    margin:10px 0!important;
+    padding:20px 36px!important;
+    border:2px solid rgba(91,133,168,.42)!important;
+    border-radius:28px!important;
+    background:rgba(27,48,72,.78)!important;
+    color:#f4f8fc!important;
+    text-decoration:none!important;
+    font-size:30px!important;
+    line-height:1.15!important;
+    font-weight:750!important;
+    letter-spacing:-.025em!important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
+    transition:background .14s ease,border-color .14s ease,transform .14s ease!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu > a:focus-visible{{
+    background:rgba(36,65,94,.92)!important;
+    border-color:rgba(111,164,204,.62)!important;
+    color:#fff!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:active{{transform:scale(.995)!important}}
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{display:none!important}}
+}}
 @media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
 
 /* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
@@ -4637,6 +4716,105 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
     box-sizing:border-box!important;
     min-height:42px!important;
     padding:10px 12px!important;
+  }}
+}}
+
+
+
+/* ===== DESKTOP STUDENT MENU: CLOSED UNTIL MENU BUTTON IS PRESSED =====
+   Desktop only. Mobile navigation is intentionally untouched. */
+@media (min-width:851px){{
+  .student-nav-compact .student-desktop-links{{
+    display:none!important;
+  }}
+  .student-nav-compact .student-menu{{
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    min-width:82px!important;
+    height:40px!important;
+    padding:0 18px!important;
+    border-radius:10px!important;
+    cursor:pointer!important;
+  }}
+
+  #vybeMobileNav.student-mobile-menu{{
+    display:none!important;
+    position:fixed!important;
+    top:0!important;
+    right:0!important;
+    left:auto!important;
+    bottom:0!important;
+    width:min(390px,42vw)!important;
+    max-width:390px!important;
+    min-width:320px!important;
+    height:100vh!important;
+    margin:0!important;
+    padding:28px 24px 32px!important;
+    box-sizing:border-box!important;
+    flex-direction:column!important;
+    gap:10px!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    z-index:2147483000!important;
+    background:#132d49!important;
+    border:0!important;
+    border-left:1px solid rgba(125,170,205,.28)!important;
+    border-radius:0!important;
+    box-shadow:-18px 0 48px rgba(10,24,39,.30)!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+  }}
+  #vybeMobileNav.student-mobile-menu.open{{
+    display:flex!important;
+  }}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
+    display:flex!important;
+    align-items:center!important;
+    width:100%!important;
+    min-height:52px!important;
+    padding:0 12px 14px!important;
+    margin:0 0 2px!important;
+    box-sizing:border-box!important;
+    border-bottom:1px solid rgba(205,225,239,.18)!important;
+  }}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{
+    display:block!important;
+    color:#fff!important;
+    font-size:28px!important;
+    line-height:1.1!important;
+    font-weight:850!important;
+    letter-spacing:-.02em!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-height:68px!important;
+    margin:0!important;
+    padding:0 24px!important;
+    box-sizing:border-box!important;
+    border:1px solid rgba(116,161,196,.30)!important;
+    border-radius:20px!important;
+    background:#1c3149!important;
+    color:#fff!important;
+    text-decoration:none!important;
+    font-size:21px!important;
+    font-weight:750!important;
+    line-height:1.2!important;
+    box-shadow:none!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a:hover,
+  #vybeMobileNav.student-mobile-menu > a:focus-visible,
+  #vybeMobileNav.student-mobile-menu > a:active,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{
+    background:#223b56!important;
+    border-color:rgba(137,184,220,.55)!important;
+    color:#fff!important;
   }}
 }}
 
