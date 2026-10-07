@@ -4566,6 +4566,46 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
   .compact-home-updates .home-update>b{{font-size:16px!important}}
 }}
 
+/* ===== DESKTOP MENU PANEL FIX ONLY ===== */
+@media(min-width:851px){{
+  #vybeMobileNav.student-mobile-menu{{
+    display:none!important;
+    position:absolute!important;
+    top:58px!important;
+    right:30px!important;
+    left:auto!important;
+    width:230px!important;
+    max-width:calc(100vw - 60px)!important;
+    box-sizing:border-box!important;
+    flex-direction:column!important;
+    grid-template-columns:1fr!important;
+    gap:5px!important;
+    padding:10px!important;
+    overflow:hidden!important;
+  }}
+  #vybeMobileNav.student-mobile-menu.open{{
+    display:grid!important;
+  }}
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+    padding:10px 12px!important;
+  }}
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+    min-height:42px!important;
+    padding:10px 12px!important;
+  }}
+}}
+
 </style>{ADMIN_DESKTOP_POLISH_CSS if admin else ""}</head><body>
 <div class="nav">{header}</div><div class="mobile-nav {"student-mobile-menu" if student else "admin-mobile-menu"}" id="vybeMobileNav">{('<div class="mobile-menu-head"><span class="mobile-menu-title">Menu</span></div>'+mobile_links) if student else ('<div class="admin-mobile-menu-head"><span class="admin-mobile-menu-kicker">VYBE ADMIN</span><strong>Control center</strong></div>'+links)}<div class="mobile-only-menu-links"></div></div>
 <main class="wrap page-shell page-{re.sub(r"[^a-z0-9]+", "-", request.path.strip("/").lower()) or "home"}">{flashes}{body}</main>{bottom_nav}{assistant_widget}{admin_problem_alert_runtime}
