@@ -249,8 +249,8 @@ def _ensure_password_reset_schema(con):
             expires_at TEXT,
             used_at TEXT
         )""")
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
+        # Existing PostgreSQL schema is provisioned outside request startup.
+        # Do not run ALTER TABLE here: concurrent Vercel instances can deadlock with chat reads.
     else:
         con.execute("""CREATE TABLE IF NOT EXISTS password_reset_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -785,23 +785,25 @@ def init_db():
             )""",
         ]
     con.executescript(statements)
-    # Additive scheduling/location fields for announcements and events.
-    for _sql in (
-        "ALTER TABLE announcements ADD COLUMN publish_at TEXT",
-        "ALTER TABLE events ADD COLUMN publish_at TEXT",
-        "ALTER TABLE events ADD COLUMN location_url TEXT",
-    ):
-        try: con.execute(_sql)
+    # Additive scheduling/location fields are only migrated for SQLite.
+    # Neon is already provisioned and must never receive startup ALTER TABLE statements.
+    if not con.is_pg:
+        for _sql in (
+            "ALTER TABLE announcements ADD COLUMN publish_at TEXT",
+            "ALTER TABLE events ADD COLUMN publish_at TEXT",
+            "ALTER TABLE events ADD COLUMN location_url TEXT",
+        ):
+            try: con.execute(_sql)
+            except Exception:
+                try: con.rollback()
+                except Exception: pass
+        try:
+            con.execute("UPDATE announcements SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+            con.execute("UPDATE events SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+            con.commit()
         except Exception:
             try: con.rollback()
             except Exception: pass
-    try:
-        con.execute("UPDATE announcements SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
-        con.execute("UPDATE events SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
-        con.commit()
-    except Exception:
-        try: con.rollback()
-        except Exception: pass
     # Additive Academic Hub storage. Existing VYBE tables are left untouched.
     if con.is_pg:
         con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BYTEA, created_at TEXT NOT NULL)""")
@@ -866,12 +868,8 @@ def init_db():
         ):
             if col not in cols_now: con.execute(f'ALTER TABLE students ADD COLUMN {col} {definition}')
     else:
-        for col,definition in (
-            ('admit_card_file_name','TEXT'),('admit_card_original_name','TEXT'),('admit_card_mime_type','TEXT'),('admit_card_file_data','BYTEA'),
-            ('id_card_file_name','TEXT'),('id_card_original_name','TEXT'),('id_card_mime_type','TEXT'),('id_card_file_data','BYTEA')
-        ):
-            con.execute(f'ALTER TABLE students ADD COLUMN IF NOT EXISTS {col} {definition}')
-        con.execute('ALTER TABLE community_messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES community_messages(id) ON DELETE SET NULL')
+        # PostgreSQL schema is provisioned outside startup; never ALTER live tables here.
+        pass
     # One-time compatibility copy for profiles created before the dedicated ID-card fields existed.
     try:
         con.execute("UPDATE students SET id_card_file_name=COALESCE(id_card_file_name,admit_card_file_name), id_card_original_name=COALESCE(id_card_original_name,admit_card_original_name), id_card_mime_type=COALESCE(id_card_mime_type,admit_card_mime_type), id_card_file_data=COALESCE(id_card_file_data,admit_card_file_data) WHERE id_card_file_name IS NULL AND admit_card_file_name IS NOT NULL")
@@ -905,40 +903,19 @@ def init_db():
             if col not in au_cols:
                 con.execute(f"ALTER TABLE academic_updates ADD COLUMN {col} TEXT")
     else:
-        # PostgreSQL migrations are idempotent and safe on existing deployments.
-        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
-        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS original_name TEXT")
-        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT")
-        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
-        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
-        # Existing deployments may have the original small timetable schema.
-        # Drive-backed publishing needs these additive columns; CREATE TABLE IF NOT EXISTS
-        # does not modify an already-existing Neon table, so migrate them explicitly.
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS mime_type TEXT")
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
-        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
-        # Existing deployments may also have the original academic-updates schema.
-        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
-        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
-        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
-        # Existing Render databases may have an older SMALLINT/TEXT success column.
-        # Normalize it to BOOLEAN before the application starts so admin login logging cannot fail.
-        con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
-        success_type = con.execute(
-            "SELECT data_type FROM information_schema.columns WHERE table_name='admin_login_logs' AND column_name='success' LIMIT 1"
-        ).fetchone()
-        if success_type and str(success_type["data_type"]).lower() != "boolean":
-            con.execute("ALTER TABLE admin_login_logs ALTER COLUMN success TYPE BOOLEAN USING CASE WHEN LOWER(success::text) IN ('1','t','true','yes','y') THEN TRUE ELSE FALSE END")
+        # IMPORTANT: Neon/PostgreSQL schema changes must not run during application startup.
+        # Multiple Vercel instances can serve chat reads while another cold start is
+        # acquiring an AccessExclusiveLock for ALTER TABLE, which can deadlock the live site.
+        # The production schema is already provisioned; runtime requests must be read/write only.
+        pass
 
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
         if "last_seen" not in student_cols:
             con.execute("ALTER TABLE students ADD COLUMN last_seen TEXT")
     else:
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
+        # last_seen is part of the deployed PostgreSQL schema; no runtime DDL.
+        pass
     # Student profile/reputation migrations for existing VYBE deployments.
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
@@ -952,11 +929,8 @@ def init_db():
             if col not in student_cols:
                 con.execute(f"ALTER TABLE students ADD COLUMN {col} {definition}")
     else:
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS reputation_points INTEGER NOT NULL DEFAULT 0")
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS helpful_answers INTEGER NOT NULL DEFAULT 0")
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS accepted_solutions INTEGER NOT NULL DEFAULT 0")
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''")
-        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS interests TEXT NOT NULL DEFAULT ''")
+        # Profile columns are already provisioned on the live Neon database.
+        pass
 
     if not con.is_pg:
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
@@ -965,8 +939,9 @@ def init_db():
         if "proposed_password_hash" not in reset_cols:
             con.execute("ALTER TABLE password_reset_requests ADD COLUMN proposed_password_hash TEXT")
     else:
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
-        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
+        # Existing PostgreSQL schema is provisioned outside request startup.
+        # Do not run ALTER TABLE here: concurrent Vercel instances can deadlock with chat reads.
+        pass
 
     try:
         _ensure_password_reset_active_index(con)
@@ -7558,9 +7533,9 @@ def community_chat():
     status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
-    select_controls = f'''<div class="community-chat-tools">
-        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Student Chat</strong></div>
-        <div class="community-chat-online" id="community-online-count" aria-live="polite"><span class="community-chat-online-dot"></span>{online_count} Online</div>
+    select_controls = f'''<div class="student-chat-status-bar" data-student-chat-status="1">
+        <div class="student-chat-status-title"><span class="student-chat-status-dot" aria-hidden="true"></span><strong>Student Chat</strong></div>
+        <div class="student-chat-status-online" id="community-online-count" aria-live="polite"><span class="student-chat-online-dot" aria-hidden="true"></span><span class="student-chat-online-number">{online_count}</span> Online</div>
       </div>'''
     if not chat_enabled:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
@@ -7572,11 +7547,11 @@ def community_chat():
 .community-chat-page-section{width:100%!important;max-width:none!important;height:calc(100dvh - 64px)!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;overflow:hidden!important}
 .community-chat-page-section .community-page-top{display:none!important}
 .community-chat-page-section .community-chat-page-card{width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
-.community-chat-page-section .community-chat-tools{height:58px!important;min-height:58px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 22px!important;box-sizing:border-box!important;background:#fff!important;border-bottom:1px solid #e4e9ed!important;flex:0 0 auto!important}
-.community-chat-page-section .community-chat-tools-left{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important}
-.community-chat-page-section .community-chat-tools-left strong{font-size:16px!important;color:#17202b!important;font-weight:850!important}
-.community-chat-page-section .community-chat-live-dot{width:9px!important;height:9px!important;flex:0 0 9px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 5px #edf8e9!important}
-.community-chat-page-section .community-chat-tools-sub{margin-left:auto!important;font-size:11px!important;color:#7a8792!important}
+.community-chat-page-section .student-chat-status-bar{height:58px!important;min-height:58px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 22px!important;box-sizing:border-box!important;background:#fff!important;border-bottom:1px solid #e4e9ed!important;flex:0 0 auto!important;position:relative!important;z-index:3!important;visibility:visible!important;opacity:1!important}
+.community-chat-page-section .student-chat-status-title{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important;visibility:visible!important;opacity:1!important}
+.community-chat-page-section .student-chat-status-title strong{font-size:16px!important;color:#17202b!important;font-weight:850!important;display:block!important;visibility:visible!important}
+.community-chat-page-section .student-chat-status-dot{width:9px!important;height:9px!important;flex:0 0 9px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 5px #edf8e9!important;display:block!important;visibility:visible!important}
+.community-chat-page-section .student-chat-status-online{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important;visibility:visible!important;opacity:1!important;flex:0 0 auto!important;min-width:58px!important}.student-chat-online-dot{display:block!important;width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}.student-chat-online-number{display:inline!important}
 .community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:18px 22px!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:#f8fafb!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
 .community-chat-page-section .community-message{position:relative!important;max-width:min(68%,620px)!important;min-width:70px!important;box-sizing:border-box!important;padding:10px 12px!important;border-radius:16px!important;background:#fff!important;border:1px solid #dfe6eb!important;box-shadow:0 2px 7px rgba(26,42,56,.045)!important;align-self:flex-start!important;will-change:transform!important;touch-action:pan-y!important;transition:transform .16s ease,opacity .16s ease!important}
 .community-chat-page-section .community-message.mine{align-self:flex-end!important;background:#edf5ff!important;border-color:#d5e4f3!important;border-bottom-right-radius:6px!important}
@@ -7611,7 +7586,6 @@ def community_chat():
 .student-chat-clear:hover{background:#f5f8fa!important}
 .wrap.page-shell:has(.community-chat-page-section){width:100%!important;max-width:none!important;margin:0!important;padding:0!important;overflow:hidden!important}
 .nav:has(.student-chat-page-header){height:64px!important;min-height:64px!important;margin:0!important;padding:0!important}
-.community-chat-online{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important;visibility:visible!important;opacity:1!important;flex:0 0 auto!important;min-width:58px!important}.community-chat-online-dot{display:block!important;width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}
 @media(max-width:850px){
   html:has(.student-chat-page-header),body:has(.student-chat-page-header){height:100%!important;min-height:100%!important;overflow:hidden!important}
   body:has(.student-chat-page-header){padding:0!important;background:#f8fafb!important}
@@ -7623,10 +7597,10 @@ def community_chat():
   .student-chat-page-header .student-header-back{margin-left:auto!important;padding:9px 11px!important;min-width:0!important;height:38px!important;box-sizing:border-box!important;font-size:12px!important}
   .student-chat-clear{height:38px!important;margin-left:0!important;padding:0 10px!important;border-radius:10px!important;font-size:11px!important}
   .community-chat-page-section{height:calc(100dvh - 54px)!important}
-  .community-chat-page-section .community-chat-tools{height:50px!important;min-height:50px!important;padding:0 13px!important;display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2!important}
-  .community-chat-page-section .community-chat-tools-left strong{font-size:14px!important}
-  .community-chat-page-section .community-chat-live-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
-  .community-chat-page-section .community-chat-online{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:flex-end!important;font-size:10px!important;min-width:58px!important;flex:0 0 auto!important}.community-chat-page-section .community-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
+  .community-chat-page-section .student-chat-status-bar{height:50px!important;min-height:50px!important;padding:0 13px!important;display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:3!important}
+  .community-chat-page-section .student-chat-status-title strong{font-size:14px!important}
+  .community-chat-page-section .student-chat-status-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
+  .community-chat-page-section .student-chat-status-online{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:flex-end!important;font-size:10px!important;min-width:58px!important;flex:0 0 auto!important}.community-chat-page-section .student-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
   .community-chat-page-section .community-chat-window{padding:10px 8px 8px!important;gap:8px!important}
   .community-chat-page-section .community-message{max-width:86%!important;padding:9px 10px!important;border-radius:14px!important}
   .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.43!important}
@@ -7719,7 +7693,7 @@ def community_chat():
           const r=await fetch('/community/presence',{{method:'POST',credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Chat':'1'}}}});
           if(!r.ok)return;
           const d=await r.json();
-          if(onlineCount && Number.isFinite(Number(d.online_count))) onlineCount.innerHTML='<span class="community-chat-online-dot"></span>'+String(d.online_count)+' Online';
+          if(onlineCount && Number.isFinite(Number(d.online_count))) onlineCount.innerHTML='<span class="student-chat-online-dot" aria-hidden="true"></span><span class="student-chat-online-number">'+String(d.online_count)+'</span> Online';
         }} catch(_) {{}}
       }}
       presencePing();
@@ -7779,35 +7753,50 @@ def community_chat_messages():
             after_id = max(0, int(request.args.get("after_id", "0")))
         except (TypeError, ValueError):
             after_id = 0
-        if after_id:
-            rows = con.execute(
-                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                "s.name, r.message AS reply_message, rs.name AS reply_name "
-                "FROM community_messages cm "
-                "JOIN students s ON s.id=cm.student_id "
-                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-                "LEFT JOIN students rs ON rs.id=r.student_id "
-                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
-                (after_id,),
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                "s.name, r.message AS reply_message, rs.name AS reply_name "
-                "FROM community_messages cm "
-                "JOIN students s ON s.id=cm.student_id "
-                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-                "LEFT JOIN students rs ON rs.id=r.student_id "
-                "ORDER BY cm.id DESC LIMIT 300"
-            ).fetchall()
-            rows = list(reversed(rows))
-        return jsonify({"messages": [
-            {"id": int(r["id"]), "student_id": int(r["student_id"]), "name": r["name"],
-             "message": r["message"], "created_at": r["created_at"],
-             "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
-             "reply_message": r["reply_message"], "reply_name": r["reply_name"]}
-            for r in rows
-        ]})
+
+        # Neon can briefly report a deadlock if a legacy instance is finishing a
+        # schema operation at the exact moment the live chat feed is read. The
+        # new startup path no longer performs PostgreSQL DDL, but one very short
+        # retry keeps an already-running deployment from surfacing a 500.
+        for attempt in range(2):
+            try:
+                if after_id:
+                    rows = con.execute(
+                        "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                        "s.name, r.message AS reply_message, rs.name AS reply_name "
+                        "FROM community_messages cm "
+                        "JOIN students s ON s.id=cm.student_id "
+                        "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                        "LEFT JOIN students rs ON rs.id=r.student_id "
+                        "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
+                        (after_id,),
+                    ).fetchall()
+                else:
+                    rows = con.execute(
+                        "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                        "s.name, r.message AS reply_message, rs.name AS reply_name "
+                        "FROM community_messages cm "
+                        "JOIN students s ON s.id=cm.student_id "
+                        "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                        "LEFT JOIN students rs ON rs.id=r.student_id "
+                        "ORDER BY cm.id DESC LIMIT 300"
+                    ).fetchall()
+                    rows = list(reversed(rows))
+                return jsonify({"messages": [
+                    {"id": int(r["id"]), "student_id": int(r["student_id"]), "name": r["name"],
+                     "message": r["message"], "created_at": r["created_at"],
+                     "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
+                     "reply_message": r["reply_message"], "reply_name": r["reply_name"]}
+                    for r in rows
+                ]})
+            except Exception as exc:
+                if type(exc).__name__ != "DeadlockDetected" or attempt >= 1:
+                    raise
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                time.sleep(0.025)
     finally:
         con.close()
 
@@ -11138,8 +11127,9 @@ def init_drive_db():
     con=db()
     try:
         if getattr(con,"is_pg",False):
-            for table in ("resources","academic_updates","timetables"):
-                for col in ("drive_file_id","drive_folder_id","drive_web_url"): con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} TEXT")
+            # Production Neon schema is already provisioned. Runtime DDL here can deadlock
+            # against concurrent student chat SELECTs, so do not ALTER live tables on startup.
+            pass
         else:
             for table in ("resources","academic_updates","timetables"):
                 cols={r["name"] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
