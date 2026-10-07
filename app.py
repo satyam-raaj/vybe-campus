@@ -6200,6 +6200,7 @@ def academics():
         ("Study Material","Books, PDFs and reference material.","/academic-hub/study-material","▦"),
         ("Previous Year Questions","Previous papers by semester and subject.","/academic-hub/pyq","◫"),
         ("Syllabus","Syllabus files for each semester and subject.","/academic-hub/syllabus","✓"),
+        ("Online Classes","Class links by semester and subject.","/academic-hub/online-classes","▣"),
     ]
     cards="".join(f"<a class='ah-key' href='{href}'><span class='ah-key-icon' aria-hidden='true'>{icon}</span><span class='ah-key-copy'><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b class='ah-key-arrow' aria-hidden='true'>→</b></a>" for title,desc,href,icon in shortcuts)
     body=f"""{ACADEMIC_HUB_HOME_CSS}<section class="ah-hub-home"><div class="ah-hub-head"><div class="academic-kicker">ACADEMIC HUB</div><h1>What do you need?</h1><p>Choose a section, then choose your semester and subject. VYBE will show only the material you ask for.</p></div><div class="ah-key-grid">{cards}</div></section>"""
@@ -6300,6 +6301,53 @@ def _academic_resource_collection(resource_type, title, subtitle, kicker):
 
     body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></div><div class="ah-choice-panel">{selector}</div>{result_block}</section>'''
     return layout(title,body)
+
+@app.route("/academic-hub/online-classes")
+@student_required
+def academic_hub_online_classes():
+    con=db()
+    try:
+        raw=setting(con,"vybe_online_classes","{}") or "{}"
+    finally:
+        con.close()
+    try:
+        data=json.loads(raw)
+        if not isinstance(data,dict): data={}
+    except Exception:
+        data={}
+
+    clean={}
+    for sem,subjects in data.items():
+        sem_name=" ".join(str(sem or "").strip().split())[:100]
+        if not sem_name or not isinstance(subjects,dict): continue
+        clean[sem_name]={}
+        for subject,url in subjects.items():
+            subject_name=" ".join(str(subject or "").strip().split())[:120]
+            link=str(url or "").strip()[:500]
+            if subject_name and valid_url(link): clean[sem_name][subject_name]=link
+        if not clean[sem_name]: clean.pop(sem_name,None)
+
+    semester=" ".join(request.args.get("semester","").strip().split())[:100]
+    if semester not in clean: semester=""
+    subjects=sorted(clean.get(semester,{}),key=str.casefold) if semester else []
+    subject=" ".join(request.args.get("subject","").strip().split())[:120]
+    if subject not in subjects: subject=""
+
+    if not semester:
+        choices="".join(f'<a class="ah-choice" href="{request.path}?semester={quote(sem)}"><span>{esc(sem)}</span><span class="ah-choice-arrow">→</span></a>' for sem in sorted(clean,key=lambda x:(int(re.search(r"\d+",x).group()) if re.search(r"\d+",x) else 999,x.casefold())))
+        selector=f'''<div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Choose semester</span><span class="ah-step-current">Select one</span></div><div class="ah-choice-grid">{choices or '<div class="ah-empty" style="grid-column:1/-1">No online classes are available yet.</div>'}</div></div>'''
+        result_block='<div class="ah-results"><div class="ah-empty">Choose a semester to continue.</div></div>'
+    elif not subject:
+        choices="".join(f'<a class="ah-choice" href="{request.path}?semester={quote(semester)}&subject={quote(sub)}"><span>{esc(sub)}</span><span class="ah-choice-arrow">→</span></a>' for sub in subjects)
+        selector=f'''<a class="ah-back" href="{request.path}">← Change semester</a><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Semester</span><span class="ah-step-current">{esc(semester)}</span></div></div><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">2 · Choose subject</span><span class="ah-step-current">Select one</span></div><div class="ah-choice-grid">{choices or '<div class="ah-empty" style="grid-column:1/-1">No subjects are available for this semester yet.</div>'}</div></div>'''
+        result_block='<div class="ah-results"><div class="ah-empty">Choose a subject to see the online class link.</div></div>'
+    else:
+        link=clean[semester][subject]
+        selector=f'''<a class="ah-back" href="{request.path}?semester={quote(semester)}">← Change subject</a><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Semester</span><span class="ah-step-current">{esc(semester)}</span></div></div><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">2 · Subject</span><span class="ah-step-current">{esc(subject)}</span></div></div>'''
+        result_block=f'''<div class="ah-results"><div class="ah-results-head"><span class="ah-results-title">Online Class</span><span class="ah-count">{esc(subject)}</span></div><a class="ah-result" href="{esc(link)}" target="_blank" rel="noopener noreferrer"><span class="ah-result-main"><span class="ah-result-title">Online Classes</span><span class="ah-result-meta">Open the class link published by the VYBE admin.</span></span><span class="ah-result-open">Open ↗</span></a></div>'''
+
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">ONLINE CLASSES</div><h1>Where is your class?</h1><p>Choose your semester and subject. VYBE will show the online class link published by the admin.</p></div><div class="ah-choice-panel">{selector}</div>{result_block}</section>'''
+    return layout("Online Classes",body)
 
 @app.route("/academic-hub/notes")
 @student_required
@@ -9975,8 +10023,58 @@ def admin_settings():
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
+
+
+@app.route("/admin/online-classes", methods=["GET","POST"])
+@admin_required
+def admin_online_classes():
+    con=db()
+    try:
+        raw=setting(con,"vybe_online_classes","{}") or "{}"
+        try:
+            data=json.loads(raw)
+            if not isinstance(data,dict): data={}
+        except Exception:
+            data={}
+
+        if request.method=="POST":
+            action=request.form.get("action","").strip()
+            if action=="save":
+                semester=_drive_normalize_semester(request.form.get("semester",""))
+                subject=" ".join(request.form.get("subject","").strip().split())[:120]
+                link=request.form.get("link","").strip()[:500]
+                if semester=="Uncategorized" or not semester or not subject or not valid_url(link):
+                    con.close(); flash("Enter a valid semester, subject and online class link."); return redirect(url_for("admin_online_classes"))
+                bucket=data.setdefault(semester,{})
+                if not isinstance(bucket,dict): bucket={}; data[semester]=bucket
+                bucket[subject]=link
+                set_setting(con,"vybe_online_classes",json.dumps(data,separators=(",",":"),ensure_ascii=False))
+                con.commit(); con.close(); flash("Online class link saved."); return redirect(url_for("admin_online_classes"))
+            if action=="delete":
+                semester=" ".join(request.form.get("semester","").strip().split())[:100]
+                subject=" ".join(request.form.get("subject","").strip().split())[:120]
+                if semester in data and isinstance(data[semester],dict):
+                    data[semester].pop(subject,None)
+                    if not data[semester]: data.pop(semester,None)
+                    set_setting(con,"vybe_online_classes",json.dumps(data,separators=(",",":"),ensure_ascii=False))
+                    con.commit()
+                con.close(); flash("Online class link removed."); return redirect(url_for("admin_online_classes"))
+
+        rows=[]
+        for semester,subjects in data.items():
+            if not isinstance(subjects,dict): continue
+            for subject,link in subjects.items():
+                if valid_url(str(link)): rows.append((str(semester),str(subject),str(link)))
+        rows.sort(key=lambda x:(int(re.search(r"\d+",x[0]).group()) if re.search(r"\d+",x[0]) else 999,x[0].casefold(),x[1].casefold()))
+    finally:
+        try: con.close()
+        except Exception: pass
+
+    rows_html="".join(f'''<div class="card" style="display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap"><div style="min-width:0;flex:1"><b>{esc(semester)} · {esc(subject)}</b><div class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{esc(link)}</div></div><form method="post" onsubmit="return confirm('Remove this online class link?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="semester" value="{esc(semester)}"><input type="hidden" name="subject" value="{esc(subject)}"><button class="btn danger" type="submit">Remove</button></form></div>''' for semester,subject,link in rows)
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">ONLINE CLASSES</span><h1>Online classes.</h1><p>Paste one online class link for each semester and subject. Students will see it only after choosing the matching semester and subject.</p></div></div><div class="two"><div class="card"><h2>Add or update a class link</h2><p class="muted">Saving the same semester and subject updates its existing link.</p><form class="form" method="post"><input type="hidden" name="action" value="save"><label>Semester</label><input name="semester" required placeholder="e.g. 1st Semester"><label>Subject</label><input name="subject" required maxlength="120" placeholder="e.g. Mathematics"><label>Online class link</label><input name="link" type="url" required maxlength="500" placeholder="https://..."><button class="btn accent" type="submit">Save Online Class →</button></form></div><div class="card"><h2>Student flow</h2><p class="muted">Academic Hub → Online Classes → Semester → Subject → Online Classes.</p><div class="small">Only configured links are shown. Existing Academic Hub resources are not changed.</div></div></div><section class="section" style="padding-left:0;padding-right:0"><h2>Published online classes</h2><div style="display:grid;gap:10px">{rows_html or '<div class="card"><div class="empty">No online class links have been added yet.</div></div>'}</div></section></section>'''
+    return layout("Online Classes",body,admin=True)
 
 
 @app.route("/admin/whatsapp-community", methods=["GET","POST"])
