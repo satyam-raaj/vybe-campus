@@ -249,8 +249,8 @@ def _ensure_password_reset_schema(con):
             expires_at TEXT,
             used_at TEXT
         )""")
-        # Existing PostgreSQL schema is provisioned outside request startup.
-        # Do not run ALTER TABLE here: concurrent Vercel instances can deadlock with chat reads.
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
     else:
         con.execute("""CREATE TABLE IF NOT EXISTS password_reset_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -480,26 +480,6 @@ def set_setting(con, key, value):
     if key == "vybe_online":
         invalidate_vybe_online_cache()
 
-
-
-def _whatsapp_groups(con):
-    """Return configured student WhatsApp groups, separate from Contact / Terms support."""
-    raw = setting(con, "whatsapp_groups", "[]") or "[]"
-    try:
-        data = json.loads(raw)
-    except Exception:
-        data = []
-    if not isinstance(data, list):
-        data = []
-    groups = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        name = " ".join(str(item.get("name", "")).split())[:120]
-        link = str(item.get("link", "")).strip()[:500]
-        if name and valid_url(link):
-            groups.append({"name": name, "link": link})
-    return groups
 
 def init_db():
     con = db()
@@ -805,25 +785,23 @@ def init_db():
             )""",
         ]
     con.executescript(statements)
-    # Additive scheduling/location fields are only migrated for SQLite.
-    # Neon is already provisioned and must never receive startup ALTER TABLE statements.
-    if not con.is_pg:
-        for _sql in (
-            "ALTER TABLE announcements ADD COLUMN publish_at TEXT",
-            "ALTER TABLE events ADD COLUMN publish_at TEXT",
-            "ALTER TABLE events ADD COLUMN location_url TEXT",
-        ):
-            try: con.execute(_sql)
-            except Exception:
-                try: con.rollback()
-                except Exception: pass
-        try:
-            con.execute("UPDATE announcements SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
-            con.execute("UPDATE events SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
-            con.commit()
+    # Additive scheduling/location fields for announcements and events.
+    for _sql in (
+        "ALTER TABLE announcements ADD COLUMN publish_at TEXT",
+        "ALTER TABLE events ADD COLUMN publish_at TEXT",
+        "ALTER TABLE events ADD COLUMN location_url TEXT",
+    ):
+        try: con.execute(_sql)
         except Exception:
             try: con.rollback()
             except Exception: pass
+    try:
+        con.execute("UPDATE announcements SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+        con.execute("UPDATE events SET publish_at=created_at WHERE publish_at IS NULL OR publish_at=''")
+        con.commit()
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
     # Additive Academic Hub storage. Existing VYBE tables are left untouched.
     if con.is_pg:
         con.execute("""CREATE TABLE IF NOT EXISTS academic_updates (id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'General Update', category TEXT NOT NULL DEFAULT 'General', title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '', semester TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', event_date TEXT NOT NULL DEFAULT '', external_url TEXT NOT NULL DEFAULT '', file_name TEXT, original_name TEXT, mime_type TEXT, file_data BYTEA, created_at TEXT NOT NULL)""")
@@ -888,8 +866,12 @@ def init_db():
         ):
             if col not in cols_now: con.execute(f'ALTER TABLE students ADD COLUMN {col} {definition}')
     else:
-        # PostgreSQL schema is provisioned outside startup; never ALTER live tables here.
-        pass
+        for col,definition in (
+            ('admit_card_file_name','TEXT'),('admit_card_original_name','TEXT'),('admit_card_mime_type','TEXT'),('admit_card_file_data','BYTEA'),
+            ('id_card_file_name','TEXT'),('id_card_original_name','TEXT'),('id_card_mime_type','TEXT'),('id_card_file_data','BYTEA')
+        ):
+            con.execute(f'ALTER TABLE students ADD COLUMN IF NOT EXISTS {col} {definition}')
+        con.execute('ALTER TABLE community_messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES community_messages(id) ON DELETE SET NULL')
     # One-time compatibility copy for profiles created before the dedicated ID-card fields existed.
     try:
         con.execute("UPDATE students SET id_card_file_name=COALESCE(id_card_file_name,admit_card_file_name), id_card_original_name=COALESCE(id_card_original_name,admit_card_original_name), id_card_mime_type=COALESCE(id_card_mime_type,admit_card_mime_type), id_card_file_data=COALESCE(id_card_file_data,admit_card_file_data) WHERE id_card_file_name IS NULL AND admit_card_file_name IS NOT NULL")
@@ -923,19 +905,40 @@ def init_db():
             if col not in au_cols:
                 con.execute(f"ALTER TABLE academic_updates ADD COLUMN {col} TEXT")
     else:
-        # IMPORTANT: Neon/PostgreSQL schema changes must not run during application startup.
-        # Multiple Vercel instances can serve chat reads while another cold start is
-        # acquiring an AccessExclusiveLock for ALTER TABLE, which can deadlock the live site.
-        # The production schema is already provisioned; runtime requests must be read/write only.
-        pass
+        # PostgreSQL migrations are idempotent and safe on existing deployments.
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT 'Study material'")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS original_name TEXT")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_data BYTEA")
+        con.execute("ALTER TABLE resources ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
+        # Existing deployments may have the original small timetable schema.
+        # Drive-backed publishing needs these additive columns; CREATE TABLE IF NOT EXISTS
+        # does not modify an already-existing Neon table, so migrate them explicitly.
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS mime_type TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS file_data BYTEA")
+        con.execute("ALTER TABLE timetables ADD COLUMN IF NOT EXISTS assistant_text TEXT NOT NULL DEFAULT ''")
+        # Existing deployments may also have the original academic-updates schema.
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_file_id TEXT")
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_folder_id TEXT")
+        con.execute("ALTER TABLE academic_updates ADD COLUMN IF NOT EXISTS drive_web_url TEXT")
+        # Existing Render databases may have an older SMALLINT/TEXT success column.
+        # Normalize it to BOOLEAN before the application starts so admin login logging cannot fail.
+        con.execute("ALTER TABLE admin_login_logs ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT FALSE")
+        success_type = con.execute(
+            "SELECT data_type FROM information_schema.columns WHERE table_name='admin_login_logs' AND column_name='success' LIMIT 1"
+        ).fetchone()
+        if success_type and str(success_type["data_type"]).lower() != "boolean":
+            con.execute("ALTER TABLE admin_login_logs ALTER COLUMN success TYPE BOOLEAN USING CASE WHEN LOWER(success::text) IN ('1','t','true','yes','y') THEN TRUE ELSE FALSE END")
 
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
         if "last_seen" not in student_cols:
             con.execute("ALTER TABLE students ADD COLUMN last_seen TEXT")
     else:
-        # last_seen is part of the deployed PostgreSQL schema; no runtime DDL.
-        pass
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS last_seen TEXT")
     # Student profile/reputation migrations for existing VYBE deployments.
     if not con.is_pg:
         student_cols = {r["name"] for r in con.execute("PRAGMA table_info(students)").fetchall()}
@@ -949,8 +952,11 @@ def init_db():
             if col not in student_cols:
                 con.execute(f"ALTER TABLE students ADD COLUMN {col} {definition}")
     else:
-        # Profile columns are already provisioned on the live Neon database.
-        pass
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS reputation_points INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS helpful_answers INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS accepted_solutions INTEGER NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''")
+        con.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS interests TEXT NOT NULL DEFAULT ''")
 
     if not con.is_pg:
         reset_cols = {r["name"] for r in con.execute("PRAGMA table_info(password_reset_requests)").fetchall()}
@@ -959,9 +965,8 @@ def init_db():
         if "proposed_password_hash" not in reset_cols:
             con.execute("ALTER TABLE password_reset_requests ADD COLUMN proposed_password_hash TEXT")
     else:
-        # Existing PostgreSQL schema is provisioned outside request startup.
-        # Do not run ALTER TABLE here: concurrent Vercel instances can deadlock with chat reads.
-        pass
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS approval_code_token TEXT")
+        con.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS proposed_password_hash TEXT")
 
     try:
         _ensure_password_reset_active_index(con)
@@ -970,7 +975,6 @@ def init_db():
 
     defaults = {
         "whatsapp_link": "",
-        "whatsapp_groups": "[]",
         "google_drive_url": DRIVE_URL,
         "vybe_online": "1",
         **({"admin_password_hash": hash_password(INITIAL_ADMIN_PASSWORD)} if INITIAL_ADMIN_PASSWORD else {}),
@@ -986,9 +990,6 @@ def init_db():
     for key, value in defaults.items():
         if setting(con, key, None) is None:
             set_setting(con, key, value)
-    if setting(con, "contact_terms_whatsapp_link", None) is None:
-        legacy_support = setting(con, "whatsapp_link", "").strip()
-        set_setting(con, "contact_terms_whatsapp_link", legacy_support if valid_url(legacy_support) else "")
 
     # Incremental chat polling uses id > after_id; keep that lookup indexed.
     # Hot-path indexes for the student library, notifications and admin queues.
@@ -1033,21 +1034,6 @@ def student_is_online(last_seen, timeout_seconds=300):
         return (datetime.now(timezone.utc) - seen.astimezone(timezone.utc)).total_seconds() <= timeout_seconds
     except Exception:
         return False
-
-
-COMMUNITY_ONLINE_TIMEOUT_SECONDS = 120
-
-def _community_online_count(con):
-    """Fast online count using the UTC last_seen string written by VYBE."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COMMUNITY_ONLINE_TIMEOUT_SECONDS)).strftime("%Y-%m-%d %H:%M:%S UTC")
-    try:
-        row = con.execute(
-            "SELECT COUNT(*) AS online_count FROM students WHERE status='approved' AND last_seen IS NOT NULL AND last_seen >= ?",
-            (cutoff,),
-        ).fetchone()
-        return int(row["online_count"] if row else 0)
-    except Exception:
-        return 0
 
 
 _AUTHZ_CACHE_LOCK = threading.Lock()
@@ -2332,7 +2318,6 @@ input:focus,textarea:focus,select:focus{border-color:rgba(75,155,224,.62)!import
    Responsive on desktop and mobile without changing desktop nav.
    ========================================================= */
 .community-choice-section{padding-top:0}
-.whatsapp-group-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.whatsapp-group-row>div{min-width:0;flex:1}.whatsapp-group-row b{display:block;font-size:15px;color:var(--vybe-ui-text)}.community-whatsapp-page .community-choice-grid{max-width:900px;margin:0 auto}.community-whatsapp-page .community-choice-card{min-height:86px}
 .community-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1000px;margin:0 auto}
 .community-choice-card{position:relative;display:flex;align-items:center;gap:16px;min-width:0;padding:20px 22px;border:1px solid rgba(55,133,199,.30);border-radius:24px;background:linear-gradient(145deg,rgba(8,30,51,.96),rgba(3,12,22,.98));box-shadow:0 18px 55px rgba(0,0,0,.30);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
 .community-choice-card:hover{transform:translateY(-3px);border-color:rgba(75,155,224,.58);box-shadow:0 24px 65px rgba(0,30,65,.30)}
@@ -3772,7 +3757,6 @@ def _admin_header_alerts_cached():
 
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
-    is_chat_page = student and request.path.rstrip("/") == "/community/chat"
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/analytics">Analytics</a><a href="/admin/assistant">VYBE AI Settings</a><a class="admin-nav-logout" href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
@@ -3798,8 +3782,6 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
-        if is_chat_page:
-            header_lead += '<button class="student-chat-clear" id="studentChatClear" type="button" aria-label="Clear my chat messages">Clear Chat</button>'
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
@@ -3819,14 +3801,10 @@ def layout(title, body, admin=False):
             )
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">No new updates.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        if is_chat_page:
-            header=f'<div class="navin student-nav-compact student-chat-page-header">{header_lead}</div>'
-            bottom_nav = ""
-        else:
-            header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
-            bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
+        bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
         # Academic library pages have their own single clean search bar; remove the global campus search there.
         if request.path == "/academics" or request.path.startswith("/academic-hub/"):
             header=re.sub(r'<div class="student-control-row">.*?</form></div>', '', header, count=1, flags=re.S)
@@ -3871,7 +3849,7 @@ def layout(title, body, admin=False):
             "community": ("Community", "/community"),
             "profile": ("My Profile", "/profile"),
         }
-        if _ai_enabled and not request.path.startswith("/academic-hub/") and request.path != "/academics" and not is_chat_page:
+        if _ai_enabled and not request.path.startswith("/academic-hub/") and request.path != "/academics":
             _ai_links = "".join(f'<a class="vybe-assistant-suggestion" href="{url}">{esc(label)}</a>' for key,(label,url) in _ai_catalog.items() if key in _ai_selected)
             if not _ai_links:
                 _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
@@ -4569,86 +4547,7 @@ body{background-attachment:scroll!important}
 #vybeMobileNav.student-mobile-menu > a,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{display:flex!important;align-items:center!important;background:rgba(255,255,255,.055)!important;color:#edf7ff!important;border:1px solid rgba(112,174,216,.20)!important;box-shadow:none!important;text-decoration:none!important}}
 #vybeMobileNav.student-mobile-menu > a:hover,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,#vybeMobileNav.student-mobile-menu > a:focus-visible,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,#vybeMobileNav.student-mobile-menu > a:active,#vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{background:#1b4c73!important;border-color:rgba(94,190,241,.55)!important;color:#fff!important}}
 #vybeMobileNav.student-mobile-menu .student-menu-icon{{color:#66c8f5!important}}
-@media(min-width:851px){{
-  /* Desktop student menu: match the supplied large blue menu reference.
-     This block is desktop-only; phone navigation is untouched. */
-  #vybeMobileNav.student-mobile-menu{{
-    position:fixed!important;
-    top:0!important;
-    right:0!important;
-    bottom:0!important;
-    left:auto!important;
-    width:min(760px,100vw)!important;
-    max-width:760px!important;
-    height:100vh!important;
-    max-height:100vh!important;
-    box-sizing:border-box!important;
-    display:none!important;
-    flex-direction:column!important;
-    gap:0!important;
-    padding:28px 24px 36px!important;
-    overflow-y:auto!important;
-    overflow-x:hidden!important;
-    border:0!important;
-    border-left:1px solid rgba(86,130,166,.42)!important;
-    border-radius:0!important;
-    background:linear-gradient(180deg,#132b45 0%,#10263d 52%,#0f2236 100%)!important;
-    box-shadow:-18px 0 55px rgba(0,0,0,.34)!important;
-    backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;
-    z-index:30000!important;
-  }}
-  #vybeMobileNav.student-mobile-menu.open{{display:flex!important}}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
-    display:flex!important;
-    align-items:center!important;
-    justify-content:flex-start!important;
-    flex:0 0 auto!important;
-    width:100%!important;
-    min-height:58px!important;
-    box-sizing:border-box!important;
-    padding:0 16px 20px!important;
-    margin:0 0 8px!important;
-    border-bottom:1px solid rgba(126,160,190,.28)!important;
-    background:transparent!important;
-  }}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{
-    color:#fff!important;
-    font-size:34px!important;
-    line-height:1!important;
-    font-weight:800!important;
-    letter-spacing:-.035em!important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a{{
-    display:flex!important;
-    align-items:center!important;
-    flex:0 0 auto!important;
-    width:100%!important;
-    min-height:116px!important;
-    box-sizing:border-box!important;
-    margin:10px 0!important;
-    padding:20px 36px!important;
-    border:2px solid rgba(91,133,168,.42)!important;
-    border-radius:28px!important;
-    background:rgba(27,48,72,.78)!important;
-    color:#f4f8fc!important;
-    text-decoration:none!important;
-    font-size:30px!important;
-    line-height:1.15!important;
-    font-weight:750!important;
-    letter-spacing:-.025em!important;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
-    transition:background .14s ease,border-color .14s ease,transform .14s ease!important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu > a:focus-visible{{
-    background:rgba(36,65,94,.92)!important;
-    border-color:rgba(111,164,204,.62)!important;
-    color:#fff!important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:active{{transform:scale(.995)!important}}
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{{display:none!important}}
-}}
+@media(min-width:851px){{#vybeMobileNav.student-mobile-menu{{top:72px!important;right:18px!important;left:auto!important;width:280px!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:44px!important;padding:10px 12px!important;margin:0 0 5px!important;border-radius:11px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
 @media(max-width:850px){{#vybeMobileNav.student-mobile-menu{{top:60px!important;left:8px!important;right:auto!important;width:min(78vw,280px)!important;max-width:280px!important;min-width:0!important;max-height:calc(100vh - 135px)!important;padding:12px!important;border-radius:18px!important}}#vybeMobileNav.student-mobile-menu > a{{min-height:46px!important;padding:9px 12px!important;margin:0 0 7px!important;border-radius:12px!important;font-size:12px!important}}#vybeMobileNav.student-mobile-menu > a:last-child{{margin-bottom:0!important}}}}
 
 /* ===== FINAL SCROLL PERFORMANCE OVERRIDES ===== */
@@ -4741,105 +4640,6 @@ body:has(.student-nav-compact){{background:linear-gradient(135deg,#f4f8fb 0%,#f7
     box-sizing:border-box!important;
     min-height:42px!important;
     padding:10px 12px!important;
-  }}
-}}
-
-
-
-/* ===== DESKTOP STUDENT MENU: CLOSED UNTIL MENU BUTTON IS PRESSED =====
-   Desktop only. Mobile navigation is intentionally untouched. */
-@media (min-width:851px){{
-  .student-nav-compact .student-desktop-links{{
-    display:none!important;
-  }}
-  .student-nav-compact .student-menu{{
-    display:inline-flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-    min-width:82px!important;
-    height:40px!important;
-    padding:0 18px!important;
-    border-radius:10px!important;
-    cursor:pointer!important;
-  }}
-
-  #vybeMobileNav.student-mobile-menu{{
-    display:none!important;
-    position:fixed!important;
-    top:0!important;
-    right:0!important;
-    left:auto!important;
-    bottom:0!important;
-    width:min(390px,42vw)!important;
-    max-width:390px!important;
-    min-width:320px!important;
-    height:100vh!important;
-    margin:0!important;
-    padding:28px 24px 32px!important;
-    box-sizing:border-box!important;
-    flex-direction:column!important;
-    gap:10px!important;
-    overflow-y:auto!important;
-    overflow-x:hidden!important;
-    z-index:2147483000!important;
-    background:#132d49!important;
-    border:0!important;
-    border-left:1px solid rgba(125,170,205,.28)!important;
-    border-radius:0!important;
-    box-shadow:-18px 0 48px rgba(10,24,39,.30)!important;
-    backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;
-  }}
-  #vybeMobileNav.student-mobile-menu.open{{
-    display:flex!important;
-  }}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-head{{
-    display:flex!important;
-    align-items:center!important;
-    width:100%!important;
-    min-height:52px!important;
-    padding:0 12px 14px!important;
-    margin:0 0 2px!important;
-    box-sizing:border-box!important;
-    border-bottom:1px solid rgba(205,225,239,.18)!important;
-  }}
-  #vybeMobileNav.student-mobile-menu .mobile-menu-title{{
-    display:block!important;
-    color:#fff!important;
-    font-size:28px!important;
-    line-height:1.1!important;
-    font-weight:850!important;
-    letter-spacing:-.02em!important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a{{
-    display:flex!important;
-    align-items:center!important;
-    justify-content:flex-start!important;
-    width:100%!important;
-    min-height:68px!important;
-    margin:0!important;
-    padding:0 24px!important;
-    box-sizing:border-box!important;
-    border:1px solid rgba(116,161,196,.30)!important;
-    border-radius:20px!important;
-    background:#1c3149!important;
-    color:#fff!important;
-    text-decoration:none!important;
-    font-size:21px!important;
-    font-weight:750!important;
-    line-height:1.2!important;
-    box-shadow:none!important;
-  }}
-  #vybeMobileNav.student-mobile-menu > a:hover,
-  #vybeMobileNav.student-mobile-menu > a:focus-visible,
-  #vybeMobileNav.student-mobile-menu > a:active,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:hover,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:focus-visible,
-  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links > a:active{{
-    background:#223b56!important;
-    border-color:rgba(137,184,220,.55)!important;
-    color:#fff!important;
   }}
 }}
 
@@ -7539,12 +7339,12 @@ def _render_solution_card(row,my_student_id):
 def community():
     # Community launcher: chat, campus problems, and WhatsApp community.
     con = db()
-    whatsapp_groups = _whatsapp_groups(con)
+    wa = setting(con, "whatsapp_link", "")
     con.close()
     whatsapp_card = (
-        '<a class="community-choice-card" href="/community/whatsapp"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Choose your VYBE WhatsApp group.</small></span><span class="community-choice-arrow">&#8250;</span></a>'
-        if whatsapp_groups else
-        '<div class="community-choice-card" style="opacity:.65;cursor:default"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>No WhatsApp groups are configured yet.</small></span></div>'
+        f'<a class="community-choice-card" href="{esc(wa)}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Join the VYBE WhatsApp community.</small></span><span class="community-choice-arrow">&#8250;</span></a>'
+        if valid_url(wa) else
+        '<div class="community-choice-card" style="opacity:.65;cursor:default"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>WhatsApp Community</strong><small>Community link is not configured yet.</small></span></div>'
     )
     body = f'''<section class="section community-head-section"><div class="badge">COMMUNITY</div><h1>Students solve together.</h1><p class="muted">Choose how you want to participate in VYBE's student community.</p></section>
 <section class="section community-choice-section">
@@ -7555,21 +7355,6 @@ def community():
   </div>
 </section>'''
     return layout("Community", body)
-
-@app.route("/community/whatsapp", methods=["GET"])
-@student_required
-def community_whatsapp():
-    con = db()
-    groups = _whatsapp_groups(con)
-    con.close()
-    cards = "".join(
-        f'<a class="community-choice-card" href="{esc(g["link"])}" target="_blank" rel="noopener noreferrer"><span class="community-choice-icon">&#128172;</span><span class="community-choice-copy"><strong>{esc(g["name"])}</strong><small>Open WhatsApp group</small></span><span class="community-choice-arrow">&#8250;</span></a>'
-        for g in groups
-    )
-    if not cards:
-        cards = '<div class="card"><div class="empty">No WhatsApp groups are available right now.</div></div>'
-    body = f'''<section class="section community-page-section community-whatsapp-page"><div class="community-page-top"><a class="community-back-link" href="/community">← Community</a><div class="badge">WHATSAPP COMMUNITY</div><h1>WhatsApp groups.</h1><p class="muted">Choose the group you want to join.</p></div><div class="community-choice-grid">{cards}</div></section>'''
-    return layout("WhatsApp Community", body)
 
 @app.route("/community/chat", methods=["GET", "POST"])
 @student_required
@@ -7635,9 +7420,6 @@ def community_chat():
                 con.rollback()
                 app.logger.exception("All community messages delete failed")
                 flash("We couldn't delete your messages right now. Please try again.")
-            if request.headers.get("X-VYBE-Live-Chat") == "1":
-                con.close()
-                return jsonify({"ok": True, "cleared": True})
             con.close()
             return redirect(url_for("community_chat"))
 
@@ -7716,11 +7498,6 @@ def community_chat():
     chat_rows = con.execute(
         "SELECT cm.*, s.name, r.message AS reply_message, rs.name AS reply_name FROM community_messages cm JOIN students s ON s.id=cm.student_id LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id ORDER BY cm.id ASC LIMIT 300"
     ).fetchall()
-    # Calculate presence while the connection is still open. The previous
-    # ordering closed `con` first and then queried it for the online count,
-    # which could make the live chat page fail on database backends that
-    # enforce connection state strictly.
-    online_count = _community_online_count(con)
     con.close()
 
     bubbles = []
@@ -7738,7 +7515,7 @@ def community_chat():
         bubbles.append(
             f'<div class="community-message{mine_class}" id="community-msg-{r["id"]}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
             f'<div class="community-message-content">'
-            f'<div class="community-message-head"><strong>{'You' if mine else esc(r["name"])}</strong></div>'
+            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
             f'{reply_html}'
             f'<div class="community-message-text">{esc(r["message"])}</div>'
             f'<div class="community-message-meta"><span>{esc(str(r["created_at"])[-5:])}</span></div>'
@@ -7751,9 +7528,8 @@ def community_chat():
     status_text = "&#128994; Chat is ON" if chat_enabled else "&#128308; Chat is OFF"
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
-    select_controls = f'''<div class="student-chat-status-bar" data-student-chat-status="1">
-        <div class="student-chat-status-title"><span class="student-chat-status-dot" aria-hidden="true"></span><strong>Student Chat</strong></div>
-        <div class="student-chat-status-online" id="community-online-count" aria-live="polite"><span class="student-chat-online-dot" aria-hidden="true"></span><span class="student-chat-online-number">{online_count}</span> Online</div>
+    select_controls = f'''<div class="community-chat-tools">
+        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Community Chat</strong><span class="community-chat-tools-sub">Reply to any message to start a thread</span></div>
       </div>'''
     if not chat_enabled:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
@@ -7761,76 +7537,87 @@ def community_chat():
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div><form class="community-chat-form" method="post" action="/community/chat" id="community-send-form"><input type="hidden" name="reply_to_id" id="community-reply-to" value=""><textarea name="message" maxlength="1500" rows="1" placeholder="Write a message..." required autocomplete="off" aria-label="Message"></textarea><button class="community-send-button" type="submit" aria-label="Send message" title="Send">➤</button></form>'''
 
     chat_style = '''<style>
-/* ===== STUDENT CHAT ONLY — CLEAN, FIXED CHAT SHELL ===== */
-.community-chat-page-section{width:100%!important;max-width:none!important;height:calc(100dvh - 64px)!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;overflow:hidden!important}
-.community-chat-page-section .community-page-top{display:none!important}
-.community-chat-page-section .community-chat-page-card{width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
-.community-chat-page-section .student-chat-status-bar{height:58px!important;min-height:58px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 22px!important;box-sizing:border-box!important;background:#fff!important;border-bottom:1px solid #e4e9ed!important;flex:0 0 auto!important;position:relative!important;z-index:3!important;visibility:visible!important;opacity:1!important}
-.community-chat-page-section .student-chat-status-title{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important;visibility:visible!important;opacity:1!important}
-.community-chat-page-section .student-chat-status-title strong{font-size:16px!important;color:#17202b!important;font-weight:850!important;display:block!important;visibility:visible!important}
-.community-chat-page-section .student-chat-status-dot{width:9px!important;height:9px!important;flex:0 0 9px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 5px #edf8e9!important;display:block!important;visibility:visible!important}
-.community-chat-page-section .student-chat-status-online{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important;visibility:visible!important;opacity:1!important;flex:0 0 auto!important;min-width:58px!important}.student-chat-online-dot{display:block!important;width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}.student-chat-online-number{display:inline!important}
-.community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:18px 22px!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:#f8fafb!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
-.community-chat-page-section .community-message{position:relative!important;max-width:min(68%,620px)!important;min-width:70px!important;box-sizing:border-box!important;padding:10px 12px!important;border-radius:16px!important;background:#fff!important;border:1px solid #dfe6eb!important;box-shadow:0 2px 7px rgba(26,42,56,.045)!important;align-self:flex-start!important;will-change:transform!important;touch-action:pan-y!important;transition:transform .16s ease,opacity .16s ease!important}
-.community-chat-page-section .community-message.mine{align-self:flex-end!important;background:#edf5ff!important;border-color:#d5e4f3!important;border-bottom-right-radius:6px!important}
-.community-chat-page-section .community-message:not(.mine){border-bottom-left-radius:6px!important}
+/* ===== VYBE COMMUNITY CHAT — FINAL DESKTOP + PHONE UI ===== */
+.community-chat-page-section{width:100%!important;max-width:1120px!important;margin:0 auto!important;padding:20px 22px 34px!important;box-sizing:border-box!important}
+.community-chat-page-section .community-page-top{max-width:100%!important;margin:0 0 14px!important;padding:0!important}
+.community-chat-page-section .community-page-top h1{font-size:clamp(32px,4.4vw,52px)!important;letter-spacing:-.045em!important;margin:7px 0 5px!important;line-height:1!important}
+.community-chat-page-section .community-page-top p{margin:0!important;font-size:12px!important;color:#74818d!important}
+.community-chat-page-section .community-chat-page-card{width:100%!important;max-width:1040px!important;height:min(68vh,690px)!important;min-height:500px!important;margin:0 auto!important;padding:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;background:#fff!important;border:1px solid #dfe5ea!important;border-radius:24px!important;box-shadow:0 18px 55px rgba(30,48,65,.10),0 2px 8px rgba(30,48,65,.04)!important}
+.community-chat-page-section .community-chat-tools{height:58px!important;min-height:58px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 18px!important;margin:0!important;background:linear-gradient(180deg,#fff,#fbfcfd)!important;border-bottom:1px solid #e7ebef!important;flex:0 0 auto!important}
+.community-chat-tools-left{display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;color:#17202b!important}
+.community-chat-tools-left strong{font-size:13px!important;font-weight:850!important;white-space:nowrap!important}
+.community-chat-tools-sub{font-size:11px!important;color:#8995a0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.community-chat-live-dot{width:8px!important;height:8px!important;border-radius:50%!important;background:#68b82e!important;box-shadow:0 0 0 4px #edf8e6!important;flex:0 0 8px!important}
+.community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:20px 22px 16px!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:linear-gradient(180deg,#fbfcfd 0%,#f7f9fb 100%)!important;scroll-behavior:smooth!important;overscroll-behavior:contain!important}
+.community-chat-page-section .community-message{max-width:min(70%,650px)!important;padding:11px 13px!important;border-radius:17px!important;background:#fff!important;border:1px solid #e0e6eb!important;box-shadow:0 3px 12px rgba(31,45,58,.055)!important}
+.community-chat-page-section .community-message.mine{background:#edf5ff!important;border-color:#d4e4f5!important;border-bottom-right-radius:6px!important;align-self:flex-end!important}
+.community-chat-page-section .community-message:not(.mine){align-self:flex-start!important;border-bottom-left-radius:6px!important}
 .community-chat-page-section .community-message-head{margin-bottom:4px!important}
 .community-chat-page-section .community-message-head strong{font-size:11px!important;font-weight:850!important;color:#38546c!important}
 .community-chat-page-section .community-message.mine .community-message-head strong{color:#2862a2!important}
-.community-chat-page-section .community-message-text{font-size:14px!important;line-height:1.45!important;color:#1c2934!important;overflow-wrap:anywhere!important;word-break:break-word!important}
-.community-chat-page-section .community-message-meta{margin-top:5px!important;font-size:9px!important;color:#8995a0!important}
-.community-chat-page-section .community-message-actions{display:flex!important;gap:6px!important;margin-top:7px!important;opacity:0!important;max-height:0!important;overflow:hidden!important;pointer-events:none!important;transition:opacity .12s ease,max-height .12s ease!important}
-.community-chat-page-section .community-message:hover .community-message-actions,.community-chat-page-section .community-message:focus-within .community-message-actions,.community-chat-page-section .community-message.is-actions-open .community-message-actions{opacity:1!important;max-height:36px!important;pointer-events:auto!important}
-.community-chat-page-section .community-message-action{border:1px solid #d8e1e8!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:6px 9px!important;font-size:10px!important;font-weight:800!important;cursor:pointer!important;line-height:1!important;min-height:28px!important}
+.community-chat-page-section .community-message-text{font-size:14px!important;line-height:1.5!important;color:#1c2934!important;overflow-wrap:anywhere!important}
+.community-chat-page-section .community-message-meta{margin-top:5px!important;font-size:9px!important;color:#8a96a0!important}
+.community-chat-page-section .community-message-actions{display:flex!important;gap:5px!important;margin-top:7px!important;opacity:0!important;max-height:0!important;overflow:hidden!important;transition:opacity .16s ease,max-height .16s ease!important}
+.community-chat-page-section .community-message:hover .community-message-actions,.community-chat-page-section .community-message:focus-within .community-message-actions{opacity:1!important;max-height:34px!important}
+.community-chat-page-section .community-message-action{border:1px solid #d9e2e9!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:5px 9px!important;font-size:10px!important;font-weight:800!important;cursor:pointer!important;line-height:1!important}
+.community-chat-page-section .community-message-action:hover{background:#f1f6fa!important;color:#245f92!important}
 .community-chat-page-section .community-message-action.delete{color:#bd3e4c!important;border-color:#f0d5d8!important}
-.community-chat-page-section .community-reply-reference{display:block!important;width:100%!important;box-sizing:border-box!important;margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border:0!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important;text-align:left!important;cursor:pointer!important}
-.community-chat-page-section .community-reply-reference strong,.community-chat-page-section .community-reply-reference span{display:block!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
-.community-chat-page-section .community-reply-reference strong{font-size:10px!important}.community-chat-page-section .community-reply-reference span{margin-top:2px!important;font-size:10px!important}
-.community-chat-page-section .community-reply-bar{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin:0!important;padding:8px 14px!important;min-height:43px!important;box-sizing:border-box!important;background:#f3f7fb!important;border-top:1px solid #dfe7ee!important;border-left:3px solid #2f6fca!important;flex:0 0 auto!important}
+.community-chat-page-section .community-reply-reference{margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important}
+.community-chat-page-section .community-reply-bar{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin:0!important;padding:9px 16px!important;background:#f4f8fc!important;border-top:1px solid #dfe7ee!important;border-left:3px solid #2f6fca!important;border-radius:0!important;flex:0 0 auto!important;min-height:42px!important;box-sizing:border-box!important}
 .community-chat-page-section .community-reply-bar[hidden]{display:none!important}
-.community-chat-page-section .community-reply-bar>div{min-width:0!important;display:flex!important;flex-direction:column!important;gap:2px!important}.community-chat-page-section .community-reply-bar strong{font-size:10px!important;color:#2f6fca!important}.community-chat-page-section .community-reply-bar span{font-size:11px!important;color:#6d7b87!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}.community-chat-page-section .community-reply-bar button{border:0!important;background:transparent!important;color:#6f7d88!important;font-size:21px!important;line-height:1!important;cursor:pointer!important;padding:3px 6px!important}
-.community-chat-page-section .community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 48px!important;gap:8px!important;margin:0!important;padding:9px 12px calc(9px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #e4e9ed!important;box-sizing:border-box!important;flex:0 0 auto!important}
-.community-chat-page-section .community-chat-form textarea{width:100%!important;box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:100px!important;resize:none!important;padding:11px 14px!important;border-radius:15px!important;background:#f6f8fa!important;color:#1e2a34!important;border:1px solid #dce3e8!important;outline:none!important;font-size:13px!important;line-height:1.4!important}
-.community-chat-page-section .community-chat-form textarea:focus{background:#fff!important;border-color:#9dbfe0!important;box-shadow:0 0 0 3px rgba(47,111,202,.08)!important}
-.community-chat-page-section .community-send-button{width:48px!important;height:44px!important;border:0!important;border-radius:14px!important;background:#172033!important;color:#fff!important;font-size:18px!important;font-weight:850!important;cursor:pointer!important;display:grid!important;place-items:center!important;box-shadow:none!important;transition:none!important}
-.community-chat-page-section .community-send-button:active{transform:scale(.97)!important}
-.community-chat-page-section .community-chat-disabled-note{padding:10px 14px!important;border-top:1px solid #e5e9ed!important;color:#687482!important;font-size:11px!important;background:#fff!important;flex:0 0 auto!important}
+.community-chat-page-section .community-reply-bar>div{min-width:0!important;display:flex!important;flex-direction:column!important;gap:2px!important}
+.community-chat-page-section .community-reply-bar strong{font-size:10px!important;color:#2f6fca!important}
+.community-chat-page-section .community-reply-bar span{font-size:11px!important;color:#6d7b87!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.community-chat-page-section .community-reply-bar button{border:0!important;background:transparent!important;color:#6f7d88!important;font-size:21px!important;line-height:1!important;cursor:pointer!important;padding:3px 6px!important}
+.community-chat-page-section .community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 46px!important;gap:8px!important;margin:0!important;padding:10px 12px!important;background:#fff!important;border-top:1px solid #e5e9ed!important;flex:0 0 auto!important;box-sizing:border-box!important}
+.community-chat-page-section .community-chat-form textarea{width:100%!important;box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:110px!important;resize:none!important;padding:11px 14px!important;border-radius:15px!important;background:#f5f7f9!important;color:#1e2a34!important;border:1px solid #dce3e8!important;outline:none!important;font-size:13px!important;line-height:1.4!important}
+.community-chat-page-section .community-chat-form textarea:focus{background:#fff!important;border-color:#9dbfe0!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
+.community-chat-page-section .community-send-button{width:44px!important;height:44px!important;border:0!important;border-radius:14px!important;background:#2f6fca!important;color:#fff!important;font-size:18px!important;font-weight:850!important;cursor:pointer!important;box-shadow:0 7px 17px rgba(47,111,202,.22)!important;display:grid!important;place-items:center!important;transition:transform .15s ease,box-shadow .15s ease!important}
+.community-chat-page-section .community-send-button:hover{transform:translateY(-1px)!important;box-shadow:0 10px 20px rgba(47,111,202,.26)!important}
+.community-chat-page-section .community-send-button:active{transform:scale(.96)!important}
+.community-chat-page-section .community-chat-disabled-note{padding:14px 18px!important;border-top:1px solid #e5e9ed!important;color:#687482!important;font-size:12px!important;background:#fff!important}
 .community-chat-page-section .empty{margin:auto!important;padding:18px!important;color:#8995a0!important;text-align:center!important}
 .community-chat-page-section .community-chat-keyboard-hint{display:none!important}
-.student-chat-page-header{max-width:none!important;width:100%!important;box-sizing:border-box!important;min-height:64px!important;height:64px!important;padding:8px 24px!important;display:flex!important;align-items:center!important;background:#fff!important;border-bottom:1px solid #e6eaed!important;box-shadow:none!important}
-.student-chat-page-header .student-brand-compact{margin-right:auto!important}
-.student-chat-page-header .student-header-back{margin-left:12px!important}
-.student-chat-clear{height:40px!important;padding:0 13px!important;margin-left:8px!important;border:1px solid #dfe5ea!important;border-radius:10px!important;background:#fff!important;color:#172033!important;font:inherit!important;font-size:12px!important;font-weight:800!important;cursor:pointer!important}
-.student-chat-clear:hover{background:#f5f8fa!important}
-.wrap.page-shell:has(.community-chat-page-section){width:100%!important;max-width:none!important;margin:0!important;padding:0!important;overflow:hidden!important}
-.nav:has(.student-chat-page-header){height:64px!important;min-height:64px!important;margin:0!important;padding:0!important}
 @media(max-width:850px){
-  html:has(.student-chat-page-header),body:has(.student-chat-page-header){height:100%!important;min-height:100%!important;overflow:hidden!important}
-  body:has(.student-chat-page-header){padding:0!important;background:#f8fafb!important}
-  body:has(.student-chat-page-header) .nav{height:54px!important;min-height:54px!important}
-  .student-chat-page-header{height:54px!important;min-height:54px!important;padding:7px 10px!important;gap:7px!important}
-  .student-chat-page-header .student-brand-compact{min-width:0!important;gap:8px!important}
-  .student-chat-page-header .student-brand-compact .brandmark{width:38px!important;height:38px!important;border-radius:12px!important;font-size:19px!important}
-  .student-chat-page-header .student-brand-compact .brandtext{font-size:19px!important}
-  .student-chat-page-header .student-header-back{margin-left:auto!important;padding:9px 11px!important;min-width:0!important;height:38px!important;box-sizing:border-box!important;font-size:12px!important}
-  .student-chat-clear{height:38px!important;margin-left:0!important;padding:0 10px!important;border-radius:10px!important;font-size:11px!important}
-  .community-chat-page-section{height:calc(100dvh - 54px)!important}
-  .community-chat-page-section .student-chat-status-bar{height:50px!important;min-height:50px!important;padding:0 13px!important;display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:3!important}
-  .community-chat-page-section .student-chat-status-title strong{font-size:14px!important}
-  .community-chat-page-section .student-chat-status-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
-  .community-chat-page-section .student-chat-status-online{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:flex-end!important;font-size:10px!important;min-width:58px!important;flex:0 0 auto!important}.community-chat-page-section .student-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
-  .community-chat-page-section .community-chat-window{padding:10px 8px 8px!important;gap:8px!important}
-  .community-chat-page-section .community-message{max-width:86%!important;padding:9px 10px!important;border-radius:14px!important}
-  .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.43!important}
-  .community-chat-page-section .community-message-actions{opacity:0!important;max-height:0!important;pointer-events:none!important}
-  .community-chat-page-section .community-message.is-actions-open .community-message-actions{opacity:1!important;max-height:36px!important;pointer-events:auto!important}
-  .community-chat-page-section .community-reply-bar{padding:7px 10px!important;min-height:42px!important}
-  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:7px 8px calc(7px + env(safe-area-inset-bottom))!important;gap:6px!important}
-  .community-chat-page-section .community-chat-form textarea{height:42px!important;min-height:42px!important;padding:10px 12px!important;border-radius:14px!important;font-size:13px!important}
-  .community-chat-page-section .community-send-button{width:44px!important;height:42px!important;border-radius:13px!important;font-size:17px!important}
+  .community-chat-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important;padding:8px 7px calc(84px + env(safe-area-inset-bottom))!important}
+  .community-chat-page-section .community-page-top{width:100%!important;box-sizing:border-box!important;margin-bottom:8px!important;padding:0 2px!important}
+  .community-chat-page-section .community-page-top h1{font-size:28px!important;margin:4px 0!important;line-height:1.02!important}
+  .community-chat-page-section .community-page-top p{font-size:10.5px!important;line-height:1.35!important}
+  .community-chat-page-section .community-chat-page-card{width:100%!important;max-width:100%!important;height:calc(100dvh - 205px)!important;min-height:360px!important;max-height:760px!important;border-radius:18px!important;box-sizing:border-box!important}
+  .community-chat-page-section .community-chat-tools{height:46px!important;min-height:46px!important;padding:0 11px!important}
+  .community-chat-tools-sub{display:none!important}
+  .community-chat-tools-left strong{font-size:12px!important}
+  .community-chat-live-dot{width:7px!important;height:7px!important;flex-basis:7px!important}
+  .community-chat-page-section .community-chat-window{width:100%!important;box-sizing:border-box!important;padding:11px 8px 12px!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior-y:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
+  .community-chat-page-section .community-message{max-width:88%!important;min-width:0!important;box-sizing:border-box!important;padding:9px 10px!important;border-radius:14px!important}
+  .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.45!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+  .community-chat-page-section .community-message-actions{opacity:1!important;max-height:34px!important;margin-top:5px!important}
+  .community-chat-page-section .community-message-action{padding:6px 8px!important;font-size:10px!important;min-height:28px!important}
+  .community-chat-page-section .community-reply-bar{padding:7px 10px!important;min-width:0!important}
+  .community-chat-page-section .community-reply-bar span{font-size:10px!important}
+  .community-chat-page-section .community-chat-form{width:100%!important;box-sizing:border-box!important;grid-template-columns:minmax(0,1fr) 42px!important;padding:7px 7px calc(7px + env(safe-area-inset-bottom))!important;gap:6px!important}
+  .community-chat-page-section .community-chat-form textarea{width:100%!important;height:42px!important;min-height:42px!important;max-height:96px!important;box-sizing:border-box!important;border-radius:14px!important;padding:10px 12px!important;font-size:13px!important}
+  .community-chat-page-section .community-send-button{width:42px!important;height:42px!important;border-radius:13px!important;font-size:17px!important}
 }
-</style>
-'''
+@media(max-width:390px){
+  .community-chat-page-section{padding-left:5px!important;padding-right:5px!important}
+  .community-chat-page-section .community-page-top h1{font-size:25px!important}
+  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 192px)!important;min-height:340px!important;border-radius:16px!important}
+  .community-chat-page-section .community-chat-window{padding-left:6px!important;padding-right:6px!important}
+  .community-chat-page-section .community-message{max-width:91%!important}
+  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 40px!important}
+  .community-chat-page-section .community-send-button{width:40px!important;height:40px!important}
+  .community-chat-page-section .community-chat-form textarea{height:40px!important;min-height:40px!important}
+}
+@media(max-width:390px){
+  .community-chat-page-section{padding-left:8px!important;padding-right:8px!important}
+  .community-chat-page-section .community-page-top h1{font-size:27px!important}
+  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 216px)!important;min-height:400px!important;border-radius:18px!important}
+  .community-chat-page-section .community-chat-tools{padding:0 11px!important}
+  .community-chat-page-section .community-chat-window{padding-left:7px!important;padding-right:7px!important}
+  .community-chat-page-section .community-message{max-width:92%!important}
+}
+</style>'''
     body = chat_style + f'''<section class="section community-page-section community-chat-page-section">
       <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
       <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
@@ -7839,126 +7626,20 @@ def community_chat():
     (function() {{
       const chatWindow=document.querySelector('.community-chat-window');
       const form=document.getElementById('community-send-form');
-      const sendBox=form?form.querySelector('textarea[name="message"]'):null;
-      const replyBar=document.getElementById('community-reply-bar');
-      const replyTo=document.getElementById('community-reply-to');
-      const replyTitle=document.getElementById('community-reply-title');
-      const replyPreview=document.getElementById('community-reply-preview');
-      const replyCancel=document.getElementById('community-reply-cancel');
-      const clearButton=document.getElementById('studentChatClear');
+      const sendBox=form?form.querySelector('textarea[name=\"message\"]'):null;
+      const replyBar=document.getElementById('community-reply-bar'), replyTo=document.getElementById('community-reply-to'), replyTitle=document.getElementById('community-reply-title'), replyPreview=document.getElementById('community-reply-preview'), replyCancel=document.getElementById('community-reply-cancel');
       let busy=false;
       function clearReply() {{ if(replyTo)replyTo.value=''; if(replyBar)replyBar.hidden=true; }}
-      function startReply(m) {{
-        if(!m||!replyTo)return;
-        const id=m.dataset.messageId,n=m.querySelector('.community-message-head strong'),t=m.querySelector('.community-message-text');
-        if(!id||!t)return;
-        replyTo.value=id;
-        if(replyTitle)replyTitle.textContent='Replying to '+(n?n.textContent:'Student');
-        if(replyPreview)replyPreview.textContent=t.textContent.slice(0,120);
-        if(replyBar)replyBar.hidden=false;
-        if(sendBox)sendBox.focus();
-      }}
-      function toggleActions(m) {{ if(m)m.classList.toggle('is-actions-open'); }}
-      function deleteMessage(id,node) {{
-        if(!id||!confirm('Delete this message?'))return;
-        if(node){{node.style.opacity='0';node.style.transform='translateX(12px)';}}
-        const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);
-        fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}})
-          .then(r=>{{if(!r.ok)throw new Error('delete');return r.json();}})
-          .then(()=>{{if(node&&node.parentNode)node.remove();}})
-          .catch(()=>{{if(node){{node.style.opacity='';node.style.transform='';}}}});
-      }}
-      function bindSwipe(m) {{
-        if(m.dataset.swipeBound)return;m.dataset.swipeBound='1';
-        let sx=0,sy=0,tracking=false,moved=false;
-        m.addEventListener('pointerdown',function(e){{if(e.pointerType==='mouse')return;sx=e.clientX;sy=e.clientY;tracking=true;moved=false;}},{{passive:true}});
-        m.addEventListener('pointermove',function(e){{if(!tracking)return;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>8||Math.abs(dy)>8)moved=true;if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>14)e.preventDefault();}},{{passive:false}});
-        m.addEventListener('pointerup',function(e){{if(!tracking)return;tracking=false;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25){{if(!m.classList.contains('mine')&&dx>0){{m.style.transform='translateX(18px)';startReply(m);setTimeout(()=>m.style.transform='',140);}}else if(m.classList.contains('mine')&&dx<0)toggleActions(m);}}else if(!moved&&e.pointerType!=='mouse')toggleActions(m);}},{{passive:true}});
-      }}
-      function wire(root) {{
-        root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}});
-        root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();deleteMessage(String(b.dataset.messageId),document.getElementById('community-msg-'+b.dataset.messageId));}};}});
-        root.querySelectorAll('.community-reply-reference').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();const target=document.getElementById('community-msg-'+b.dataset.replyTarget);if(target){{target.scrollIntoView({{block:'center',behavior:'smooth'}});target.classList.add('is-actions-open');setTimeout(()=>target.classList.remove('is-actions-open'),900);}}}};}});
-        root.querySelectorAll('.community-message').forEach(bindSwipe);
-      }}
-      function build(m) {{
-        const mine=String(m.student_id)==String({my_id});
-        const w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;
-        const c=document.createElement('div');c.className='community-message-content';
-        const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=mine?'You':(m.name||'Student');h.appendChild(st);c.appendChild(h);
-        if(m.reply_to_id&&m.reply_message){{const r=document.createElement('button');r.type='button';r.className='community-reply-reference';r.dataset.replyTarget=m.reply_to_id;const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}
-        const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);
-        const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);
-        const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);
-        if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}
-        c.appendChild(ac);w.appendChild(c);return w;
-      }}
-      async function refresh(force) {{
-        if(!chatWindow||busy)return;busy=true;
-        try {{
-          const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;
-          chatWindow.querySelectorAll('.community-message').forEach(function(e){{const n=Number(e.dataset.messageId)||0;if(n>last)last=n;}});
-          const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
-          if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];
-          msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]'))chatWindow.appendChild(build(m));}});wire(chatWindow);
-          if(msgs.length&&(force||near))chatWindow.scrollTop=chatWindow.scrollHeight;
-        }}catch(_){{}}finally{{busy=false;}}
-      }}
-      wire(document);
-      const onlineCount=document.getElementById('community-online-count');
-      async function presencePing() {{
-        try {{
-          const r=await fetch('/community/presence',{{method:'POST',credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Chat':'1'}}}});
-          if(!r.ok)return;
-          const d=await r.json();
-          if(onlineCount && Number.isFinite(Number(d.online_count))) onlineCount.innerHTML='<span class="student-chat-online-dot" aria-hidden="true"></span><span class="student-chat-online-number">'+String(d.online_count)+'</span> Online';
-        }} catch(_) {{}}
-      }}
-      presencePing();
-      if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{if(document.visibilityState==='visible')refresh(false);}},2500);setInterval(function(){{if(document.visibilityState==='visible')presencePing();}},20000);}}
-      if(replyCancel)replyCancel.onclick=clearReply;
-      if(clearButton)clearButton.addEventListener('click',function(){{
-        if(!confirm('Clear your messages from Student Chat?'))return;
-        const fd=new FormData();fd.append('action','delete_all');clearButton.disabled=true;
-        fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}})
-          .then(r=>{{if(!r.ok)throw new Error('clear');return r.json();}})
-          .then(()=>{{if(chatWindow)chatWindow.querySelectorAll('.community-message.mine').forEach(n=>n.remove());}})
-          .catch(()=>{{}}).finally(()=>{{clearButton.disabled=false;}});
-      }});
-      if(form&&sendBox){{
-        sendBox.addEventListener('input',function(){{this.style.height='42px';this.style.height=Math.min(this.scrollHeight,100)+'px';}});
-        form.addEventListener('submit',function(e){{
-          e.preventDefault();if(sendBox.disabled)return;const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='42px';clearReply();
-          const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};const temp=build(optimistic);temp.dataset.tempMessage=txt;chatWindow.appendChild(temp);chatWindow.scrollTop=chatWindow.scrollHeight;sendBox.disabled=true;
-          fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(r=>{{if(!r.ok)throw new Error('send');return r.json();}}).then(()=>{{if(temp&&temp.parentNode)temp.remove();return refresh(true);}}).catch(()=>{{if(temp&&temp.parentNode)temp.remove();sendBox.value=txt;}}).finally(()=>{{sendBox.disabled=false;sendBox.focus();}});
-        }});
-        sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});
-      }}
+      function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
+      function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const id=String(b.dataset.messageId),node=document.getElementById('community-msg-'+id);if(node){{node.style.transition='opacity .12s ease,transform .12s ease';node.style.opacity='0';node.style.transform='translateX(10px)';setTimeout(function(){{if(node&&node.parentNode)node.remove();}},120);}}const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('delete failed');return r.json();}}).then(function(){{}}).catch(function(){{refresh(true);}});}};}}); }}
+      function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
+      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;chatWindow.querySelectorAll('.community-message').forEach(function(e){{last=Math.max(last,Number(e.dataset.messageId)||0);}});const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{chatWindow.appendChild(build(m));}}const temp=[...chatWindow.querySelectorAll('[data-message-id^="temp-"]')].find(function(x){{return x.dataset.tempMessage===String(m.message);}});if(temp)temp.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
+      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{if(document.visibilityState==='visible')refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
+      if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='46px';clearReply();const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};chatWindow.appendChild(build(optimistic));const tempNode=chatWindow.querySelector('[data-message-id="'+tempId+'"]');if(tempNode)tempNode.dataset.tempMessage=txt;chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('send failed');return r.json();}}).then(function(){{return refresh(true);}}).catch(function(){{if(tempNode)tempNode.remove();sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
     }})();
     </script>'''
     return layout("Chat with Students", body)
 
-
-
-@app.route("/community/presence", methods=["POST"])
-@student_required
-def community_presence():
-    """Lightweight chat heartbeat: mark this student active and return the live count."""
-    con = db()
-    sid = int(session["student_db_id"])
-    try:
-        stamp = now()
-        con.execute("UPDATE students SET last_seen=? WHERE id=? AND status='approved'", (stamp, sid))
-        con.commit()
-        return jsonify({"ok": True, "online_count": _community_online_count(con)})
-    except Exception:
-        try:
-            con.rollback()
-        except Exception:
-            pass
-        return jsonify({"ok": False, "online_count": _community_online_count(con)}), 200
-    finally:
-        con.close()
 
 
 @app.route("/community/chat/messages", methods=["GET"])
@@ -7971,50 +7652,35 @@ def community_chat_messages():
             after_id = max(0, int(request.args.get("after_id", "0")))
         except (TypeError, ValueError):
             after_id = 0
-
-        # Neon can briefly report a deadlock if a legacy instance is finishing a
-        # schema operation at the exact moment the live chat feed is read. The
-        # new startup path no longer performs PostgreSQL DDL, but one very short
-        # retry keeps an already-running deployment from surfacing a 500.
-        for attempt in range(2):
-            try:
-                if after_id:
-                    rows = con.execute(
-                        "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                        "s.name, r.message AS reply_message, rs.name AS reply_name "
-                        "FROM community_messages cm "
-                        "JOIN students s ON s.id=cm.student_id "
-                        "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-                        "LEFT JOIN students rs ON rs.id=r.student_id "
-                        "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
-                        (after_id,),
-                    ).fetchall()
-                else:
-                    rows = con.execute(
-                        "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
-                        "s.name, r.message AS reply_message, rs.name AS reply_name "
-                        "FROM community_messages cm "
-                        "JOIN students s ON s.id=cm.student_id "
-                        "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
-                        "LEFT JOIN students rs ON rs.id=r.student_id "
-                        "ORDER BY cm.id DESC LIMIT 300"
-                    ).fetchall()
-                    rows = list(reversed(rows))
-                return jsonify({"messages": [
-                    {"id": int(r["id"]), "student_id": int(r["student_id"]), "name": r["name"],
-                     "message": r["message"], "created_at": r["created_at"],
-                     "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
-                     "reply_message": r["reply_message"], "reply_name": r["reply_name"]}
-                    for r in rows
-                ]})
-            except Exception as exc:
-                if type(exc).__name__ != "DeadlockDetected" or attempt >= 1:
-                    raise
-                try:
-                    con.rollback()
-                except Exception:
-                    pass
-                time.sleep(0.025)
+        if after_id:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "WHERE cm.id>? ORDER BY cm.id ASC LIMIT 100",
+                (after_id,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT cm.id, cm.student_id, cm.message, cm.created_at, cm.reply_to_id, "
+                "s.name, r.message AS reply_message, rs.name AS reply_name "
+                "FROM community_messages cm "
+                "JOIN students s ON s.id=cm.student_id "
+                "LEFT JOIN community_messages r ON r.id=cm.reply_to_id "
+                "LEFT JOIN students rs ON rs.id=r.student_id "
+                "ORDER BY cm.id DESC LIMIT 300"
+            ).fetchall()
+            rows = list(reversed(rows))
+        return jsonify({"messages": [
+            {"id": int(r["id"]), "student_id": int(r["student_id"]), "name": r["name"],
+             "message": r["message"], "created_at": r["created_at"],
+             "reply_to_id": int(r["reply_to_id"]) if r["reply_to_id"] else None,
+             "reply_message": r["reply_message"], "reply_name": r["reply_name"]}
+            for r in rows
+        ]})
     finally:
         con.close()
 
@@ -9687,7 +9353,6 @@ def contact_terms():
     admin_name=setting(con,"contact_admin_name","VYBE Admin")
     admin_email=setting(con,"contact_admin_email","")
     custom_terms=setting(con,"contact_terms_text","")
-    contact_wa=setting(con,"contact_terms_whatsapp_link","")
     admin_photo=setting(con,"contact_admin_photo","")
     name_prefill=""; sid_prefill=""
     if session.get("student_db_id"):
@@ -9730,7 +9395,7 @@ def contact_terms():
         initial=esc((admin_name or "V")[:1].upper())
         admin_identity_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
         revealed_photo=f'<div class="contact-admin-photo-fallback">{initial}</div>'
-    wa_link=setting(con,"contact_terms_whatsapp_link","").strip()
+    wa_link=setting(con,"whatsapp_link","").strip()
     if not wa_link:
         wa_number=re.sub(r"[^0-9]", "", setting(con,"whatsapp_admin_number","").strip())
         if len(wa_number) >= 8:
@@ -9777,11 +9442,7 @@ def admin_contact_terms():
             con.close(); flash("Please enter a valid admin name and email."); return redirect(url_for("admin_contact_terms"))
         set_setting(con,"contact_admin_name",admin_name)
         set_setting(con,"contact_admin_email",admin_email)
-        contact_wa=request.form.get("contact_terms_whatsapp_link","").strip()[:500]
-        if contact_wa and not valid_url(contact_wa):
-            con.close(); flash("WhatsApp Support link must be a valid URL."); return redirect(url_for("admin_contact_terms"))
         set_setting(con,"contact_terms_text",custom_terms)
-        set_setting(con,"contact_terms_whatsapp_link",contact_wa)
         photo=request.files.get("admin_photo")
         if photo and photo.filename:
             mime=(photo.mimetype or "").lower()
@@ -9798,7 +9459,7 @@ def admin_contact_terms():
     con.close()
     photo_html=(f'<img class="admin-photo-preview" src="{esc(admin_photo)}" alt="Admin photo">' if admin_photo else f'<div class="admin-photo-fallback">{esc((admin_name or "V")[:1].upper())}</div>')
     rows_html="".join(f'<div class="admin-consent-row"><div><strong>{esc(r["name"])}</strong><small>ID: {esc(r["student_id"])}</small></div><div><small>IP address</small><strong>{esc(r["ip_address"])}</strong></div><div><small>Consent time</small><strong>{esc(r["consented_at"])}</strong></div><span class="admin-consent-pill">CONSENTED</span><form method="post" onsubmit="return confirm(\'Delete this consent record?\')"><input type="hidden" name="action" value="delete_consent"><input type="hidden" name="consent_id" value="{int(r["id"])}"><button class="admin-consent-delete" type="submit">Delete</button></form></div>' for r in rows)
-    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>WhatsApp Support link</label><input name="contact_terms_whatsapp_link" type="url" value="{esc(contact_wa)}" placeholder="https://chat.whatsapp.com/... or https://wa.me/..." maxlength="500"><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
+    body=f"""{ADMIN_CONTACT_TERMS_CSS}<section class="section admin-contact-page"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">CONTACT / TERMS</span><h1>Contact &amp; terms.</h1><p class="muted">Control the public contact identity, your photo, the terms shown to users, and the consent audit.</p></div></div><div class="admin-contact-grid"><div class="admin-contact-card"><h2>Admin identity</h2><p>Your name, email and photo are shown only according to the consent flow.</p><form class="form" method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="save"><div class="admin-contact-photo-box">{photo_html}<div><b>Profile photo</b><small style="display:block;color:#687482;margin:4px 0 9px">PNG, JPG, WEBP · maximum 3 MB</small><input type="file" name="admin_photo" accept="image/png,image/jpeg,image/webp"></div></div><input name="admin_name" value="{esc(admin_name)}" placeholder="Admin name" required><input type="email" name="admin_email" value="{esc(admin_email)}" placeholder="Admin email" required><label>Additional terms (optional)</label><textarea name="custom_terms" maxlength="10000" placeholder="Add extra VYBE terms here...">{esc(custom_terms)}</textarea><button class="btn accent">Save Contact / Terms →</button></form>{'<form method="post" style="margin-top:10px"><input type="hidden" name="action" value="delete_photo"><button class="btn danger" type="submit">Remove admin photo</button></form>' if admin_photo else ''}</div><div class="admin-contact-card admin-contact-preview"><div><span class="admin-contact-kicker">STUDENT / PUBLIC VIEW</span><div class="admin-preview-visual"><div><div class="admin-preview-orb">V</div><div class="admin-preview-copy"><strong>Contact VYBE</strong><span>Consent → identity → direct contact</span></div></div></div><h2>Preview</h2><p>Users enter their name and Student ID, accept the data-use terms, and then see your clickable email and profile photo.</p><div class="admin-preview-note">This opens the same standalone Contact / Terms experience students see. Use it to check the current public contact flow.</div></div><a class="btn dark" href="/contact-terms" target="_blank" rel="noopener">Open Contact / Terms →</a></div></div><section class="section" style="padding-left:0;padding-right:0"><div class="admin-contact-card"><h2>Consent records</h2><p>Latest users who accepted the contact/data-use terms.</p><div class="admin-consent-list">{rows_html or '<div class="empty">No consent records yet.</div>'}</div></div></section></section>"""
     return layout("Contact / Terms",body,admin=True)
 
 
@@ -10436,11 +10097,11 @@ ADMIN_DESKTOP_POLISH_CSS = r"""
 def admin_settings():
     con=db()
     online=setting(con,"vybe_online","1")=="1"
-    whatsapp_group_count=len(_whatsapp_groups(con))
+    wa=setting(con,"whatsapp_link","")
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if whatsapp_group_count else 'off'}">{whatsapp_group_count} GROUPS</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
 
@@ -10494,39 +10155,22 @@ def admin_online_classes():
     return layout("Online Classes",body,admin=True)
 
 
-@app.route("/admin/whatsapp-community", methods=["GET", "POST"])
+@app.route("/admin/whatsapp-community", methods=["GET","POST"])
 @admin_required
 def admin_whatsapp_community():
     con=db()
     if request.method=="POST":
-        action=(request.form.get("action") or "add").strip().lower()
-        groups=_whatsapp_groups(con)
+        link=request.form.get("whatsapp_link","").strip()[:500]
         chat_enabled="1" if request.form.get("community_chat_enabled")=="1" else "0"
-        if action=="add":
-            name=" ".join(request.form.get("group_name","").split())[:120]
-            link=request.form.get("group_link","").strip()[:500]
-            if not name or not valid_url(link):
-                con.close(); flash("Enter a group name and a valid WhatsApp invite link."); return redirect(url_for("admin_whatsapp_community"))
-            groups.append({"name":name,"link":link})
-            set_setting(con,"whatsapp_groups",json.dumps(groups,separators=(",",":"),ensure_ascii=False))
-            set_setting(con,"community_chat_enabled",chat_enabled)
-            con.commit(); con.close(); flash("WhatsApp group added."); return redirect(url_for("admin_whatsapp_community"))
-        if action=="delete":
-            try: index=int(request.form.get("index","-1"))
-            except (TypeError,ValueError): index=-1
-            if 0<=index<len(groups):
-                groups.pop(index)
-                set_setting(con,"whatsapp_groups",json.dumps(groups,separators=(",",":"),ensure_ascii=False))
-            set_setting(con,"community_chat_enabled",chat_enabled)
-            con.commit(); con.close(); flash("WhatsApp group removed."); return redirect(url_for("admin_whatsapp_community"))
-        if action=="save_chat":
-            set_setting(con,"community_chat_enabled",chat_enabled)
-            con.commit(); con.close(); flash("Community chat setting saved."); return redirect(url_for("admin_whatsapp_community"))
-    groups=_whatsapp_groups(con)
+        if link and not valid_url(link):
+            con.close(); flash("WhatsApp group link must be a valid URL."); return redirect(url_for("admin_whatsapp_community"))
+        set_setting(con,"whatsapp_link",link)
+        set_setting(con,"community_chat_enabled",chat_enabled)
+        con.commit(); con.close(); flash("WhatsApp Community settings saved."); return redirect(url_for("admin_whatsapp_community"))
+    link=setting(con,"whatsapp_link","")
     chat=setting(con,"community_chat_enabled","1")=="1"
     con.close()
-    rows="".join(f'''<div class="card whatsapp-group-row"><div><b>{esc(g["name"])}</b><div class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{esc(g["link"])}</div></div><form method="post"><input type="hidden" name="action" value="delete"><input type="hidden" name="index" value="{i}"><input type="hidden" name="community_chat_enabled" value="{'1' if chat else '0'}"><button class="btn danger" type="submit">Remove</button></form></div>''' for i,g in enumerate(groups))
-    body=f'''<section class="section settings-detail whatsapp-community-settings"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">WHATSAPP COMMUNITY</span><h1>Community links.</h1><p>Add separate WhatsApp groups with their own names. Students will choose a group before WhatsApp opens.</p></div></div><div class="settings-detail-grid"><div class="card settings-editor"><div class="settings-editor-icon">💬</div><h2>Add WhatsApp group</h2><p class="muted">Give each group a clear name and paste its WhatsApp invite link.</p><form class="form" method="post"><input type="hidden" name="action" value="add"><label>Group name</label><input name="group_name" maxlength="120" required placeholder="e.g. B.Sc. Computer Science – Semester 1"><label>WhatsApp group link</label><input name="group_link" type="url" maxlength="500" required placeholder="https://chat.whatsapp.com/..."><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>Enable VYBE Community Chat</b><small>Allow students to use the built-in student-to-student chat.</small></span></label><button class="btn accent">Add WhatsApp group →</button></form></div><div class="card settings-preview"><span class="admin-page-kicker">STUDENT SIDE</span><h2>{len(groups)} group{'s' if len(groups)!=1 else ''} configured</h2><p class="muted">Students see name plates first. Tapping a plate opens that group's WhatsApp invite in a new tab.</p><form method="post"><input type="hidden" name="action" value="save_chat"><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>VYBE Community Chat</b><small>{'ON' if chat else 'OFF'}</small></span></label><button class="btn dark">Save chat setting →</button></form></div></div><section class="section" style="padding-left:0;padding-right:0"><h2>Configured WhatsApp groups</h2><div style="display:grid;gap:10px">{rows or '<div class="card"><div class="empty">No WhatsApp groups added yet.</div></div>'}</div></section></section>'''
+    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">WHATSAPP COMMUNITY</span><h1>Community links.</h1><p>Put the current WhatsApp group link here. Students will see the same link in their Community area.</p></div></div><div class="settings-detail-grid"><div class="card settings-editor"><div class="settings-editor-icon">💬</div><h2>Student WhatsApp group</h2><p class="muted">Paste a WhatsApp invite link. Students can tap the Community button to open it.</p><form class="form" method="post"><label>WhatsApp group link</label><input name="whatsapp_link" value="{esc(link)}" placeholder="https://chat.whatsapp.com/..." autocomplete="off"><label class="settings-check"><input type="checkbox" name="community_chat_enabled" value="1"{' checked' if chat else ''}><span><b>Enable VYBE Community Chat</b><small>Allow students to use the built-in student-to-student chat.</small></span></label><button class="btn accent">Save Community settings →</button></form></div><div class="card settings-preview"><span class="admin-page-kicker">STUDENT SIDE</span><h2>What students get</h2><div class="preview-row"><span>WhatsApp Community</span><b>{'Available' if link else 'Not configured'}</b></div><div class="preview-row"><span>VYBE Community Chat</span><b>{'ON' if chat else 'OFF'}</b></div>{('<a class="btn dark" target="_blank" rel="noopener" href="'+esc(link)+'">Test WhatsApp link →</a>') if link else '<p class="small">Save a WhatsApp link to enable the test button.</p>'}</div></div></section>'''
     return layout("WhatsApp Community",body,admin=True)
 
 
@@ -11367,9 +11011,8 @@ def init_drive_db():
     con=db()
     try:
         if getattr(con,"is_pg",False):
-            # Production Neon schema is already provisioned. Runtime DDL here can deadlock
-            # against concurrent student chat SELECTs, so do not ALTER live tables on startup.
-            pass
+            for table in ("resources","academic_updates","timetables"):
+                for col in ("drive_file_id","drive_folder_id","drive_web_url"): con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} TEXT")
         else:
             for table in ("resources","academic_updates","timetables"):
                 cols={r["name"] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
