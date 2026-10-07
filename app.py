@@ -7611,7 +7611,7 @@ def community_chat():
 .student-chat-clear:hover{background:#f5f8fa!important}
 .wrap.page-shell:has(.community-chat-page-section){width:100%!important;max-width:none!important;margin:0!important;padding:0!important;overflow:hidden!important}
 .nav:has(.student-chat-page-header){height:64px!important;min-height:64px!important;margin:0!important;padding:0!important}
-.community-chat-online{display:flex!important;align-items:center!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}.community-chat-online-dot{width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}
+.community-chat-online{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important;visibility:visible!important;opacity:1!important;flex:0 0 auto!important;min-width:58px!important}.community-chat-online-dot{display:block!important;width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}
 @media(max-width:850px){
   html:has(.student-chat-page-header),body:has(.student-chat-page-header){height:100%!important;min-height:100%!important;overflow:hidden!important}
   body:has(.student-chat-page-header){padding:0!important;background:#f8fafb!important}
@@ -7626,7 +7626,7 @@ def community_chat():
   .community-chat-page-section .community-chat-tools{height:50px!important;min-height:50px!important;padding:0 13px!important;display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2!important}
   .community-chat-page-section .community-chat-tools-left strong{font-size:14px!important}
   .community-chat-page-section .community-chat-live-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
-  .community-chat-page-section .community-chat-online{display:flex!important;visibility:visible!important;opacity:1!important;font-size:10px!important}.community-chat-page-section .community-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
+  .community-chat-page-section .community-chat-online{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:flex-end!important;font-size:10px!important;min-width:58px!important;flex:0 0 auto!important}.community-chat-page-section .community-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
   .community-chat-page-section .community-chat-window{padding:10px 8px 8px!important;gap:8px!important}
   .community-chat-page-section .community-message{max-width:86%!important;padding:9px 10px!important;border-radius:14px!important}
   .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.43!important}
@@ -7693,7 +7693,7 @@ def community_chat():
         const mine=String(m.student_id)==String({my_id});
         const w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;
         const c=document.createElement('div');c.className='community-message-content';
-        const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);
+        const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=mine?'You':(m.name||'Student');h.appendChild(st);c.appendChild(h);
         if(m.reply_to_id&&m.reply_message){{const r=document.createElement('button');r.type='button';r.className='community-reply-reference';r.dataset.replyTarget=m.reply_to_id;const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}
         const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);
         const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);
