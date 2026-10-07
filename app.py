@@ -2744,7 +2744,44 @@ main,.main,.wrap{position:relative}
   #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{display:flex!important;flex-direction:column!important;gap:4px!important}
   #vybeMobileNav.student-mobile-menu .student-menu-icon{display:none!important}
 }
-@media(min-width:851px){#vybeMobileNav.student-mobile-menu{left:auto!important;right:18px!important;width:260px!important}}
+@media(min-width:851px){
+  #vybeMobileNav.student-mobile-menu{
+    left:auto!important;
+    right:18px!important;
+    top:72px!important;
+    width:260px!important;
+    max-width:calc(100vw - 36px)!important;
+    box-sizing:border-box!important;
+    display:none!important;
+    flex-direction:column!important;
+    gap:6px!important;
+    padding:10px!important;
+  }
+  #vybeMobileNav.student-mobile-menu.open{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-menu-head{
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+  #vybeMobileNav.student-mobile-menu > a,
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links a{
+    display:flex!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    white-space:nowrap!important;
+  }
+  #vybeMobileNav.student-mobile-menu .mobile-only-menu-links{
+    display:flex!important;
+    flex-direction:column!important;
+    gap:6px!important;
+    width:100%!important;
+  }
+}
 
 
 /* ===== FINAL PHONE LAYOUT POLISH ===== */
