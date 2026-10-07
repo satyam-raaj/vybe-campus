@@ -7545,7 +7545,7 @@ def community_chat():
         bubbles.append(
             f'<div class="community-message{mine_class}" id="community-msg-{r["id"]}" data-message-id="{r["id"]}" data-mine="{mine_flag}" role="button" tabindex="0" aria-pressed="false">'
             f'<div class="community-message-content">'
-            f'<div class="community-message-head"><strong>{esc(r["name"])}</strong></div>'
+            f'<div class="community-message-head"><strong>{'You' if mine else esc(r["name"])}</strong></div>'
             f'{reply_html}'
             f'<div class="community-message-text">{esc(r["message"])}</div>'
             f'<div class="community-message-meta"><span>{esc(str(r["created_at"])[-5:])}</span></div>'
@@ -7623,10 +7623,10 @@ def community_chat():
   .student-chat-page-header .student-header-back{margin-left:auto!important;padding:9px 11px!important;min-width:0!important;height:38px!important;box-sizing:border-box!important;font-size:12px!important}
   .student-chat-clear{height:38px!important;margin-left:0!important;padding:0 10px!important;border-radius:10px!important;font-size:11px!important}
   .community-chat-page-section{height:calc(100dvh - 54px)!important}
-  .community-chat-page-section .community-chat-tools{height:50px!important;min-height:50px!important;padding:0 13px!important}
+  .community-chat-page-section .community-chat-tools{height:50px!important;min-height:50px!important;padding:0 13px!important;display:flex!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2!important}
   .community-chat-page-section .community-chat-tools-left strong{font-size:14px!important}
   .community-chat-page-section .community-chat-live-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
-  .community-chat-page-section .community-chat-online{font-size:10px!important}.community-chat-page-section .community-chat-online-dot{width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
+  .community-chat-page-section .community-chat-online{display:flex!important;visibility:visible!important;opacity:1!important;font-size:10px!important}.community-chat-page-section .community-chat-online-dot{display:block!important;visibility:visible!important;width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
   .community-chat-page-section .community-chat-window{padding:10px 8px 8px!important;gap:8px!important}
   .community-chat-page-section .community-message{max-width:86%!important;padding:9px 10px!important;border-radius:14px!important}
   .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.43!important}
@@ -7738,7 +7738,7 @@ def community_chat():
         form.addEventListener('submit',function(e){{
           e.preventDefault();if(sendBox.disabled)return;const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='42px';clearReply();
           const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};const temp=build(optimistic);temp.dataset.tempMessage=txt;chatWindow.appendChild(temp);chatWindow.scrollTop=chatWindow.scrollHeight;sendBox.disabled=true;
-          fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(r=>{{if(!r.ok)throw new Error('send');return r.json();}}).then(()=>refresh(true)).catch(()=>{{if(temp&&temp.parentNode)temp.remove();sendBox.value=txt;}}).finally(()=>{{sendBox.disabled=false;sendBox.focus();}});
+          fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(r=>{{if(!r.ok)throw new Error('send');return r.json();}}).then(()=>{{if(temp&&temp.parentNode)temp.remove();return refresh(true);}}).catch(()=>{{if(temp&&temp.parentNode)temp.remove();sendBox.value=txt;}}).finally(()=>{{sendBox.disabled=false;sendBox.focus();}});
         }});
         sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});
       }}
@@ -11294,4 +11294,3 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
