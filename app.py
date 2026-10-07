@@ -1036,6 +1036,21 @@ def student_is_online(last_seen, timeout_seconds=300):
         return False
 
 
+COMMUNITY_ONLINE_TIMEOUT_SECONDS = 120
+
+def _community_online_count(con):
+    """Fast online count using the UTC last_seen string written by VYBE."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COMMUNITY_ONLINE_TIMEOUT_SECONDS)).strftime("%Y-%m-%d %H:%M:%S UTC")
+    try:
+        row = con.execute(
+            "SELECT COUNT(*) AS online_count FROM students WHERE status='approved' AND last_seen IS NOT NULL AND last_seen >= ?",
+            (cutoff,),
+        ).fetchone()
+        return int(row["online_count"] if row else 0)
+    except Exception:
+        return 0
+
+
 _AUTHZ_CACHE_LOCK = threading.Lock()
 _AUTHZ_CACHE = {}
 _AUTHZ_CACHE_TTL = 20.0
@@ -3757,6 +3772,7 @@ def _admin_header_alerts_cached():
 
 def layout(title, body, admin=False):
     student = bool(session.get("student_db_id")) and not admin
+    is_chat_page = student and request.path.rstrip("/") == "/community/chat"
     if admin:
         links = '<a href="/admin/panel">Dashboard</a><a href="/admin/settings">Settings</a><a href="/admin/analytics">Analytics</a><a href="/admin/assistant">VYBE AI Settings</a><a class="admin-nav-logout" href="/admin/logout">Logout</a>'
         brand = '<a class="brand" href="/admin/panel"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>'
@@ -3782,6 +3798,8 @@ def layout(title, body, admin=False):
         student_on_subpage = request.path.rstrip("/") != "/dashboard"
         mobile_back = '<a class="mobile-back-nav" href="javascript:history.back()" aria-label="Go back"><span>←</span>Back</a>' if student_on_subpage else ''
         header_lead = '<a class="brand student-brand-compact" href="/dashboard"><span class="brandmark">V</span><span class="brandtext">VYBE</span></a>' + ('<a class="student-header-back" href="javascript:history.back()" aria-label="Go back">Back</a>' if student_on_subpage else '')
+        if is_chat_page:
+            header_lead += '<button class="student-chat-clear" id="studentChatClear" type="button" aria-label="Clear my chat messages">Clear Chat</button>'
         try:
             _header_updates=_student_header_updates_cached(session["student_db_id"])
         except Exception: _header_updates=[]
@@ -3801,10 +3819,14 @@ def layout(title, body, admin=False):
             )
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">No new updates.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        if is_chat_page:
+            header=f'<div class="navin student-nav-compact student-chat-page-header">{header_lead}</div>'
+            bottom_nav = ""
+        else:
+            header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
-        bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
+            bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
         # Academic library pages have their own single clean search bar; remove the global campus search there.
         if request.path == "/academics" or request.path.startswith("/academic-hub/"):
             header=re.sub(r'<div class="student-control-row">.*?</form></div>', '', header, count=1, flags=re.S)
@@ -3849,7 +3871,7 @@ def layout(title, body, admin=False):
             "community": ("Community", "/community"),
             "profile": ("My Profile", "/profile"),
         }
-        if _ai_enabled and not request.path.startswith("/academic-hub/") and request.path != "/academics":
+        if _ai_enabled and not request.path.startswith("/academic-hub/") and request.path != "/academics" and not is_chat_page:
             _ai_links = "".join(f'<a class="vybe-assistant-suggestion" href="{url}">{esc(label)}</a>' for key,(label,url) in _ai_catalog.items() if key in _ai_selected)
             if not _ai_links:
                 _ai_links = '<div class="vybe-assistant-empty">No shortcuts have been enabled by the admin.</div>'
@@ -7420,6 +7442,9 @@ def community_chat():
                 con.rollback()
                 app.logger.exception("All community messages delete failed")
                 flash("We couldn't delete your messages right now. Please try again.")
+            if request.headers.get("X-VYBE-Live-Chat") == "1":
+                con.close()
+                return jsonify({"ok": True, "cleared": True})
             con.close()
             return redirect(url_for("community_chat"))
 
@@ -7498,6 +7523,11 @@ def community_chat():
     chat_rows = con.execute(
         "SELECT cm.*, s.name, r.message AS reply_message, rs.name AS reply_name FROM community_messages cm JOIN students s ON s.id=cm.student_id LEFT JOIN community_messages r ON r.id=cm.reply_to_id LEFT JOIN students rs ON rs.id=r.student_id ORDER BY cm.id ASC LIMIT 300"
     ).fetchall()
+    # Calculate presence while the connection is still open. The previous
+    # ordering closed `con` first and then queried it for the online count,
+    # which could make the live chat page fail on database backends that
+    # enforce connection state strictly.
+    online_count = _community_online_count(con)
     con.close()
 
     bubbles = []
@@ -7529,7 +7559,8 @@ def community_chat():
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
     select_controls = f'''<div class="community-chat-tools">
-        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Student Chat</strong><span class="community-chat-tools-sub">Reply to any message to start a thread</span></div>
+        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Student Chat</strong></div>
+        <div class="community-chat-online" id="community-online-count" aria-live="polite"><span class="community-chat-online-dot"></span>{online_count} Online</div>
       </div>'''
     if not chat_enabled:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
@@ -7537,166 +7568,77 @@ def community_chat():
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-reply-bar" id="community-reply-bar" hidden><div><strong id="community-reply-title">Replying</strong><span id="community-reply-preview"></span></div><button type="button" id="community-reply-cancel" aria-label="Cancel reply">×</button></div><form class="community-chat-form" method="post" action="/community/chat" id="community-send-form"><input type="hidden" name="reply_to_id" id="community-reply-to" value=""><textarea name="message" maxlength="1500" rows="1" placeholder="Write a message..." required autocomplete="off" aria-label="Message"></textarea><button class="community-send-button" type="submit" aria-label="Send message" title="Send">➤</button></form>'''
 
     chat_style = '''<style>
-/* ===== VYBE COMMUNITY CHAT — FINAL DESKTOP + PHONE UI ===== */
-.community-chat-page-section{width:100%!important;max-width:1120px!important;margin:0 auto!important;padding:20px 22px 34px!important;box-sizing:border-box!important}
-.community-chat-page-section .community-page-top{max-width:100%!important;margin:0 0 14px!important;padding:0!important}
-.community-chat-page-section .community-page-top h1{font-size:clamp(32px,4.4vw,52px)!important;letter-spacing:-.045em!important;margin:7px 0 5px!important;line-height:1!important}
-.community-chat-page-section .community-page-top p{margin:0!important;font-size:12px!important;color:#74818d!important}
-.community-chat-page-section .community-chat-page-card{width:100%!important;max-width:1040px!important;height:min(68vh,690px)!important;min-height:500px!important;margin:0 auto!important;padding:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;background:#fff!important;border:1px solid #dfe5ea!important;border-radius:24px!important;box-shadow:0 18px 55px rgba(30,48,65,.10),0 2px 8px rgba(30,48,65,.04)!important}
-.community-chat-page-section .community-chat-tools{height:58px!important;min-height:58px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 18px!important;margin:0!important;background:linear-gradient(180deg,#fff,#fbfcfd)!important;border-bottom:1px solid #e7ebef!important;flex:0 0 auto!important}
-.community-chat-tools-left{display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;color:#17202b!important}
-.community-chat-tools-left strong{font-size:13px!important;font-weight:850!important;white-space:nowrap!important}
-.community-chat-tools-sub{font-size:11px!important;color:#8995a0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
-.community-chat-live-dot{width:8px!important;height:8px!important;border-radius:50%!important;background:#68b82e!important;box-shadow:0 0 0 4px #edf8e6!important;flex:0 0 8px!important}
-.community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:20px 22px 16px!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:linear-gradient(180deg,#fbfcfd 0%,#f7f9fb 100%)!important;scroll-behavior:smooth!important;overscroll-behavior:contain!important}
-.community-chat-page-section .community-message{max-width:min(70%,650px)!important;padding:11px 13px!important;border-radius:17px!important;background:#fff!important;border:1px solid #e0e6eb!important;box-shadow:0 3px 12px rgba(31,45,58,.055)!important}
-.community-chat-page-section .community-message.mine{background:#edf5ff!important;border-color:#d4e4f5!important;border-bottom-right-radius:6px!important;align-self:flex-end!important}
-.community-chat-page-section .community-message:not(.mine){align-self:flex-start!important;border-bottom-left-radius:6px!important}
+/* ===== STUDENT CHAT ONLY — CLEAN, FIXED CHAT SHELL ===== */
+.community-chat-page-section{width:100%!important;max-width:none!important;height:calc(100dvh - 64px)!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;overflow:hidden!important}
+.community-chat-page-section .community-page-top{display:none!important}
+.community-chat-page-section .community-chat-page-card{width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;padding:0!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
+.community-chat-page-section .community-chat-tools{height:58px!important;min-height:58px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;padding:0 22px!important;box-sizing:border-box!important;background:#fff!important;border-bottom:1px solid #e4e9ed!important;flex:0 0 auto!important}
+.community-chat-page-section .community-chat-tools-left{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important}
+.community-chat-page-section .community-chat-tools-left strong{font-size:16px!important;color:#17202b!important;font-weight:850!important}
+.community-chat-page-section .community-chat-live-dot{width:9px!important;height:9px!important;flex:0 0 9px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 5px #edf8e9!important}
+.community-chat-page-section .community-chat-tools-sub{margin-left:auto!important;font-size:11px!important;color:#7a8792!important}
+.community-chat-page-section .community-chat-window{flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:18px 22px!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:10px!important;background:#f8fafb!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
+.community-chat-page-section .community-message{position:relative!important;max-width:min(68%,620px)!important;min-width:70px!important;box-sizing:border-box!important;padding:10px 12px!important;border-radius:16px!important;background:#fff!important;border:1px solid #dfe6eb!important;box-shadow:0 2px 7px rgba(26,42,56,.045)!important;align-self:flex-start!important;will-change:transform!important;touch-action:pan-y!important;transition:transform .16s ease,opacity .16s ease!important}
+.community-chat-page-section .community-message.mine{align-self:flex-end!important;background:#edf5ff!important;border-color:#d5e4f3!important;border-bottom-right-radius:6px!important}
+.community-chat-page-section .community-message:not(.mine){border-bottom-left-radius:6px!important}
 .community-chat-page-section .community-message-head{margin-bottom:4px!important}
 .community-chat-page-section .community-message-head strong{font-size:11px!important;font-weight:850!important;color:#38546c!important}
 .community-chat-page-section .community-message.mine .community-message-head strong{color:#2862a2!important}
-.community-chat-page-section .community-message-text{font-size:14px!important;line-height:1.5!important;color:#1c2934!important;overflow-wrap:anywhere!important}
-.community-chat-page-section .community-message-meta{margin-top:5px!important;font-size:9px!important;color:#8a96a0!important}
-.community-chat-page-section .community-message-actions{display:flex!important;gap:5px!important;margin-top:7px!important;opacity:0!important;max-height:0!important;overflow:hidden!important;transition:opacity .16s ease,max-height .16s ease!important}
-.community-chat-page-section .community-message:hover .community-message-actions,.community-chat-page-section .community-message:focus-within .community-message-actions{opacity:1!important;max-height:34px!important}
-.community-chat-page-section .community-message-action{border:1px solid #d9e2e9!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:5px 9px!important;font-size:10px!important;font-weight:800!important;cursor:pointer!important;line-height:1!important}
-.community-chat-page-section .community-message-action:hover{background:#f1f6fa!important;color:#245f92!important}
+.community-chat-page-section .community-message-text{font-size:14px!important;line-height:1.45!important;color:#1c2934!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+.community-chat-page-section .community-message-meta{margin-top:5px!important;font-size:9px!important;color:#8995a0!important}
+.community-chat-page-section .community-message-actions{display:flex!important;gap:6px!important;margin-top:7px!important;opacity:0!important;max-height:0!important;overflow:hidden!important;pointer-events:none!important;transition:opacity .12s ease,max-height .12s ease!important}
+.community-chat-page-section .community-message:hover .community-message-actions,.community-chat-page-section .community-message:focus-within .community-message-actions,.community-chat-page-section .community-message.is-actions-open .community-message-actions{opacity:1!important;max-height:36px!important;pointer-events:auto!important}
+.community-chat-page-section .community-message-action{border:1px solid #d8e1e8!important;background:#fff!important;color:#53616d!important;border-radius:9px!important;padding:6px 9px!important;font-size:10px!important;font-weight:800!important;cursor:pointer!important;line-height:1!important;min-height:28px!important}
 .community-chat-page-section .community-message-action.delete{color:#bd3e4c!important;border-color:#f0d5d8!important}
-.community-chat-page-section .community-reply-reference{margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important}
-.community-chat-page-section .community-reply-bar{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin:0!important;padding:9px 16px!important;background:#f4f8fc!important;border-top:1px solid #dfe7ee!important;border-left:3px solid #2f6fca!important;border-radius:0!important;flex:0 0 auto!important;min-height:42px!important;box-sizing:border-box!important}
+.community-chat-page-section .community-reply-reference{display:block!important;width:100%!important;box-sizing:border-box!important;margin:0 0 7px!important;padding:7px 9px!important;background:#f3f7fa!important;border:0!important;border-left:3px solid #5797c9!important;border-radius:8px!important;color:#536674!important;text-align:left!important;cursor:pointer!important}
+.community-chat-page-section .community-reply-reference strong,.community-chat-page-section .community-reply-reference span{display:block!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.community-chat-page-section .community-reply-reference strong{font-size:10px!important}.community-chat-page-section .community-reply-reference span{margin-top:2px!important;font-size:10px!important}
+.community-chat-page-section .community-reply-bar{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin:0!important;padding:8px 14px!important;min-height:43px!important;box-sizing:border-box!important;background:#f3f7fb!important;border-top:1px solid #dfe7ee!important;border-left:3px solid #2f6fca!important;flex:0 0 auto!important}
 .community-chat-page-section .community-reply-bar[hidden]{display:none!important}
-.community-chat-page-section .community-reply-bar>div{min-width:0!important;display:flex!important;flex-direction:column!important;gap:2px!important}
-.community-chat-page-section .community-reply-bar strong{font-size:10px!important;color:#2f6fca!important}
-.community-chat-page-section .community-reply-bar span{font-size:11px!important;color:#6d7b87!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
-.community-chat-page-section .community-reply-bar button{border:0!important;background:transparent!important;color:#6f7d88!important;font-size:21px!important;line-height:1!important;cursor:pointer!important;padding:3px 6px!important}
-.community-chat-page-section .community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 46px!important;gap:8px!important;margin:0!important;padding:10px 12px!important;background:#fff!important;border-top:1px solid #e5e9ed!important;flex:0 0 auto!important;box-sizing:border-box!important}
-.community-chat-page-section .community-chat-form textarea{width:100%!important;box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:110px!important;resize:none!important;padding:11px 14px!important;border-radius:15px!important;background:#f5f7f9!important;color:#1e2a34!important;border:1px solid #dce3e8!important;outline:none!important;font-size:13px!important;line-height:1.4!important}
-.community-chat-page-section .community-chat-form textarea:focus{background:#fff!important;border-color:#9dbfe0!important;box-shadow:0 0 0 3px rgba(47,111,202,.09)!important}
-.community-chat-page-section .community-send-button{width:44px!important;height:44px!important;border:0!important;border-radius:14px!important;background:#2f6fca!important;color:#fff!important;font-size:18px!important;font-weight:850!important;cursor:pointer!important;box-shadow:0 7px 17px rgba(47,111,202,.22)!important;display:grid!important;place-items:center!important;transition:transform .15s ease,box-shadow .15s ease!important}
-.community-chat-page-section .community-send-button:hover{transform:translateY(-1px)!important;box-shadow:0 10px 20px rgba(47,111,202,.26)!important}
-.community-chat-page-section .community-send-button:active{transform:scale(.96)!important}
-.community-chat-page-section .community-chat-disabled-note{padding:14px 18px!important;border-top:1px solid #e5e9ed!important;color:#687482!important;font-size:12px!important;background:#fff!important}
+.community-chat-page-section .community-reply-bar>div{min-width:0!important;display:flex!important;flex-direction:column!important;gap:2px!important}.community-chat-page-section .community-reply-bar strong{font-size:10px!important;color:#2f6fca!important}.community-chat-page-section .community-reply-bar span{font-size:11px!important;color:#6d7b87!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}.community-chat-page-section .community-reply-bar button{border:0!important;background:transparent!important;color:#6f7d88!important;font-size:21px!important;line-height:1!important;cursor:pointer!important;padding:3px 6px!important}
+.community-chat-page-section .community-chat-form{display:grid!important;grid-template-columns:minmax(0,1fr) 48px!important;gap:8px!important;margin:0!important;padding:9px 12px calc(9px + env(safe-area-inset-bottom))!important;background:#fff!important;border-top:1px solid #e4e9ed!important;box-sizing:border-box!important;flex:0 0 auto!important}
+.community-chat-page-section .community-chat-form textarea{width:100%!important;box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:100px!important;resize:none!important;padding:11px 14px!important;border-radius:15px!important;background:#f6f8fa!important;color:#1e2a34!important;border:1px solid #dce3e8!important;outline:none!important;font-size:13px!important;line-height:1.4!important}
+.community-chat-page-section .community-chat-form textarea:focus{background:#fff!important;border-color:#9dbfe0!important;box-shadow:0 0 0 3px rgba(47,111,202,.08)!important}
+.community-chat-page-section .community-send-button{width:48px!important;height:44px!important;border:0!important;border-radius:14px!important;background:#172033!important;color:#fff!important;font-size:18px!important;font-weight:850!important;cursor:pointer!important;display:grid!important;place-items:center!important;box-shadow:none!important;transition:none!important}
+.community-chat-page-section .community-send-button:active{transform:scale(.97)!important}
+.community-chat-page-section .community-chat-disabled-note{padding:10px 14px!important;border-top:1px solid #e5e9ed!important;color:#687482!important;font-size:11px!important;background:#fff!important;flex:0 0 auto!important}
 .community-chat-page-section .empty{margin:auto!important;padding:18px!important;color:#8995a0!important;text-align:center!important}
 .community-chat-page-section .community-chat-keyboard-hint{display:none!important}
+.student-chat-page-header{max-width:none!important;width:100%!important;box-sizing:border-box!important;min-height:64px!important;height:64px!important;padding:8px 24px!important;display:flex!important;align-items:center!important;background:#fff!important;border-bottom:1px solid #e6eaed!important;box-shadow:none!important}
+.student-chat-page-header .student-brand-compact{margin-right:auto!important}
+.student-chat-page-header .student-header-back{margin-left:12px!important}
+.student-chat-clear{height:40px!important;padding:0 13px!important;margin-left:8px!important;border:1px solid #dfe5ea!important;border-radius:10px!important;background:#fff!important;color:#172033!important;font:inherit!important;font-size:12px!important;font-weight:800!important;cursor:pointer!important}
+.student-chat-clear:hover{background:#f5f8fa!important}
+.wrap.page-shell:has(.community-chat-page-section){width:100%!important;max-width:none!important;margin:0!important;padding:0!important;overflow:hidden!important}
+.nav:has(.student-chat-page-header){height:64px!important;min-height:64px!important;margin:0!important;padding:0!important}
+.community-chat-online{display:flex!important;align-items:center!important;gap:7px!important;color:#4f8c2e!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}.community-chat-online-dot{width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#4caf35!important;box-shadow:0 0 0 4px #edf8e9!important}
 @media(max-width:850px){
-  .community-chat-page-section{width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important;padding:8px 7px calc(84px + env(safe-area-inset-bottom))!important}
-  .community-chat-page-section .community-page-top{width:100%!important;box-sizing:border-box!important;margin-bottom:8px!important;padding:0 2px!important}
-  .community-chat-page-section .community-page-top h1{font-size:28px!important;margin:4px 0!important;line-height:1.02!important}
-  .community-chat-page-section .community-page-top p{font-size:10.5px!important;line-height:1.35!important}
-  .community-chat-page-section .community-chat-page-card{width:100%!important;max-width:100%!important;height:calc(100dvh - 205px)!important;min-height:360px!important;max-height:760px!important;border-radius:18px!important;box-sizing:border-box!important}
-  .community-chat-page-section .community-chat-tools{height:46px!important;min-height:46px!important;padding:0 11px!important}
-  .community-chat-tools-sub{display:none!important}
-  .community-chat-tools-left strong{font-size:12px!important}
-  .community-chat-live-dot{width:7px!important;height:7px!important;flex-basis:7px!important}
-  .community-chat-page-section .community-chat-window{width:100%!important;box-sizing:border-box!important;padding:11px 8px 12px!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior-y:contain!important;-webkit-overflow-scrolling:touch!important;scroll-behavior:auto!important;touch-action:pan-y!important}
-  .community-chat-page-section .community-message{max-width:88%!important;min-width:0!important;box-sizing:border-box!important;padding:9px 10px!important;border-radius:14px!important}
-  .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.45!important;overflow-wrap:anywhere!important;word-break:break-word!important}
-  .community-chat-page-section .community-message-actions{opacity:1!important;max-height:34px!important;margin-top:5px!important}
-  .community-chat-page-section .community-message-action{padding:6px 8px!important;font-size:10px!important;min-height:28px!important}
-  .community-chat-page-section .community-reply-bar{padding:7px 10px!important;min-width:0!important}
-  .community-chat-page-section .community-reply-bar span{font-size:10px!important}
-  .community-chat-page-section .community-chat-form{width:100%!important;box-sizing:border-box!important;grid-template-columns:minmax(0,1fr) 42px!important;padding:7px 7px calc(7px + env(safe-area-inset-bottom))!important;gap:6px!important}
-  .community-chat-page-section .community-chat-form textarea{width:100%!important;height:42px!important;min-height:42px!important;max-height:96px!important;box-sizing:border-box!important;border-radius:14px!important;padding:10px 12px!important;font-size:13px!important}
-  .community-chat-page-section .community-send-button{width:42px!important;height:42px!important;border-radius:13px!important;font-size:17px!important}
+  html:has(.student-chat-page-header),body:has(.student-chat-page-header){height:100%!important;min-height:100%!important;overflow:hidden!important}
+  body:has(.student-chat-page-header){padding:0!important;background:#f8fafb!important}
+  body:has(.student-chat-page-header) .nav{height:54px!important;min-height:54px!important}
+  .student-chat-page-header{height:54px!important;min-height:54px!important;padding:7px 10px!important;gap:7px!important}
+  .student-chat-page-header .student-brand-compact{min-width:0!important;gap:8px!important}
+  .student-chat-page-header .student-brand-compact .brandmark{width:38px!important;height:38px!important;border-radius:12px!important;font-size:19px!important}
+  .student-chat-page-header .student-brand-compact .brandtext{font-size:19px!important}
+  .student-chat-page-header .student-header-back{margin-left:auto!important;padding:9px 11px!important;min-width:0!important;height:38px!important;box-sizing:border-box!important;font-size:12px!important}
+  .student-chat-clear{height:38px!important;margin-left:0!important;padding:0 10px!important;border-radius:10px!important;font-size:11px!important}
+  .community-chat-page-section{height:calc(100dvh - 54px)!important}
+  .community-chat-page-section .community-chat-tools{height:50px!important;min-height:50px!important;padding:0 13px!important}
+  .community-chat-page-section .community-chat-tools-left strong{font-size:14px!important}
+  .community-chat-page-section .community-chat-live-dot{width:8px!important;height:8px!important;flex-basis:8px!important;box-shadow:0 0 0 4px #edf8e9!important}
+  .community-chat-page-section .community-chat-online{font-size:10px!important}.community-chat-page-section .community-chat-online-dot{width:7px!important;height:7px!important;flex-basis:7px!important;box-shadow:0 0 0 3px #edf8e9!important}
+  .community-chat-page-section .community-chat-window{padding:10px 8px 8px!important;gap:8px!important}
+  .community-chat-page-section .community-message{max-width:86%!important;padding:9px 10px!important;border-radius:14px!important}
+  .community-chat-page-section .community-message-text{font-size:13px!important;line-height:1.43!important}
+  .community-chat-page-section .community-message-actions{opacity:0!important;max-height:0!important;pointer-events:none!important}
+  .community-chat-page-section .community-message.is-actions-open .community-message-actions{opacity:1!important;max-height:36px!important;pointer-events:auto!important}
+  .community-chat-page-section .community-reply-bar{padding:7px 10px!important;min-height:42px!important}
+  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 44px!important;padding:7px 8px calc(7px + env(safe-area-inset-bottom))!important;gap:6px!important}
+  .community-chat-page-section .community-chat-form textarea{height:42px!important;min-height:42px!important;padding:10px 12px!important;border-radius:14px!important;font-size:13px!important}
+  .community-chat-page-section .community-send-button{width:44px!important;height:42px!important;border-radius:13px!important;font-size:17px!important}
 }
-@media(max-width:390px){
-  .community-chat-page-section{padding-left:5px!important;padding-right:5px!important}
-  .community-chat-page-section .community-page-top h1{font-size:25px!important}
-  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 192px)!important;min-height:340px!important;border-radius:16px!important}
-  .community-chat-page-section .community-chat-window{padding-left:6px!important;padding-right:6px!important}
-  .community-chat-page-section .community-message{max-width:91%!important}
-  .community-chat-page-section .community-chat-form{grid-template-columns:minmax(0,1fr) 40px!important}
-  .community-chat-page-section .community-send-button{width:40px!important;height:40px!important}
-  .community-chat-page-section .community-chat-form textarea{height:40px!important;min-height:40px!important}
-}
-@media(max-width:390px){
-  .community-chat-page-section{padding-left:8px!important;padding-right:8px!important}
-  .community-chat-page-section .community-page-top h1{font-size:27px!important}
-  .community-chat-page-section .community-chat-page-card{height:calc(100dvh - 216px)!important;min-height:400px!important;border-radius:18px!important}
-  .community-chat-page-section .community-chat-tools{padding:0 11px!important}
-  .community-chat-page-section .community-chat-window{padding-left:7px!important;padding-right:7px!important}
-  .community-chat-page-section .community-message{max-width:92%!important}
-}
-/* ===== COMMUNITY CHAT — PHONE-ONLY CLEAN SHELL ===== */
-@media(max-width:850px){
-  body:has(.community-chat-page-section){
-    padding-bottom:0!important;
-    overflow:hidden!important;
-  }
-  body:has(.community-chat-page-section) .student-nav-compact{
-    min-height:54px!important;
-    height:54px!important;
-    padding:7px 10px!important;
-    box-sizing:border-box!important;
-    box-shadow:0 4px 14px rgba(30,45,55,.06)!important;
-  }
-  body:has(.community-chat-page-section) .student-nav-compact .student-header-tools,
-  body:has(.community-chat-page-section) .student-control-row,
-  body:has(.community-chat-page-section) #vybeNavToggle,
-  body:has(.community-chat-page-section) #vybeStudentBottomNav,
-  body:has(.community-chat-page-section) .student-bottom-spacer,
-  body:has(.community-chat-page-section) .vybe-assistant-fab,
-  body:has(.community-chat-page-section) .vybe-assistant-panel,
-  body:has(.community-chat-page-section) #vybeMobileNav{
-    display:none!important;
-  }
-  body:has(.community-chat-page-section) .student-brand-compact{
-    min-width:0!important;
-    flex:0 0 auto!important;
-  }
-  body:has(.community-chat-page-section) .student-header-back{
-    display:inline-flex!important;
-    min-width:0!important;
-    margin-left:4px!important;
-    padding:7px 8px!important;
-    border:1px solid #d6dfe7!important;
-    border-radius:10px!important;
-    background:#fff!important;
-    color:#172033!important;
-    font-size:12px!important;
-    font-weight:800!important;
-    line-height:1!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section{
-    width:100%!important;
-    max-width:100%!important;
-    height:calc(100dvh - 54px)!important;
-    min-height:0!important;
-    box-sizing:border-box!important;
-    overflow:hidden!important;
-    padding:8px!important;
-    margin:0!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section .community-page-top{
-    display:none!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-page-card{
-    width:100%!important;
-    max-width:none!important;
-    height:100%!important;
-    min-height:0!important;
-    max-height:none!important;
-    margin:0!important;
-    border-radius:16px!important;
-    box-shadow:0 4px 18px rgba(31,48,66,.08)!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-tools{
-    height:48px!important;
-    min-height:48px!important;
-    padding:0 13px!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-tools-sub{
-    display:none!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-window{
-    padding:10px 8px!important;
-  }
-  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-form{
-    padding:7px!important;
-    padding-bottom:calc(7px + env(safe-area-inset-bottom))!important;
-  }
-}
-</style>'''
+</style>
+'''
     body = chat_style + f'''<section class="section community-page-section community-chat-page-section">
       <div class="community-page-top"><a class="community-back-link" href="/community">‹ Community</a><div class="badge">CHAT WITH STUDENTS</div><h1>Campus conversation.</h1><p class="muted">{status_text} · Student IDs are never shown here.</p></div>
       <div class="community-chat-card community-chat-page-card">{chat_panel}</div>
@@ -7705,20 +7647,126 @@ def community_chat():
     (function() {{
       const chatWindow=document.querySelector('.community-chat-window');
       const form=document.getElementById('community-send-form');
-      const sendBox=form?form.querySelector('textarea[name=\"message\"]'):null;
-      const replyBar=document.getElementById('community-reply-bar'), replyTo=document.getElementById('community-reply-to'), replyTitle=document.getElementById('community-reply-title'), replyPreview=document.getElementById('community-reply-preview'), replyCancel=document.getElementById('community-reply-cancel');
+      const sendBox=form?form.querySelector('textarea[name="message"]'):null;
+      const replyBar=document.getElementById('community-reply-bar');
+      const replyTo=document.getElementById('community-reply-to');
+      const replyTitle=document.getElementById('community-reply-title');
+      const replyPreview=document.getElementById('community-reply-preview');
+      const replyCancel=document.getElementById('community-reply-cancel');
+      const clearButton=document.getElementById('studentChatClear');
       let busy=false;
       function clearReply() {{ if(replyTo)replyTo.value=''; if(replyBar)replyBar.hidden=true; }}
-      function startReply(m) {{ if(!m||!replyTo)return; const id=m.dataset.messageId, n=m.querySelector('.community-message-head strong'), t=m.querySelector('.community-message-text'); if(!id||!t)return; replyTo.value=id; replyTitle.textContent='Replying to '+(n?n.textContent:'Student'); replyPreview.textContent=t.textContent.slice(0,120); replyBar.hidden=false; if(sendBox)sendBox.focus(); }}
-      function wire(root) {{ root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}}); root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();if(!confirm('Delete this message?'))return;const id=String(b.dataset.messageId),node=document.getElementById('community-msg-'+id);if(node){{node.style.transition='opacity .12s ease,transform .12s ease';node.style.opacity='0';node.style.transform='translateX(10px)';setTimeout(function(){{if(node&&node.parentNode)node.remove();}},120);}}const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('delete failed');return r.json();}}).then(function(){{}}).catch(function(){{refresh(true);}});}};}}); }}
-      function build(m) {{ const mine=String(m.student_id)==String({my_id}),w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;const c=document.createElement('div');c.className='community-message-content';const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);if(m.reply_to_id&&m.reply_message){{const r=document.createElement('div');r.className='community-reply-reference';const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}c.appendChild(ac);w.appendChild(c);return w; }}
-      async function refresh(force) {{ if(!chatWindow||busy)return;busy=true;try{{const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;chatWindow.querySelectorAll('.community-message').forEach(function(e){{last=Math.max(last,Number(e.dataset.messageId)||0);}});const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]')){{chatWindow.appendChild(build(m));}}const temp=[...chatWindow.querySelectorAll('[data-message-id^="temp-"]')].find(function(x){{return x.dataset.tempMessage===String(m.message);}});if(temp)temp.remove();}});wire(chatWindow);if(msgs.length&&(force||near))chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});}}catch(_){{}}finally{{busy=false;}} }}
-      wire(document); if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{if(document.visibilityState==='visible')refresh(false);}},1200);}} if(replyCancel)replyCancel.onclick=clearReply;
-      if(form&&sendBox){{sendBox.addEventListener('input',function(){{this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';}});form.addEventListener('submit',function(e){{e.preventDefault();const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='46px';clearReply();const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};chatWindow.appendChild(build(optimistic));const tempNode=chatWindow.querySelector('[data-message-id="'+tempId+'"]');if(tempNode)tempNode.dataset.tempMessage=txt;chatWindow.scrollTo({{top:chatWindow.scrollHeight,behavior:'auto'}});sendBox.disabled=true;fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(function(r){{if(!r.ok)throw new Error('send failed');return r.json();}}).then(function(){{return refresh(true);}}).catch(function(){{if(tempNode)tempNode.remove();sendBox.value=txt;}}).finally(function(){{sendBox.disabled=false;sendBox.focus();}});}});sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});}}
+      function startReply(m) {{
+        if(!m||!replyTo)return;
+        const id=m.dataset.messageId,n=m.querySelector('.community-message-head strong'),t=m.querySelector('.community-message-text');
+        if(!id||!t)return;
+        replyTo.value=id;
+        if(replyTitle)replyTitle.textContent='Replying to '+(n?n.textContent:'Student');
+        if(replyPreview)replyPreview.textContent=t.textContent.slice(0,120);
+        if(replyBar)replyBar.hidden=false;
+        if(sendBox)sendBox.focus();
+      }}
+      function toggleActions(m) {{ if(m)m.classList.toggle('is-actions-open'); }}
+      function deleteMessage(id,node) {{
+        if(!id||!confirm('Delete this message?'))return;
+        if(node){{node.style.opacity='0';node.style.transform='translateX(12px)';}}
+        const fd=new FormData();fd.append('action','delete_one');fd.append('message_id',id);
+        fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}})
+          .then(r=>{{if(!r.ok)throw new Error('delete');return r.json();}})
+          .then(()=>{{if(node&&node.parentNode)node.remove();}})
+          .catch(()=>{{if(node){{node.style.opacity='';node.style.transform='';}}}});
+      }}
+      function bindSwipe(m) {{
+        if(m.dataset.swipeBound)return;m.dataset.swipeBound='1';
+        let sx=0,sy=0,tracking=false,moved=false;
+        m.addEventListener('pointerdown',function(e){{if(e.pointerType==='mouse')return;sx=e.clientX;sy=e.clientY;tracking=true;moved=false;}},{{passive:true}});
+        m.addEventListener('pointermove',function(e){{if(!tracking)return;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>8||Math.abs(dy)>8)moved=true;if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>14)e.preventDefault();}},{{passive:false}});
+        m.addEventListener('pointerup',function(e){{if(!tracking)return;tracking=false;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25){{if(!m.classList.contains('mine')&&dx>0){{m.style.transform='translateX(18px)';startReply(m);setTimeout(()=>m.style.transform='',140);}}else if(m.classList.contains('mine')&&dx<0)toggleActions(m);}}else if(!moved&&e.pointerType!=='mouse')toggleActions(m);}},{{passive:true}});
+      }}
+      function wire(root) {{
+        root.querySelectorAll('.community-reply-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();startReply(document.getElementById('community-msg-'+b.dataset.messageId));}};}});
+        root.querySelectorAll('.community-delete-one-action').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();deleteMessage(String(b.dataset.messageId),document.getElementById('community-msg-'+b.dataset.messageId));}};}});
+        root.querySelectorAll('.community-reply-reference').forEach(function(b){{if(b.dataset.bound)return;b.dataset.bound='1';b.onclick=function(e){{e.stopPropagation();const target=document.getElementById('community-msg-'+b.dataset.replyTarget);if(target){{target.scrollIntoView({{block:'center',behavior:'smooth'}});target.classList.add('is-actions-open');setTimeout(()=>target.classList.remove('is-actions-open'),900);}}}};}});
+        root.querySelectorAll('.community-message').forEach(bindSwipe);
+      }}
+      function build(m) {{
+        const mine=String(m.student_id)==String({my_id});
+        const w=document.createElement('div');w.className='community-message'+(mine?' mine':'');w.id='community-msg-'+m.id;w.dataset.messageId=m.id;
+        const c=document.createElement('div');c.className='community-message-content';
+        const h=document.createElement('div');h.className='community-message-head';const st=document.createElement('strong');st.textContent=m.name||'Student';h.appendChild(st);c.appendChild(h);
+        if(m.reply_to_id&&m.reply_message){{const r=document.createElement('button');r.type='button';r.className='community-reply-reference';r.dataset.replyTarget=m.reply_to_id;const a=document.createElement('strong');a.textContent='Replying to '+(m.reply_name||'Student');const q=document.createElement('span');q.textContent=String(m.reply_message).slice(0,120);r.append(a,q);c.appendChild(r);}}
+        const t=document.createElement('div');t.className='community-message-text';t.textContent=m.message||'';c.appendChild(t);
+        const meta=document.createElement('div');meta.className='community-message-meta';meta.textContent=String(m.created_at||'').slice(-5);c.appendChild(meta);
+        const ac=document.createElement('div');ac.className='community-message-actions';const rb=document.createElement('button');rb.type='button';rb.className='community-message-action community-reply-action';rb.dataset.messageId=m.id;rb.textContent='Reply';ac.appendChild(rb);
+        if(mine){{const db=document.createElement('button');db.type='button';db.className='community-message-action delete community-delete-one-action';db.dataset.messageId=m.id;db.textContent='Delete';ac.appendChild(db);}}
+        c.appendChild(ac);w.appendChild(c);return w;
+      }}
+      async function refresh(force) {{
+        if(!chatWindow||busy)return;busy=true;
+        try {{
+          const near=chatWindow.scrollHeight-chatWindow.scrollTop-chatWindow.clientHeight<100;let last=0;
+          chatWindow.querySelectorAll('.community-message').forEach(function(e){{const n=Number(e.dataset.messageId)||0;if(n>last)last=n;}});
+          const res=await fetch('/community/chat/messages?after_id='+encodeURIComponent(last)+'&t='+Date.now(),{{credentials:'same-origin',cache:'no-store',headers:{{Accept:'application/json'}}}});
+          if(!res.ok)return;const data=await res.json(),msgs=Array.isArray(data.messages)?data.messages:[];
+          msgs.forEach(function(m){{if(!chatWindow.querySelector('[data-message-id="'+String(m.id)+'"]'))chatWindow.appendChild(build(m));}});wire(chatWindow);
+          if(msgs.length&&(force||near))chatWindow.scrollTop=chatWindow.scrollHeight;
+        }}catch(_){{}}finally{{busy=false;}}
+      }}
+      wire(document);
+      const onlineCount=document.getElementById('community-online-count');
+      async function presencePing() {{
+        try {{
+          const r=await fetch('/community/presence',{{method:'POST',credentials:'same-origin',cache:'no-store',headers:{{'X-VYBE-Live-Chat':'1'}}}});
+          if(!r.ok)return;
+          const d=await r.json();
+          if(onlineCount && Number.isFinite(Number(d.online_count))) onlineCount.innerHTML='<span class="community-chat-online-dot"></span>'+String(d.online_count)+' Online';
+        }} catch(_) {{}}
+      }}
+      presencePing();
+      if(chatWindow){{chatWindow.scrollTop=chatWindow.scrollHeight;setInterval(function(){{if(document.visibilityState==='visible')refresh(false);}},2500);setInterval(function(){{if(document.visibilityState==='visible')presencePing();}},20000);}}
+      if(replyCancel)replyCancel.onclick=clearReply;
+      if(clearButton)clearButton.addEventListener('click',function(){{
+        if(!confirm('Clear your messages from Student Chat?'))return;
+        const fd=new FormData();fd.append('action','delete_all');clearButton.disabled=true;
+        fetch('/community/chat',{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}})
+          .then(r=>{{if(!r.ok)throw new Error('clear');return r.json();}})
+          .then(()=>{{if(chatWindow)chatWindow.querySelectorAll('.community-message.mine').forEach(n=>n.remove());}})
+          .catch(()=>{{}}).finally(()=>{{clearButton.disabled=false;}});
+      }});
+      if(form&&sendBox){{
+        sendBox.addEventListener('input',function(){{this.style.height='42px';this.style.height=Math.min(this.scrollHeight,100)+'px';}});
+        form.addEventListener('submit',function(e){{
+          e.preventDefault();if(sendBox.disabled)return;const txt=sendBox.value.trim();if(!txt)return;const fd=new FormData(form);sendBox.value='';sendBox.style.height='42px';clearReply();
+          const tempId='temp-'+Date.now();const optimistic={{id:tempId,student_id:{my_id},name:'You',message:txt,created_at:'',reply_to_id:null,reply_message:null,reply_name:null}};const temp=build(optimistic);temp.dataset.tempMessage=txt;chatWindow.appendChild(temp);chatWindow.scrollTop=chatWindow.scrollHeight;sendBox.disabled=true;
+          fetch(form.action,{{method:'POST',body:fd,credentials:'same-origin',headers:{{'X-VYBE-Live-Chat':'1'}}}}).then(r=>{{if(!r.ok)throw new Error('send');return r.json();}}).then(()=>refresh(true)).catch(()=>{{if(temp&&temp.parentNode)temp.remove();sendBox.value=txt;}}).finally(()=>{{sendBox.disabled=false;sendBox.focus();}});
+        }});
+        sendBox.addEventListener('keydown',function(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});
+      }}
     }})();
     </script>'''
     return layout("Chat with Students", body)
 
+
+
+@app.route("/community/presence", methods=["POST"])
+@student_required
+def community_presence():
+    """Lightweight chat heartbeat: mark this student active and return the live count."""
+    con = db()
+    sid = int(session["student_db_id"])
+    try:
+        stamp = now()
+        con.execute("UPDATE students SET last_seen=? WHERE id=? AND status='approved'", (stamp, sid))
+        con.commit()
+        return jsonify({"ok": True, "online_count": _community_online_count(con)})
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "online_count": _community_online_count(con)}), 200
+    finally:
+        con.close()
 
 
 @app.route("/community/chat/messages", methods=["GET"])
@@ -11246,3 +11294,4 @@ def admin_delete_all_login_history():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
