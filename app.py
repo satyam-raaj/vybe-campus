@@ -6279,6 +6279,7 @@ def academics():
         ("Syllabus","Syllabus files for each semester and subject.","/academic-hub/syllabus","✓"),
         ("Lab Materials","Practical files, lab manuals and lab reference material.","/academic-hub/lab-materials","⌘"),
         ("Online Classes","Class links by semester and subject.","/academic-hub/online-classes","▣"),
+        ("YouTube Channels","Helpful YouTube channels and learning links by semester and subject.","/academic-hub/youtube-channels","▶"),
     ]
     cards="".join(f"<a class='ah-key' href='{href}'><span class='ah-key-icon' aria-hidden='true'>{icon}</span><span class='ah-key-copy'><strong>{esc(title)}</strong><small>{esc(desc)}</small></span><b class='ah-key-arrow' aria-hidden='true'>→</b></a>" for title,desc,href,icon in shortcuts)
     body=f"""{ACADEMIC_HUB_HOME_CSS}<section class="ah-hub-home"><div class="ah-hub-head"><div class="academic-kicker">ACADEMIC HUB</div><h1>What do you need?</h1><p>Choose a section, then choose your semester and subject. VYBE will show only the material you ask for.</p></div><div class="ah-key-grid">{cards}</div></section>"""
@@ -6379,6 +6380,84 @@ def _academic_resource_collection(resource_type, title, subtitle, kicker):
 
     body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">{esc(kicker)}</div><h1>{esc(title)}</h1><p>{esc(subtitle)}</p></div><div class="ah-choice-panel">{selector}</div>{result_block}</section>'''
     return layout(title,body)
+
+def _valid_youtube_url(value):
+    try:
+        parsed=urlparse(str(value or "").strip())
+        host=(parsed.netloc or "").lower().split(":",1)[0]
+        return parsed.scheme in ("http","https") and host in {"youtube.com","www.youtube.com","m.youtube.com","youtu.be","www.youtu.be"}
+    except Exception:
+        return False
+
+@app.route("/academic-hub/youtube-channels")
+@student_required
+def academic_hub_youtube_channels():
+    # Show any number of admin-published YouTube learning links per semester/subject.
+    con=db()
+    try:
+        raw=setting(con,"vybe_youtube_channels","{}") or "{}"
+    finally:
+        con.close()
+    try:
+        data=json.loads(raw)
+        if not isinstance(data,dict): data={}
+    except Exception:
+        data={}
+
+    clean={}
+    for sem,subjects in data.items():
+        sem_name=" ".join(str(sem or "").strip().split())[:100]
+        if not sem_name or not isinstance(subjects,dict):
+            continue
+        clean[sem_name]={}
+        for subject,links in subjects.items():
+            subject_name=" ".join(str(subject or "").strip().split())[:120]
+            if not subject_name:
+                continue
+            if isinstance(links,str):
+                links=[{"name":"YouTube Channel","link":links,"description":""}]
+            if not isinstance(links,list):
+                continue
+            valid=[]
+            for item in links:
+                if not isinstance(item,dict):
+                    continue
+                name=" ".join(str(item.get("name") or "YouTube Channel").strip().split())[:160]
+                link=str(item.get("link") or "").strip()[:500]
+                description=" ".join(str(item.get("description") or "").strip().split())[:300]
+                if name and _valid_youtube_url(link):
+                    valid.append({"name":name,"link":link,"description":description})
+            if valid:
+                clean[sem_name][subject_name]=valid
+        if not clean[sem_name]:
+            clean.pop(sem_name,None)
+
+    semester=" ".join(request.args.get("semester","").strip().split())[:100]
+    if semester not in clean: semester=""
+    subjects=sorted(clean.get(semester,{}),key=str.casefold) if semester else []
+    subject=" ".join(request.args.get("subject","").strip().split())[:120]
+    if subject not in subjects: subject=""
+
+    if not semester:
+        choices="".join(f'<a class="ah-choice" href="{request.path}?semester={quote(sem)}"><span>{esc(sem)}</span><span class="ah-choice-arrow">→</span></a>' for sem in sorted(clean,key=lambda x:(int(re.search(r"\d+",x).group()) if re.search(r"\d+",x) else 999,x.casefold())))
+        selector=f'''<div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Choose semester</span><span class="ah-step-current">Select one</span></div><div class="ah-choice-grid">{choices or '<div class="ah-empty" style="grid-column:1/-1">No YouTube channels are available yet.</div>'}</div></div>'''
+        result_block='<div class="ah-results"><div class="ah-empty">Choose a semester to continue.</div></div>'
+    elif not subject:
+        choices="".join(f'<a class="ah-choice" href="{request.path}?semester={quote(semester)}&subject={quote(sub)}"><span>{esc(sub)}</span><span class="ah-choice-arrow">→</span></a>' for sub in subjects)
+        selector=f'''<a class="ah-back" href="{request.path}">← Change semester</a><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Semester</span><span class="ah-step-current">{esc(semester)}</span></div></div><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">2 · Choose subject</span><span class="ah-step-current">Select one</span></div><div class="ah-choice-grid">{choices or '<div class="ah-empty" style="grid-column:1/-1">No subjects are available for this semester yet.</div>'}</div></div>'''
+        result_block='<div class="ah-results"><div class="ah-empty">Choose a subject to see the YouTube channels.</div></div>'
+    else:
+        links=clean[semester][subject]
+        selector=f'''<a class="ah-back" href="{request.path}?semester={quote(semester)}">← Change subject</a><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">1 · Semester</span><span class="ah-step-current">{esc(semester)}</span></div></div><div class="ah-step"><div class="ah-step-head"><span class="ah-step-title">2 · Subject</span><span class="ah-step-current">{esc(subject)}</span></div></div>'''
+        items=[]
+        for item in links:
+            meta=item["description"] or "Open the learning channel published by the VYBE admin."
+            items.append(f'''<a class="ah-result" href="{esc(item["link"])}" target="_blank" rel="noopener noreferrer"><span class="ah-result-main"><span class="ah-result-title">▶ {esc(item["name"])}</span><span class="ah-result-meta">{esc(meta)}</span></span><span class="ah-result-open">Open ↗</span></a>''')
+        results="".join(items) or '<div class="ah-empty">No YouTube channels are available for this subject yet.</div>'
+        result_block=f'<div class="ah-results"><div class="ah-results-head"><span class="ah-results-title">YouTube Channels</span><span class="ah-count">{len(items)} link(s)</span></div>{results}</div>'
+
+    body=f'''{ACADEMIC_COLLECTION_CSS}<section class="ah-collection"><div class="ah-filter-head"><div class="academic-kicker">YOUTUBE CHANNELS</div><h1>What do you want to learn?</h1><p>Choose your semester and subject. VYBE will show all YouTube learning channels published for that subject.</p></div><div class="ah-choice-panel">{selector}</div>{result_block}</section>'''
+    return layout("YouTube Channels",body)
 
 @app.route("/academic-hub/online-classes")
 @student_required
@@ -8963,6 +9042,7 @@ def admin_academic_hub():
         active=" active" if k==section else ""
         tabs.append(f'<a class="admin-ah-tab{active}" href="/admin/academic-hub?section={k}"><b>{v}</b><span>{descriptions[k]}</span></a>')
     tabs.append('<a class="admin-ah-tab" href="/admin/online-classes"><b>Online Classes</b><span>Paste and manage class links by semester and subject.</span></a>')
+    tabs.append('<a class="admin-ah-tab" href="/admin/youtube-channels"><b>YouTube Channels</b><span>Manage multiple YouTube learning links by semester and subject.</span></a>')
     rows_html="".join(f'''<div class="admin-ah-row"><div><strong>{esc(r["title"])}</strong><div class="admin-ah-meta"><span>{esc(r["semester"] or "Semester")}</span><span>{esc(r["subject"] or "Subject")}</span><span>{esc(r["course"] or "All courses")}</span><span>{esc(r["original_name"] or "File")}</span></div></div><div class="admin-ah-row-actions"><a class="btn" href="/resource/{r["id"]}" target="_blank" rel="noopener">Open</a><form method="post" action="/admin/academic-hub/resource/{r["id"]}/delete" onsubmit="return confirm('Delete this resource?')"><button class="btn danger">Delete</button></form></div></div>''' for r in rows)
     body=f'''{ACADEMIC_HUB_ADMIN_CSS}<section class="admin-ah-page"><div class="admin-ah-hero"><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">ACADEMIC HUB</span><h1>Academic collections.</h1><p>Upload any file type directly to Google Drive. Single files and large bulk batches use resumable Drive uploads, so Vercel request-size limits do not interrupt the transfer.</p></div><div class="admin-ah-tabs">{"".join(tabs)}</div><div class="admin-ah-grid"><div class="admin-ah-card"><span class="admin-ah-label">SINGLE UPLOAD</span><h2>Add one file</h2><p>Give one resource its own student-facing title.</p><form id="ahSingleUpload" class="admin-ah-form" onsubmit="return false"><input name="title" placeholder="Resource title" required><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Short description (optional)"></textarea><div class="admin-ah-files"><input type="file" name="file" required><div class="admin-ah-help">Any file format supported by Google Drive.</div></div><div id="ahSingleStatus" class="admin-ah-help"></div><button class="btn accent" type="submit">Upload directly to Drive →</button></form></div><div class="admin-ah-card"><span class="admin-ah-label">BULK UPLOAD</span><h2>Add many files</h2><p>Select as many files as you need. VYBE uploads them sequentially with a visible progress message.</p><form id="ahBulkUpload" class="admin-ah-form" onsubmit="return false"><div class="admin-ah-two"><input name="course" placeholder="Course / program" value="All"><input name="semester" placeholder="Semester (e.g. 1st Semester)" required></div><input name="subject" placeholder="Subject" required><textarea name="description" placeholder="Description for all uploaded files (optional)"></textarea><div class="admin-ah-files"><input type="file" name="files" multiple required><div class="admin-ah-help">Large batches are sent directly to Google Drive one file at a time.</div></div><div id="ahBulkStatus" class="admin-ah-help"></div><button class="btn dark" type="submit">Upload all directly to Drive →</button></form><div class="admin-ah-note" style="margin-top:12px">Keep files for the same subject and semester in one batch.</div></div></div>{AH_DIRECT_UPLOAD_JS.replace("__AH_SECTION__", section)}<div class="admin-ah-list"><div class="admin-ah-list-head"><strong>Published {esc(allowed[section])}</strong><span>{len(rows)} item(s)</span></div>{rows_html or '<div style="padding:24px;color:#7b8792">No resources uploaded in this section yet.</div>'}</div></section>'''
     return layout("Academic Hub",body,admin=True)
@@ -10157,9 +10237,81 @@ def admin_settings():
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Manage multiple student WhatsApp groups and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Manage multiple student WhatsApp groups and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile online-classes" href="/admin/youtube-channels"><span class="settings-icon">▶</span><div><b>YouTube Channels</b><small>Manage multiple learning channels for every semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
+
+@app.route("/admin/youtube-channels", methods=["GET","POST"])
+@admin_required
+def admin_youtube_channels():
+    # Admin manager for unlimited YouTube learning links per semester/subject.
+    con=db()
+    try:
+        raw=setting(con,"vybe_youtube_channels","{}") or "{}"
+        try:
+            data=json.loads(raw)
+            if not isinstance(data,dict): data={}
+        except Exception:
+            data={}
+
+        if request.method=="POST":
+            action=request.form.get("action","").strip()
+            semester=_drive_normalize_semester(request.form.get("semester",""))
+            subject=" ".join(request.form.get("subject","").strip().split())[:120]
+            if action=="save":
+                name=" ".join(request.form.get("name","").strip().split())[:160]
+                link=request.form.get("link","").strip()[:500]
+                description=" ".join(request.form.get("description","").strip().split())[:300]
+                if semester=="Uncategorized" or not semester or not subject or not name or not _valid_youtube_url(link):
+                    con.close(); flash("Enter a valid semester, subject, channel name and YouTube channel URL."); return redirect(url_for("admin_youtube_channels"))
+                bucket=data.setdefault(semester,{})
+                if not isinstance(bucket,dict): bucket={}; data[semester]=bucket
+                links=bucket.setdefault(subject,[])
+                if isinstance(links,str):
+                    links=[{"name":"YouTube Channel","link":links,"description":""}]
+                if not isinstance(links,list): links=[]
+                # Append, never replace: one subject can have as many links as the admin wants.
+                links.append({"name":name,"link":link,"description":description})
+                bucket[subject]=links
+                set_setting(con,"vybe_youtube_channels",json.dumps(data,separators=(",",":"),ensure_ascii=False))
+                con.commit(); con.close(); flash("YouTube channel link added."); return redirect(url_for("admin_youtube_channels"))
+
+            if action=="delete":
+                index_raw=request.form.get("index","").strip()
+                try: index=int(index_raw)
+                except Exception: index=-1
+                if semester in data and isinstance(data[semester],dict) and subject in data[semester]:
+                    links=data[semester][subject]
+                    if isinstance(links,str): links=[{"name":"YouTube Channel","link":links,"description":""}]
+                    if isinstance(links,list) and 0 <= index < len(links):
+                        links.pop(index)
+                        if links: data[semester][subject]=links
+                        else:
+                            data[semester].pop(subject,None)
+                            if not data[semester]: data.pop(semester,None)
+                        set_setting(con,"vybe_youtube_channels",json.dumps(data,separators=(",",":"),ensure_ascii=False))
+                        con.commit()
+                con.close(); flash("YouTube channel link removed."); return redirect(url_for("admin_youtube_channels"))
+
+        rows=[]
+        for sem,subjects in data.items():
+            if not isinstance(subjects,dict): continue
+            for subject,links in subjects.items():
+                if isinstance(links,str): links=[{"name":"YouTube Channel","link":links,"description":""}]
+                if not isinstance(links,list): continue
+                for idx,item in enumerate(links):
+                    if not isinstance(item,dict): continue
+                    link=str(item.get("link") or "").strip()
+                    if _valid_youtube_url(link):
+                        rows.append((str(sem),str(subject),idx,str(item.get("name") or "YouTube Channel"),link,str(item.get("description") or "")))
+        rows.sort(key=lambda x:(int(re.search(r"\d+",x[0]).group()) if re.search(r"\d+",x[0]) else 999,x[0].casefold(),x[1].casefold(),x[3].casefold()))
+    finally:
+        try: con.close()
+        except Exception: pass
+
+    rows_html="".join(f'''<div class="card" style="display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap"><div style="min-width:0;flex:1"><b>▶ {esc(name)}</b><div class="small">{esc(semester)} · {esc(subject)}{(" · "+esc(description)) if description else ""}</div><div class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{esc(link)}</div></div><form method="post" onsubmit="return confirm('Remove this YouTube channel link?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="semester" value="{esc(semester)}"><input type="hidden" name="subject" value="{esc(subject)}"><input type="hidden" name="index" value="{idx}"><button class="btn danger" type="submit">Remove</button></form></div>''' for semester,subject,idx,name,link,description in rows)
+    body=f'''<section class="section"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">YOUTUBE CHANNELS</span><h1>YouTube learning channels.</h1><p>Add as many YouTube channel links as you want for the same semester and subject. Every saved link appears for students under the matching subject.</p></div></div><div class="two"><div class="card"><h2>Add a YouTube channel</h2><p class="muted">Each submission adds a new link; it never replaces an existing channel.</p><form class="form" method="post"><input type="hidden" name="action" value="save"><label>Semester</label><input name="semester" required placeholder="e.g. 1st Semester"><label>Subject</label><input name="subject" required maxlength="120" placeholder="e.g. Python OOP"><label>Channel / resource name</label><input name="name" required maxlength="160" placeholder="e.g. CodeWithHarry"><label>YouTube channel link</label><input name="link" type="url" required maxlength="500" placeholder="https://www.youtube.com/@..."><label>Description (optional)</label><textarea name="description" maxlength="300" placeholder="e.g. Hindi explanation + practical examples"></textarea><button class="btn accent" type="submit">Add YouTube Channel →</button></form></div><div class="card"><h2>Student flow</h2><p class="muted">Academic Hub → YouTube Channels → Semester → Subject → all published channels.</p><div class="small">You can add 3, 10, 50 or more links to the same subject. Links open directly on YouTube in a new tab.</div></div></div><section class="section" style="padding-left:0;padding-right:0"><h2>Published YouTube channels</h2><div style="display:grid;gap:10px">{rows_html or '<div class="card"><div class="empty">No YouTube channel links have been added yet.</div></div>'}</div></section></section>'''
+    return layout("YouTube Channels",body,admin=True)
 
 @app.route("/admin/online-classes", methods=["GET","POST"])
 @admin_required
