@@ -11153,22 +11153,45 @@ def _drive_store_timetable(con, *, title, original_name, mime_type, data, assist
     return meta
 
 def _drive_record_file(con, category, meta, title=None, course="All", semester="All", subject="General", description="", assistant_text=""):
-    """Index one Drive file; return True only when a new DB record is created."""
+    """Index a Drive file and reconcile its current Drive location with VYBE.
+
+    Drive moves are edits, not new uploads. When an admin moves an existing file
+    between Academic Hub sections, semesters, or subjects, the same DB row must
+    be updated instead of being ignored because drive_file_id already exists.
+    """
     _,_,kind,mapped=DRIVE_CATEGORY_MAP[category]
     fid=meta.get("id"); name=meta.get("name") or title or "Drive file"; web=meta.get("webContentLink") or meta.get("webViewLink")
+    folder_id=(meta.get("parents") or [None])[0]
     if not fid:
         return False
     if kind=="resource":
-        if con.execute("SELECT id FROM resources WHERE drive_file_id=?",(fid,)).fetchone(): return False
         subject=str(subject or "General").strip()[:120] or "General"
-        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,mapped,course,semester,subject,description,None,name,meta.get("mimeType"),None,assistant_text,now(),fid,(meta.get("parents") or [None])[0],web))
+        existing=con.execute("SELECT * FROM resources WHERE drive_file_id=?",(fid,)).fetchone()
+        if existing:
+            changed=(
+                str(existing["resource_type"] or "") != str(mapped) or
+                str(existing["semester"] or "") != str(semester) or
+                str(existing["subject"] or "") != str(subject) or
+                str(existing["drive_folder_id"] or "") != str(folder_id or "") or
+                str(existing["drive_web_url"] or "") != str(web or "")
+            )
+            if changed:
+                con.execute("UPDATE resources SET resource_type=?, semester=?, subject=?, drive_folder_id=?, drive_web_url=?, original_name=?, mime_type=? WHERE id=?",(mapped,semester,subject,folder_id,web,name,meta.get("mimeType"),existing["id"]))
+            return changed
+        con.execute("INSERT INTO resources(title,resource_type,course,semester,subject,description,file_name,original_name,mime_type,file_data,assistant_text,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,mapped,course,semester,subject,description,None,name,meta.get("mimeType"),None,assistant_text,now(),fid,folder_id,web))
         return True
     if kind=="update":
-        if con.execute("SELECT id FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone(): return False
-        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(mapped,"Examination" if mapped!="Result" else "Results",title or Path(name).stem,description,course,semester,subject,"","",None,name,meta.get("mimeType"),None,now(),fid,(meta.get("parents") or [None])[0],web))
+        existing=con.execute("SELECT id FROM academic_updates WHERE drive_file_id=?",(fid,)).fetchone()
+        if existing:
+            con.execute("UPDATE academic_updates SET drive_folder_id=?, drive_web_url=?, original_name=?, mime_type=? WHERE id=?",(folder_id,web,name,meta.get("mimeType"),existing["id"]))
+            return False
+        con.execute("INSERT INTO academic_updates(kind,category,title,description,course,semester,subject,event_date,external_url,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(mapped,"Examination" if mapped!="Result" else "Results",title or Path(name).stem,description,course,semester,subject,"","",None,name,meta.get("mimeType"),None,now(),fid,folder_id,web))
         return True
-    if con.execute("SELECT id FROM timetables WHERE drive_file_id=?",(fid,)).fetchone(): return False
-    con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,name,name,meta.get("mimeType") or "application/octet-stream",None,now(),fid,(meta.get("parents") or [None])[0],web))
+    existing=con.execute("SELECT id FROM timetables WHERE drive_file_id=?",(fid,)).fetchone()
+    if existing:
+        con.execute("UPDATE timetables SET drive_folder_id=?, drive_web_url=?, original_name=?, mime_type=? WHERE id=?",(folder_id,web,name,meta.get("mimeType"),existing["id"]))
+        return False
+    con.execute("INSERT INTO timetables(title,file_name,original_name,mime_type,file_data,created_at,drive_file_id,drive_folder_id,drive_web_url) VALUES(?,?,?,?,?,?,?,?,?)",(title or Path(name).stem,name,name,meta.get("mimeType") or "application/octet-stream",None,now(),fid,folder_id,web))
     return True
 
 def drive_sync_all():
