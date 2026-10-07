@@ -7529,7 +7529,7 @@ def community_chat():
     empty_chat = '<div class="empty">No messages yet. Start the conversation.</div>'
 
     select_controls = f'''<div class="community-chat-tools">
-        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Community Chat</strong><span class="community-chat-tools-sub">Reply to any message to start a thread</span></div>
+        <div class="community-chat-tools-left"><span class="community-chat-live-dot"></span><strong>Student Chat</strong><span class="community-chat-tools-sub">Reply to any message to start a thread</span></div>
       </div>'''
     if not chat_enabled:
         chat_panel = f'''{select_controls}<div class="community-chat-window">{chat_bubbles or empty_chat}</div><div class="community-chat-disabled-note">&#128274; Sending is currently off. You can still read and manage your own messages.</div>'''
@@ -7616,6 +7616,85 @@ def community_chat():
   .community-chat-page-section .community-chat-tools{padding:0 11px!important}
   .community-chat-page-section .community-chat-window{padding-left:7px!important;padding-right:7px!important}
   .community-chat-page-section .community-message{max-width:92%!important}
+}
+/* ===== COMMUNITY CHAT — PHONE-ONLY CLEAN SHELL ===== */
+@media(max-width:850px){
+  body:has(.community-chat-page-section){
+    padding-bottom:0!important;
+    overflow:hidden!important;
+  }
+  body:has(.community-chat-page-section) .student-nav-compact{
+    min-height:54px!important;
+    height:54px!important;
+    padding:7px 10px!important;
+    box-sizing:border-box!important;
+    box-shadow:0 4px 14px rgba(30,45,55,.06)!important;
+  }
+  body:has(.community-chat-page-section) .student-nav-compact .student-header-tools,
+  body:has(.community-chat-page-section) .student-control-row,
+  body:has(.community-chat-page-section) #vybeNavToggle,
+  body:has(.community-chat-page-section) #vybeStudentBottomNav,
+  body:has(.community-chat-page-section) .student-bottom-spacer,
+  body:has(.community-chat-page-section) .vybe-assistant-fab,
+  body:has(.community-chat-page-section) .vybe-assistant-panel,
+  body:has(.community-chat-page-section) #vybeMobileNav{
+    display:none!important;
+  }
+  body:has(.community-chat-page-section) .student-brand-compact{
+    min-width:0!important;
+    flex:0 0 auto!important;
+  }
+  body:has(.community-chat-page-section) .student-header-back{
+    display:inline-flex!important;
+    min-width:0!important;
+    margin-left:4px!important;
+    padding:7px 8px!important;
+    border:1px solid #d6dfe7!important;
+    border-radius:10px!important;
+    background:#fff!important;
+    color:#172033!important;
+    font-size:12px!important;
+    font-weight:800!important;
+    line-height:1!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section{
+    width:100%!important;
+    max-width:100%!important;
+    height:calc(100dvh - 54px)!important;
+    min-height:0!important;
+    box-sizing:border-box!important;
+    overflow:hidden!important;
+    padding:8px!important;
+    margin:0!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section .community-page-top{
+    display:none!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-page-card{
+    width:100%!important;
+    max-width:none!important;
+    height:100%!important;
+    min-height:0!important;
+    max-height:none!important;
+    margin:0!important;
+    border-radius:16px!important;
+    box-shadow:0 4px 18px rgba(31,48,66,.08)!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-tools{
+    height:48px!important;
+    min-height:48px!important;
+    padding:0 13px!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-tools-sub{
+    display:none!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-window{
+    padding:10px 8px!important;
+  }
+  body:has(.community-chat-page-section) .community-chat-page-section .community-chat-form{
+    padding:7px!important;
+    padding-bottom:calc(7px + env(safe-area-inset-bottom))!important;
+  }
 }
 </style>'''
     body = chat_style + f'''<section class="section community-page-section community-chat-page-section">
@@ -10101,7 +10180,7 @@ def admin_settings():
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Set the student WhatsApp group link and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
 
