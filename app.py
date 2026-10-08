@@ -656,12 +656,12 @@ def _send_webpush_one(endpoint,p256dh,auth,title,message,audience="student",cate
     # filling the Android/Chrome notification shade with separate VYBE entries.
     # This is intentionally not a notification-history store; the browser owns
     # the displayed notification state.
-    tag=("vybe-admin-alerts" if audience=="admin" else "vybe-student-alerts")
+    tag=("vybe-admin-alerts" if audience=="admin" else ("vybe-student-account-alerts" if category=="account" else "vybe-student-alerts"))
     payload=json.dumps({
         "title":display_title,
         "body":clean_message,
         "tag":tag,
-        "renotify":False,
+        "renotify": bool(category == "account"),
         # Account/security alerts (including password approval) must still reach
         # the device notification tray even when VYBE is currently visible.
         # Other categories keep the quiet in-page-toast behavior.
@@ -674,8 +674,14 @@ def _send_webpush_one(endpoint,p256dh,auth,title,message,audience="student",cate
     },separators=(",",":")).encode()
     encrypted=_encrypt_webpush(payload,p256dh,auth)
     jwt=_vapid_jwt(endpoint,private_pem,public_b64,subject)
-    req=URLRequest(endpoint,data=encrypted,headers={"TTL":"60","Content-Type":"application/octet-stream","Content-Encoding":"aes128gcm","Authorization":"vapid t="+jwt+", k="+public_b64},method="POST")
-    with urlopen(req,timeout=2) as response:
+    # Account/security alerts (especially password approval) must remain
+    # deliverable if the phone is briefly offline/backgrounded. Keep a longer
+    # push TTL and a slightly more forgiving provider timeout only for these
+    # infrequent critical alerts; normal notifications stay fast.
+    ttl = "86400" if category == "account" else "300"
+    timeout = 8 if category == "account" else 2
+    req=URLRequest(endpoint,data=encrypted,headers={"TTL":ttl,"Content-Type":"application/octet-stream","Content-Encoding":"aes128gcm","Authorization":"vapid t="+jwt+", k="+public_b64},method="POST")
+    with urlopen(req,timeout=timeout) as response:
         return 200 <= int(response.status) < 300
 
 
@@ -728,7 +734,11 @@ def create_student_notification(student_id,title,message,category="general",targ
     rows=[]
     con=db()
     try:
-        allowed=_student_notification_allowed(con,student_id,category)
+        # Password approval is a security/account event. If a device has a
+        # valid VYBE push subscription, deliver it even if the student has
+        # disabled the optional account category in the profile. This prevents
+        # an approved password request from silently disappearing.
+        allowed = True if category == "account" else _student_notification_allowed(con,student_id,category)
         if not allowed:
             return False
         rows=con.execute(
@@ -5406,7 +5416,7 @@ def push_public_key():
     finally:
         con.close()
 
-_VYBE_PUSH_SERVICE_WORKER_JS = r"""self.addEventListener('push',event=>{let data={};try{data=event.data?event.data.json():{}}catch(_){data={title:'VYBE',body:'You have a new VYBE update.'}}const title=data.title||'VYBE';const options={body:data.body||'You have a new VYBE update.',icon:data.icon||'/vybe-notification-icon.svg',image:data.image||data.icon||'/vybe-notification-icon.svg',badge:data.badge||'/vybe-notification-icon.svg',tag:data.tag||'vybe-student-alerts',renotify:false,data:{url:data.url||'/notification-open?audience=student'}};event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{const visible=list.find(c=>c.visibilityState==='visible');const forceSystem=Boolean(data.forceSystem);if(visible&&!forceSystem){try{visible.postMessage({type:'VYBE_PUSH_RECEIVED',title:title,body:options.body});}catch(_){}return null;}return self.registration.showNotification(title,options);}));});self.addEventListener('notificationclick',event=>{event.notification.close();const url=(event.notification.data&&event.notification.data.url)||'/notification-open?audience=student';event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{for(const c of list){if('focus' in c)return c.navigate(url).then(()=>c.focus());}if(clients.openWindow)return clients.openWindow(url);}));});"""
+_VYBE_PUSH_SERVICE_WORKER_JS = r"""self.addEventListener('push',event=>{let data={};try{data=event.data?event.data.json():{}}catch(_){data={title:'VYBE',body:'You have a new VYBE update.'}}const title=data.title||'VYBE';const options={body:data.body||'You have a new VYBE update.',icon:data.icon||'/vybe-notification-icon.svg',image:data.image||data.icon||'/vybe-notification-icon.svg',badge:data.badge||'/vybe-notification-icon.svg',tag:data.tag||'vybe-student-alerts',renotify:Boolean(data.renotify),requireInteraction:Boolean(data.forceSystem),data:{url:data.url||'/notification-open?audience=student'}};event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{const visible=list.find(c=>c.visibilityState==='visible');const forceSystem=Boolean(data.forceSystem);if(visible&&!forceSystem){try{visible.postMessage({type:'VYBE_PUSH_RECEIVED',title:title,body:options.body});}catch(_){}return null;}return self.registration.showNotification(title,options);}));});self.addEventListener('notificationclick',event=>{event.notification.close();const url=(event.notification.data&&event.notification.data.url)||'/notification-open?audience=student';event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{for(const c of list){if('focus' in c)return c.navigate(url).then(()=>c.focus());}if(clients.openWindow)return clients.openWindow(url);}));});"""
 
 @app.route("/service-worker.js", methods=["GET"])
 def push_service_worker_root():
@@ -11293,7 +11303,7 @@ def admin_password_request_action(rid, action):
     # or break the approval transaction. Existing subscribed devices are enough;
     # the student does not need to register again.
     try:
-        create_student_notification(
+        delivered = create_student_notification(
             int(row["student_id"]),
             "Password request approved",
             "Your VYBE password-change request has been approved. You can now log in with your new password.",
@@ -11301,6 +11311,7 @@ def admin_password_request_action(rid, action):
             target_url="/notification-open?audience=student",
             push=True,
         )
+        app.logger.info("Password approval push for student %s: %s", row["student_id"], "sent" if delivered else "no active device subscription")
     except Exception as exc:
         app.logger.warning("Password approval push failed for student %s: %s", row["student_id"], exc)
 
