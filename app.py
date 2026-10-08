@@ -468,38 +468,17 @@ def send_whatsapp_notification(message, recipient_override=None):
 
 
 def create_admin_notification(kind, title, message, student_id=None):
-    """Create an admin alert without ever breaking the student's request flow.
-
-    WhatsApp delivery and the notification audit are best-effort: a third-party
-    notification problem or an older database schema must never turn a normal
-    password-reset request into a 500 response.
-    """
+    """Send an admin alert without persisting notification history."""
     sent = False
     try:
         sent = send_whatsapp_notification(message)
     except Exception:
         sent = False
-
     try:
-        con = db()
-        try:
-            _ensure_push_schema(con)
-            con.execute(
-                "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent,read_at) VALUES(?,?,?,?,?,?,NULL)",
-                (kind, title, message, student_id, now(), bool(sent)),
-            )
-            con.commit()
-        finally:
-            con.close()
-    except Exception:
-        # The admin notification is supplementary. Never fail the user's
-        # request because an optional alert/audit failed.
-        return sent
-    try:
-        create_admin_push_notification(kind,title,message,student_id)
+        create_admin_push_notification(kind, title, message, student_id)
     except Exception:
         pass
-    return True or sent
+    return bool(sent)
 
 
 
@@ -695,51 +674,43 @@ def _student_notification_allowed(con, student_id, category):
 
 
 def create_student_notification(student_id,title,message,category="general",target_url="/notification-open?audience=student",push=True):
-    """Create one in-VYBE bell item and optionally deliver the same message as Web Push."""
-    con=db(); created=False; nid=None
+    """Deliver a student notification without persisting notification history."""
+    con=db()
     try:
         _ensure_push_schema(con)
-        if not _student_notification_allowed(con,student_id,category):
-            return False
-        con.execute("INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at,category,target_url,push_sent) VALUES(?,?,?,?,?,?,?,?,?,?)",(int(student_id),None,None,title[:160],message[:3000],now(),None,category,target_url,False))
-        row=con.execute("SELECT id FROM student_notifications WHERE recipient_student_id=? ORDER BY id DESC LIMIT 1",(int(student_id),)).fetchone(); nid=int(row["id"]) if row else None
-        con.commit(); created=True
+        allowed=_student_notification_allowed(con,student_id,category)
     except Exception:
-        try: con.rollback()
-        except Exception: pass
-    finally: con.close()
-    if not created or not push: return created
+        allowed=True
+    finally:
+        con.close()
+    if not allowed or not push:
+        return bool(allowed)
     try:
-        con=db(); rows=con.execute("SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id=?",(int(student_id),)).fetchall(); con.close()
+        con=db()
+        rows=con.execute("SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id=?",(int(student_id),)).fetchall()
     except Exception:
         rows=[]
-    sent=_send_push_to_subscriptions(rows,title,message,"student") if rows else 0
-    if nid is not None and sent:
-        try:
-            con=db(); con.execute("UPDATE student_notifications SET push_sent=? WHERE id=?",(True,nid)); con.commit(); con.close()
+    finally:
+        try: con.close()
         except Exception: pass
-    return True
+    return bool(_send_push_to_subscriptions(rows,title,message,"student") if rows else 0)
 
 
 def broadcast_student_notification(title,message,category="academic",target_url="/notification-open?audience=student"):
-    """Create one lightweight inbox record per approved student, then send push only to subscribed devices."""
-    con=db(); eligible=[]
+    """Send to eligible subscribed student devices without storing notification history."""
+    con=db(); eligible=[]; subs=[]
     try:
         _ensure_push_schema(con)
         rows=con.execute("SELECT s.id,COALESCE(p.enabled,TRUE) AS enabled,COALESCE(p.account,TRUE) AS account,COALESCE(p.academic,TRUE) AS academic,COALESCE(p.community,TRUE) AS community,COALESCE(p.announcements,TRUE) AS announcements,COALESCE(p.admin_messages,TRUE) AS admin_messages FROM students s LEFT JOIN notification_preferences p ON p.student_id=s.id WHERE s.status='approved'").fetchall()
-        for row in rows:
-            key={"account":"account","academic":"academic","community":"community","announcement":"announcements","admin":"admin_messages","general":"announcements"}.get(category,"announcements")
-            if bool(row["enabled"]) and bool(row[key]): eligible.append(int(row["id"]))
-        for sid in eligible:
-            con.execute("INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at,category,target_url,push_sent) VALUES(?,?,?,?,?,?,?,?,?,?)",(sid,None,None,title[:160],message[:3000],now(),None,category,target_url,False))
-        con.commit()
-        if not eligible:
-            return 0
-        marks=','.join('?' for _ in eligible)
-        subs=con.execute(f"SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id IN ({marks})",tuple(eligible)).fetchall()
+        key={"account":"account","academic":"academic","community":"community","announcement":"announcements","admin":"admin_messages","general":"announcements"}.get(category,"announcements")
+        eligible=[int(row["id"]) for row in rows if bool(row["enabled"]) and bool(row[key])]
+        if eligible:
+            marks=','.join('?' for _ in eligible)
+            subs=con.execute(f"SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id IN ({marks})",tuple(eligible)).fetchall()
     finally:
         con.close()
-    _send_push_to_subscriptions(subs,title,message,"student") if subs else 0
+    if subs:
+        _send_push_to_subscriptions(subs,title,message,"student")
     return len(eligible)
 
 
@@ -1365,6 +1336,13 @@ def init_db():
     # They are additive and safe for existing Neon/SQLite databases.
     _ensure_password_reset_schema(con)
     _ensure_password_reset_active_index(con)
+
+    try:
+        con.execute("DELETE FROM notifications")
+        con.execute("DELETE FROM student_notifications")
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
 
     for _idx in (
         "CREATE INDEX IF NOT EXISTS idx_resources_type_semester_subject ON resources(resource_type, semester, subject)",
@@ -3839,7 +3817,6 @@ def _admin_update_feed(con, student_id, limit=18):
         ("announcement", "SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 50", "Announcement"),
         ("event", "SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 50", "Campus event"),
         ("admin_solution", "SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 50", "Admin solution"),
-        ("student_notification", "SELECT id,title,message,created_at FROM student_notifications WHERE recipient_student_id=? AND read_at IS NULL ORDER BY id DESC LIMIT 50", "VYBE notification"),
     ]
     items=[]
     for typ,sql,label in sources:
@@ -3915,9 +3892,6 @@ def student_header_notifications_read():
     try:
         items=_admin_update_feed(con,sid,20)
         for x in items:
-            if x["type"]=="student_notification":
-                con.execute("UPDATE student_notifications SET read_at=? WHERE id=? AND recipient_student_id=?",(now(),int(x["id"]),sid))
-                continue
             if con.is_pg:
                 con.execute(
                     "INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",
@@ -4081,9 +4055,9 @@ body:has(.vybe-auth-page) .flash{display:none!important}
 
 ADMIN_PROBLEM_ALERT_CSS = r"""
 .admin-problem-alert-wrap{position:relative;display:inline-flex;align-items:center}
-.admin-problem-alert{position:relative;width:40px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;text-decoration:none;box-shadow:0 8px 20px rgba(23,32,51,.14);transition:.18s ease;cursor:pointer}
-.admin-problem-alert:hover{transform:translateY(-1px);background:#202b43;box-shadow:0 12px 26px rgba(23,32,51,.20)}
-.admin-problem-alert svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.admin-problem-alert{position:relative!important;width:46px!important;height:46px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:0!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:15px!important;background:linear-gradient(145deg,#22314b,#101a2c)!important;color:#fff!important;text-decoration:none!important;box-shadow:0 10px 24px rgba(16,26,44,.20),inset 0 1px 0 rgba(255,255,255,.08)!important;transition:transform .18s ease,box-shadow .18s ease,background .18s ease!important;cursor:pointer!important;box-sizing:border-box!important}
+.admin-problem-alert:hover{transform:translateY(-2px)!important;background:linear-gradient(145deg,#2b3c5b,#142039)!important;box-shadow:0 14px 30px rgba(16,26,44,.24),inset 0 1px 0 rgba(255,255,255,.10)!important}
+.admin-bell-icon{width:29px!important;height:29px!important;display:grid!important;place-items:center!important;border-radius:10px!important;background:rgba(255,255,255,.10)!important;color:#fff!important}.admin-bell-icon svg{width:19px!important;height:19px!important;fill:none!important;stroke:currentColor!important;stroke-width:1.9!important;stroke-linecap:round!important;stroke-linejoin:round!important}
 .admin-problem-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950;box-shadow:0 4px 10px rgba(239,77,82,.28)}
 .admin-problem-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(420px,calc(100vw - 28px));background:rgba(255,255,255,.985);border:1px solid #dfe5ea;border-radius:19px;box-shadow:0 24px 60px rgba(20,37,55,.20);overflow:hidden;z-index:3000}
 .admin-problem-alert-panel[hidden]{display:none}
@@ -4096,8 +4070,9 @@ ADMIN_PROBLEM_ALERT_CSS = r"""
 .admin-problem-alert-dot{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#fff1f1;color:#c44d55;font-size:13px;font-weight:950}
 .admin-problem-alert-copy{min-width:0;flex:1}.admin-problem-alert-copy strong{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.admin-problem-alert-copy small{display:block;margin-top:3px;color:#7b8793;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.admin-problem-alert-copy p{margin:5px 0 0;color:#687482;font-size:10px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .admin-problem-alert-arrow{font-size:19px;line-height:1;color:#a2adb8;margin-top:5px}.admin-problem-alert-empty{padding:28px 15px;text-align:center;color:#7b8793;font-size:12px}
-.admin-problem-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}
-@media(max-width:800px){.admin-problem-alert{width:38px;height:38px}.admin-problem-alert-panel{position:fixed;top:61px;right:10px;width:min(420px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.admin-problem-alert-list{max-height:calc(100vh - 180px)}}
+.admin-problem-alert-all{display:block;padding:13px 15px;border-top:1px solid #edf0f3;background:#fbfcfd;color:#2f6fca;font-size:11px;font-weight:900;text-align:center;text-decoration:none}.admin-problem-alert-dot.registration,.admin-problem-alert-dot.recovery{background:#edf5ff!important;color:#2f6fca!important}.admin-problem-alert-dot.registration svg,.admin-problem-alert-dot.recovery svg{width:16px!important;height:16px!important;fill:none!important;stroke:currentColor!important;stroke-width:1.7!important;stroke-linecap:round!important;stroke-linejoin:round!important}.admin-alert-panel-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;padding:10px!important;border-top:1px solid #edf0f3!important;background:#fbfcfe!important;box-sizing:border-box!important}.admin-alert-panel-actions>*{min-width:0!important;box-sizing:border-box!important}.admin-alert-panel-actions a,.admin-alert-enable{min-height:42px!important;width:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:7px!important;border-radius:12px!important;padding:0 10px!important;font:inherit!important;font-size:11px!important;font-weight:850!important;line-height:1.15!important;text-decoration:none!important;white-space:normal!important;box-sizing:border-box!important}.admin-alert-enable{border:1px solid #c7dbee!important;background:#edf6ff!important;color:#245aa8!important;cursor:pointer!important}.admin-alert-panel-actions a{border:1px solid #e0e6eb!important;background:#fff!important;color:#344150!important}.admin-alert-panel-actions a:last-child{grid-column:1 / -1!important}.admin-action-icon{width:22px!important;height:22px!important;display:grid!important;place-items:center!important;flex:0 0 22px!important;border-radius:7px!important;background:#eaf2fb!important;color:#2f6fca!important;font-size:11px!important;font-weight:900!important}.admin-action-icon svg{width:14px!important;height:14px!important;fill:none!important;stroke:currentColor!important;stroke-width:1.8!important;stroke-linecap:round!important;stroke-linejoin:round!important}.admin-alert-push-status{grid-column:1 / -1!important;text-align:center!important;font-size:10px!important;line-height:1.35!important;color:#718090!important;padding:3px 4px!important;box-sizing:border-box!important}.admin-alert-push-status.is-success{color:#3f7d20!important}.admin-alert-push-status.is-error{color:#9a4c3e!important}
+
+@media(max-width:800px){.admin-problem-alert{width:44px!important;height:44px!important}.admin-problem-alert-panel{position:fixed;top:61px;right:10px;width:min(420px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:18px}.admin-problem-alert-list{max-height:calc(100vh - 180px)}}
 """
 
 _ADMIN_HEADER_CACHE_TTL = 20.0
@@ -4144,23 +4119,26 @@ def layout(title, body, admin=False):
             f'<a class="admin-problem-alert-item" href="/admin/problems#problem-{int(x["id"])}"><span class="admin-problem-alert-dot">!</span><span class="admin-problem-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["name"])} · {esc(x["category"])} · {esc(x["created_at"])}</small><p>{esc(x["description"])}</p></span><span class="admin-problem-alert-arrow">›</span></a>'
             for x in _admin_problem_rows
         ) or '<div class="admin-problem-alert-empty">No active student problems.</div>'
+        _live_items=[]
         try:
-            _admin_notif_con=db()
-            _ensure_push_schema(_admin_notif_con)
-            _admin_notifs=_admin_notif_con.execute("SELECT id,title,message,created_at FROM notifications WHERE read_at IS NULL ORDER BY id DESC LIMIT 12").fetchall()
+            _live_con=db()
+            _pending_regs=_live_con.execute("SELECT id,name,student_id,created_at FROM students WHERE status='pending' ORDER BY id DESC LIMIT 8").fetchall()
+            _pending_resets=_live_con.execute("SELECT pr.id,pr.requested_at,s.name,s.student_id FROM password_reset_requests pr JOIN students s ON s.id=pr.student_id WHERE pr.status='pending' ORDER BY pr.id DESC LIMIT 8").fetchall()
         except Exception:
-            _admin_notifs=[]
+            _pending_regs=[]; _pending_resets=[]
         finally:
-            try:
-                _admin_notif_con.close()
-            except Exception:
-                pass
-        _admin_notif_count=len(_admin_notifs)
-        _admin_notif_items=''.join(f'<a class="admin-problem-alert-item" href="/admin/notifications#notification-{int(x["id"])}"><span class="admin-problem-alert-dot">•</span><span class="admin-problem-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["created_at"])}</small><p>{esc(x["message"])}</p></span><span class="admin-problem-alert-arrow">›</span></a>' for x in _admin_notifs) or '<div class="admin-problem-alert-empty">No new VYBE notifications.</div>'
-        _combined_count=_problem_count+_admin_notif_count
+            try: _live_con.close()
+            except Exception: pass
+        for x in _pending_regs:
+            _live_items.append(f'<a class="admin-problem-alert-item" href="/admin/students#student-{int(x["id"])}"><span class="admin-problem-alert-dot registration" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"></path><circle cx="10" cy="7" r="3"></circle><path d="M16 8h4M18 6v4"></path></svg></span><span class="admin-problem-alert-copy"><strong>New student registration</strong><small>{esc(x["name"])} · {esc(x["student_id"])} · {esc(x["created_at"])}</small><p>{esc(x["name"])} is waiting for approval.</p></span><span class="admin-problem-alert-arrow">›</span></a>')
+        for x in _pending_resets:
+            _live_items.append(f'<a class="admin-problem-alert-item" href="/admin/password-requests"><span class="admin-problem-alert-dot recovery" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3"></path><rect x="5" y="11" width="14" height="9" rx="2"></rect><circle cx="12" cy="15" r="1.2"></circle></svg></span><span class="admin-problem-alert-copy"><strong>Password recovery request</strong><small>{esc(x["name"])} · {esc(x["student_id"])} · {esc(x["requested_at"])}</small><p>A student is waiting for password-recovery approval.</p></span><span class="admin-problem-alert-arrow">›</span></a>')
+        _live_notif_count=len(_pending_regs)+len(_pending_resets)
+        _combined_count=_problem_count+_live_notif_count
         _combined_badge=f'<span class="admin-problem-alert-count">{_combined_count if _combined_count < 100 else "99+"}</span>' if _combined_count else ''
-        _combined_items=f'<div class="admin-alert-section-title">VYBE notifications</div>{_admin_notif_items}<div class="admin-alert-section-title admin-alert-section-spaced">Student problems</div>{_problem_items}'
-        admin_problem_alert = f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminProblemBell" type="button" aria-label="VYBE notifications" aria-expanded="false" aria-controls="vybeAdminProblemPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>{_combined_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminProblemPanel" hidden><div class="admin-problem-alert-head"><div><strong>VYBE Notifications</strong><small>Registrations, recovery, messages &amp; student problems</small></div><span id="vybeAdminProblemCount">{_combined_count} new</span></div><div class="admin-problem-alert-list" id="vybeAdminProblemList">{_combined_items}</div><div class="admin-alert-panel-actions"><button id="vybeAdminBellEnableNotifications" type="button" class="admin-alert-enable">Enable device notifications</button><span id="vybeAdminBellPushStatus" class="admin-alert-push-status" hidden aria-live="polite"></span><a href="/admin/notifications">Notification settings →</a><a href="/admin/problems">Problems &amp; Solutions →</a></div></div></div>"""
+        _live_items_html=''.join(_live_items) or '<div class="admin-problem-alert-empty">No new requests need attention.</div>'
+        _combined_items=f'<div class="admin-alert-section-title">Needs attention</div>{_live_items_html}<div class="admin-alert-section-title admin-alert-section-spaced">Student problems</div>{_problem_items}'
+        admin_problem_alert = f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminProblemBell" type="button" aria-label="VYBE notifications" aria-expanded="false" aria-controls="vybeAdminProblemPanel"><span class="admin-bell-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span>{_combined_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminProblemPanel" hidden><div class="admin-problem-alert-head"><div><strong>VYBE Notifications</strong><small>Requests and student problems that need attention</small></div><span id="vybeAdminProblemCount">{_combined_count}</span></div><div class="admin-problem-alert-list" id="vybeAdminProblemList">{_combined_items}</div><div class="admin-alert-panel-actions"><button id="vybeAdminBellEnableNotifications" type="button" class="admin-alert-enable"><span class="admin-action-icon"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span>Enable on this device</span></button><span id="vybeAdminBellPushStatus" class="admin-alert-push-status" hidden aria-live="polite"></span><a href="/admin/notifications"><span class="admin-action-icon">⚙</span><span>Notification settings</span></a><a href="/admin/problems"><span class="admin-action-icon">?</span><span>Problems &amp; Solutions</span></a></div></div></div>"""
         header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
         bottom_nav = ""
     elif student:
@@ -4191,7 +4169,7 @@ def layout(title, body, admin=False):
             )
         _alert_panel=''.join(_alert_items) or '<div class="vybe-header-alert-empty">No new updates.</div>'
         _count_badge=f'<span class="vybe-alert-count">{_unread_count}</span>' if _unread_count else ''
-        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span><span class="vybe-header-alert-label">New</span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div><div class="vybe-header-alert-actions"><a href="/profile#notification-settings">Notification settings →</a></div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
+        header=f'''<div class="navin student-nav-compact">{header_lead}<nav class="student-desktop-links" aria-label="Student navigation"><a href="/dashboard">Home</a><a href="/academics">Academics</a><a href="/community">Community</a><a href="/issues">Help Desk</a><a href="/events">Events</a></nav><div class="student-header-tools"><a class="student-header-updates" href="/updates">Updates</a><div class="vybe-header-alert-wrap"><button class="vybe-header-alert" id="vybeHeaderAlertButton" type="button" aria-label="Show new VYBE updates" aria-expanded="false" aria-controls="vybeHeaderAlertPanel"><span class="vybe-header-alert-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg></span>{_count_badge}</button><div class="vybe-header-alert-panel" id="vybeHeaderAlertPanel" hidden><div class="vybe-header-alert-head"><div><strong>New updates</strong><small>What has arrived since you last checked</small></div><span id="vybeHeaderAlertCount">{_unread_count}</span></div><div class="vybe-header-alert-list">{_alert_panel}</div><div class="vybe-header-alert-actions"><a href="/profile#notification-settings">Notification settings →</a></div></div></div><button class="nav-toggle student-menu" id="vybeNavToggle" type="button" aria-label="Open menu" aria-expanded="false">Menu</button></div></div>
 
 <div class="student-control-row"><form id="vybeStudentSearchForm" class="student-search" action="/search" method="get" autocomplete="off"><input name="q" placeholder="Search campus" aria-label="Search campus" autocomplete="off"><div id="vybeStudentSearchSuggestions" class="vybe-search-suggestions mobile-direct-suggestions" role="listbox"><a class="vybe-search-suggestion" role="option" href="/academic-hub/study-material"><span>Study Material</span><span>Academics</span></a><a class="vybe-search-suggestion" role="option" href="/academic-hub/notes"><span>Notes</span><span>Study Notes</span></a><a class="vybe-search-suggestion" role="option" href="/timetable"><span>Timetable</span><span>Campus timetable</span></a><a class="vybe-search-suggestion" role="option" href="/papers"><span>Previous Papers</span><span>PYQ Papers</span></a><a class="vybe-search-suggestion" role="option" href="/updates?kind=Admit%20Card"><span>Admit Card</span><span>Exam updates</span></a><a class="vybe-search-suggestion" role="option" href="/updates"><span>Results &amp; Updates</span><span>Latest updates</span></a></div></form></div>'''
         bottom_nav = f'''<nav id="vybeStudentBottomNav" class="student-bottom-nav" aria-label="Student navigation"><button id="vybeBottomMenuButton" class="mobile-menu-nav" type="button" aria-label="Open menu" aria-expanded="false" onclick="return window.vybeToggleStudentMenu(event)"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></span><span class="mobile-menu-label">Menu</span></button><a class="mobile-home-nav active" href="/dashboard"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"></path></svg></span><span class="mobile-menu-label">Home</span></a><a class="mobile-profile-nav" href="/profile"><span class="vybe-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.5 3.1-5.2 7-5.2s6.2 1.7 7 5.2"></path></svg></span><span class="mobile-menu-label">Profile</span></a></nav><div class="student-bottom-spacer"></div>'''
@@ -4303,7 +4281,7 @@ body{background-attachment:scroll!important}
   const panel=document.getElementById('vybeAdminProblemPanel');
   if(!bell||!panel)return;
   function closePanel(){panel.hidden=true;bell.setAttribute('aria-expanded','false');}
-  bell.addEventListener('click',function(e){e.stopPropagation();const open=panel.hidden;panel.hidden=!open;bell.setAttribute('aria-expanded',open?'true':'false');if(open){fetch('/admin/notifications/read',{method:'POST',credentials:'same-origin',headers:{'X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{}).content||''}}).catch(()=>{});}});
+  bell.addEventListener('click',function(e){e.stopPropagation();const open=panel.hidden;panel.hidden=!open;bell.setAttribute('aria-expanded',open?'true':'false');});
   panel.addEventListener('click',function(e){e.stopPropagation();});
   document.addEventListener('click',function(e){if(!panel.hidden&&!e.target.closest('.admin-problem-alert-wrap'))closePanel();});
   document.addEventListener('keydown',function(e){if(e.key==='Escape')closePanel();});
@@ -4316,7 +4294,7 @@ body{background-attachment:scroll!important}
 @media(max-width:760px){.ai-settings-head{display:block}.ai-live-status{margin-top:16px;width:max-content}.ai-control-card{display:block}.ai-toggle-button{margin-top:18px;width:100%;justify-content:center}.ai-shortcuts-head{display:block}.ai-selected-count{display:inline-block;margin-top:10px}.ai-shortcut-grid{grid-template-columns:1fr}.ai-save-row{display:block}.ai-save-row .btn{width:100%;margin-top:12px}}
 
 /* ===== HEADER ADMIN ALERTS ===== */
-.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16)}.vybe-header-alert-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:#fff;border:1px solid #dfe5ea;border-radius:16px;box-shadow:0 18px 44px rgba(20,37,55,.18);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 15px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:3px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:5px 8px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:360px;overflow:auto;padding:7px}.vybe-header-alert-item{width:100%;display:flex;align-items:flex-start;gap:10px;padding:11px 10px;border-radius:11px;color:#17202b;background:#f8fbff;border:0;text-align:left;box-sizing:border-box}.vybe-header-alert-item + .vybe-header-alert-item{margin-top:4px}.vybe-alert-type{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;border-radius:8px;background:#eaf7df;color:#4d8f21;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;font-size:12px;line-height:1.3}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vybe-alert-copy p{margin:5px 0 0;color:#687482;font-size:10px;line-height:1.4;white-space:normal}.vybe-alert-open{flex:0 0 auto;padding:4px 6px;border-radius:6px;background:#eaf7df;color:#4d8f21;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-empty{padding:24px 15px;text-align:center;color:#7b8793;font-size:12px}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:39px;height:36px;padding:0;justify-content:center;border-radius:10px}.vybe-header-alert-icon{width:22px;height:22px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:16px}.vybe-header-alert-list{max-height:calc(100vh - 160px)}}
+.vybe-header-alert-wrap{position:relative;display:inline-flex;align-items:center}.vybe-header-alert{position:relative;height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 9px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#172033;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:850;box-shadow:0 8px 22px rgba(23,32,51,.16)}.vybe-header-alert-icon{width:28px;height:28px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.12);color:#fff}.vybe-header-alert-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vybe-alert-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#ef4d52;color:#fff;border:2px solid #fff;font-size:9px;font-weight:950}.vybe-header-alert-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(410px,calc(100vw - 28px));background:#fff;border:1px solid #dfe5ea;border-radius:16px;box-shadow:0 18px 44px rgba(20,37,55,.18);overflow:hidden;z-index:3000}.vybe-header-alert-panel[hidden]{display:none}.vybe-header-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 15px;border-bottom:1px solid #edf0f3}.vybe-header-alert-head strong{display:block;color:#17202b;font-size:14px}.vybe-header-alert-head small{display:block;margin-top:3px;color:#7b8793;font-size:10px}.vybe-header-alert-head>span{padding:5px 8px;border-radius:999px;background:#edf5ff;color:#2f6fca;font-size:10px;font-weight:900}.vybe-header-alert-list{max-height:360px;overflow:auto;padding:7px}.vybe-header-alert-item{width:100%;display:flex;align-items:flex-start;gap:10px;padding:11px 10px;border-radius:11px;color:#17202b;background:#f8fbff;border:0;text-align:left;box-sizing:border-box}.vybe-header-alert-item + .vybe-header-alert-item{margin-top:4px}.vybe-alert-type{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;border-radius:8px;background:#eaf7df;color:#4d8f21;font-size:10px;font-weight:950;text-transform:uppercase}.vybe-alert-copy{min-width:0;flex:1}.vybe-alert-copy strong{display:block;font-size:12px;line-height:1.3}.vybe-alert-copy small{display:block;margin-top:3px;color:#84909c;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vybe-alert-copy p{margin:5px 0 0;color:#687482;font-size:10px;line-height:1.4;white-space:normal}.vybe-alert-open{flex:0 0 auto;padding:4px 6px;border-radius:6px;background:#eaf7df;color:#4d8f21;font-size:8px;font-weight:950;letter-spacing:.3px}.vybe-header-alert-empty{padding:24px 15px;text-align:center;color:#7b8793;font-size:12px}@media(max-width:850px){.vybe-header-alert-label{display:none}.vybe-header-alert{width:44px!important;min-width:44px!important;height:44px!important;padding:0!important;justify-content:center;border-radius:14px!important}.vybe-header-alert-icon{width:28px;height:28px}.vybe-header-alert-panel{position:fixed;top:61px;right:10px;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 82px);border-radius:16px}.vybe-header-alert-list{max-height:calc(100vh - 160px)}}
 
 /* ===== SINGLE MOBILE STUDENT SHELL ===== */
 @media (max-width:850px){
@@ -5250,24 +5228,48 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
 (function(){{
 async function enableVYBEPush(statusId,scope){{
   const status=document.getElementById(statusId);
-  const show=(message,ok)=>{{if(!status)return;status.textContent=message;status.classList.remove('is-success','is-error');status.classList.add(ok?'is-success':'is-error');status.hidden=false;}};
+  const csrf=()=>((document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||'');
+  const show=(message,ok)=>{{if(!status)return;status.textContent=message;status.className='notification-push-status '+(ok?'is-success':'is-error');status.hidden=false;}};
+  const showBlocked=()=>{{
+    if(!status)return;
+    status.className='notification-push-status is-error notification-permission-card';
+    status.hidden=false;
+    const isAndroid=/Android/i.test(navigator.userAgent);
+    const isChrome=/Chrome|CriOS/i.test(navigator.userAgent)&&!/Edg|OPR|SamsungBrowser/i.test(navigator.userAgent);
+    const isSafari=/Safari/i.test(navigator.userAgent)&&!/Chrome|CriOS/i.test(navigator.userAgent);
+    let steps='Open your browser settings for this site and set Notifications to Allow.';
+    if(isAndroid&&isChrome) steps='Chrome: open the VYBE page → tap the site information icon beside the address → Permissions → Notifications → Allow.';
+    else if(isSafari) steps='Safari: open the website settings for VYBE and allow Notifications for this site.';
+    else if(isChrome) steps='Chrome: open the site information icon beside the address → Permissions → Notifications → Allow.';
+    status.innerHTML='<div class="notification-permission-inner"><div class="notification-permission-icon" aria-hidden="true">🔔</div><div class="notification-permission-copy"><strong>Notifications are blocked</strong><p>VYBE cannot change a blocked browser permission automatically. Allow notifications for VYBE once, then return here.</p><div class="notification-permission-steps">'+steps+'</div><button type="button" class="notification-permission-retry">I have allowed it — check again</button></div></div>';
+    const retry=status.querySelector('.notification-permission-retry');
+    if(retry)retry.addEventListener('click',()=>{{
+      if(Notification.permission==='granted') enableVYBEPush(statusId,scope);
+      else if(Notification.permission==='default') enableVYBEPush(statusId,scope);
+      else showBlocked();
+    }});
+  }};
   try{{
-    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw new Error('unsupported');
+    if(!window.isSecureContext||!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){{show('Device notifications are not supported in this browser.',false);return false;}}
+    let permission=Notification.permission;
+    if(permission==='denied'){{showBlocked();return false;}}
+    if(permission!=='granted'){{
+      permission=await Notification.requestPermission();
+      if(permission==='denied'){{showBlocked();return false;}}
+      if(permission!=='granted'){{show('Notifications were not enabled on this device.',false);return false;}}
+    }}
     const oldRegs=await navigator.serviceWorker.getRegistrations();
     await Promise.all(oldRegs.filter(r=>r.active&&r.active.scriptURL.includes('/push/service-worker.js')).map(r=>r.unregister().catch(()=>false)));
     const reg=await navigator.serviceWorker.register('/service-worker.js',{{scope:'/',updateViaCache:'none'}});
     await navigator.serviceWorker.ready;
     const key=await fetch('/push/public-key',{{credentials:'same-origin',cache:'no-store'}}).then(async r=>{{const d=await r.json().catch(()=>({{}}));if(!r.ok||!d.publicKey)throw new Error('setup');return d;}});
-    let permission=Notification.permission;
-    if(permission!=='granted')permission=await Notification.requestPermission();
-    if(permission!=='granted'){{show(permission==='denied'?'Notifications are blocked for VYBE in this browser. You can allow them from browser site settings.':'VYBE notifications were not enabled.',false);return false;}}
     const existing=await reg.pushManager.getSubscription();
     const sub=existing||await reg.pushManager.subscribe({{userVisibleOnly:true,applicationServerKey:(()=>{{const s=key.publicKey.replace(/-/g,'+').replace(/_/g,'/');const p=s+'='.repeat((4-s.length%4)%4);const raw=atob(p);return Uint8Array.from(raw,c=>c.charCodeAt(0));}})()}});
-    const r=await fetch('/push/subscribe',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||''}},body:JSON.stringify({{subscription:sub.toJSON()}})}});
+    const r=await fetch('/push/subscribe',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':csrf()}},body:JSON.stringify({{subscription:sub.toJSON()}})}});
     if(!r.ok)throw new Error('save');
-    show('Notifications are on for this device.',true);
+    show('✓ Notifications are enabled on this device.',true);
     return true;
-  }}catch(e){{show('VYBE notifications could not be enabled right now. Please try again.',false);return false;}}
+  }}catch(e){{show('VYBE could not finish notification setup right now. Please try again.',false);return false;}}
 }}
 window.vybeEnableNotifications=enableVYBEPush;
 const regBtn=document.getElementById('vybeEnableRegistrationNotifications');if(regBtn)regBtn.addEventListener('click',()=>enableVYBEPush('vybeRegistrationNotificationStatus','student'));
@@ -6443,62 +6445,15 @@ def chat_alias():
 @app.route("/student/notifications", methods=["GET"])
 @student_required
 def student_notifications():
-    con = db()
-    try:
-        my_id = session["student_db_id"]
-        try:
-            rows = con.execute(
-                "SELECT sn.id, sn.reply_message_id, sn.title, sn.message, sn.created_at, sn.read_at, s.name AS sender_name "
-                "FROM student_notifications sn LEFT JOIN students s ON s.id=sn.sender_student_id "
-                "WHERE sn.recipient_student_id=? ORDER BY sn.id DESC LIMIT 20",
-                (my_id,),
-            ).fetchall()
-        except Exception:
-            # Notification storage is optional. Keep the bell empty if an older
-            # deployment has not completed the migration yet.
-            try: con.rollback()
-            except Exception: pass
-            return jsonify({"unread": 0, "notifications": []})
-        unread = sum(1 for r in rows if not r["read_at"])
-        return jsonify({"unread": unread, "notifications": [{
-            "id": int(r["id"]),
-            "reply_message_id": int(r["reply_message_id"]) if r["reply_message_id"] else None,
-            "title": r["title"],
-            "message": r["message"],
-            "created_at": r["created_at"],
-            "read": bool(r["read_at"]),
-            "sender_name": r["sender_name"] or "Student",
-        } for r in rows]})
-    finally:
-        con.close()
+    # VYBE deliberately does not keep a notification inbox/history.
+    return jsonify({"unread":0,"notifications":[]})
 
 
 @app.route("/student/notifications/read", methods=["POST"])
 @student_required
 def student_notifications_read():
-    con = db()
-    try:
-        my_id = session["student_db_id"]
-        nid = request.form.get("notification_id", "").strip()
-        if nid:
-            try:
-                con.execute("UPDATE student_notifications SET read_at=? WHERE id=? AND recipient_student_id=?", (now(), int(nid), my_id))
-            except (TypeError, ValueError):
-                pass
-        else:
-            con.execute("UPDATE student_notifications SET read_at=? WHERE recipient_student_id=? AND read_at IS NULL", (now(), my_id))
-        con.commit()
-        return jsonify({"ok": True})
-    except Exception:
-        try:
-            con.rollback()
-        except Exception:
-            pass
-        # Notifications are optional; a missing/older notification table must
-        # never break the student's chat or navigation.
-        return jsonify({"ok": False})
-    finally:
-        con.close()
+    # Compatibility endpoint for older clients; nothing is stored.
+    return jsonify({"ok":True,"stored":False})
 
 
 @app.route("/announcements")
@@ -6654,9 +6609,11 @@ if(idForm)idForm.addEventListener('submit',()=>{if(idButton){idButton.disabled=t
 .id-card-panel{padding:23px!important;border:1px solid #dfe5ea!important;border-radius:22px!important;background:#fff!important;box-shadow:0 10px 30px rgba(23,32,43,.055)!important}.id-card-heading{display:flex;justify-content:space-between;align-items:center;gap:18px}.id-card-heading h2{margin:3px 0 5px!important;font-size:21px!important}.id-card-heading p{margin:0!important;color:#687482!important;font-size:13px!important}.mini-label{font-size:10px!important;font-weight:800!important;letter-spacing:1.1px!important;color:#2f6fca!important}.id-card-icon{width:52px;height:52px;border-radius:16px;background:#edf8e6;color:#4f8f25;display:grid;place-items:center;font-weight:900}.id-card-current{display:flex;align-items:center;gap:13px;margin-top:18px;padding:13px;border:1px solid #e3e8ed;border-radius:16px;background:#f8fafc}.id-file-icon{width:40px;height:40px;border-radius:12px;background:#eaf2fb;color:#2f6fca;display:grid;place-items:center;font-weight:800;flex:0 0 auto}.id-file-info{min-width:0;flex:1}.id-file-info strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#17202b;font-size:13px}.id-file-info span{display:block;color:#687482;font-size:11px;margin-top:3px}.id-upload-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.upload-file{display:flex;align-items:center;min-height:46px;border:1px dashed #b9c8d8;border-radius:13px;background:#f8fbff;color:#2f6fca;padding:0 14px;cursor:pointer;font-weight:700;font-size:13px}.upload-file input{display:none}.profile-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:46px;border-radius:13px;padding:0 17px;font-weight:750;text-decoration:none;cursor:pointer;box-sizing:border-box}.profile-primary{border:1px solid #245aa8!important;background:#2f6fca!important;color:#fff!important;box-shadow:0 8px 18px rgba(47,111,202,.18)!important}.profile-primary:hover{background:#245aa8!important}.profile-outline{border:1px solid #cbd8e5!important;background:#fff!important;color:#245aa8!important;min-height:38px!important;padding:0 13px!important}.profile-delete{margin-top:9px;border:0;background:none;color:#b34b4b;font-size:12px;font-weight:700;cursor:pointer;padding:3px 0}.id-delete-form{margin:0}
 .profile-notification-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}.profile-notification-grid label{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #dfe5ea;border-radius:12px;background:#fafbfd;color:#344150;font-size:12px}.profile-notification-grid input{width:auto!important}.profile-notification-grid + .actions{margin-top:12px}.profile-stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.profile-stat-button{width:100%;display:flex;align-items:center;gap:13px;text-align:left;padding:16px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;cursor:pointer;box-shadow:0 9px 25px rgba(23,32,43,.05);transition:.18s}.profile-stat-button:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(23,32,43,.09)}.profile-stat-button .stat-icon{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-size:18px;font-weight:900}.profile-stat-button.blue .stat-icon{background:#eaf2fb;color:#2f6fca}.profile-stat-button.green .stat-icon{background:#edf8e6;color:#4f8f25}.profile-stat-button span:nth-child(2){flex:1}.profile-stat-button strong{display:block;font-size:20px;color:#17202b}.profile-stat-button small{display:block;color:#687482;font-size:11px;margin-top:2px}.profile-stat-button b{font-size:11px;color:#2f6fca}.profile-stat-button.green b{color:#4f8f25}
 /* ===== NOTIFICATION UI ===== */
-.profile-notification-actions{margin-top:14px;display:grid;gap:10px}.profile-device-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.notification-save,.profile-device-enable,.profile-device-disable{min-height:48px!important;border-radius:14px!important;gap:9px!important;font-size:13px!important;box-shadow:none!important}.notification-action-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:8px;font-size:13px;flex:0 0 24px}.notification-save .notification-action-icon{background:rgba(255,255,255,.16);color:#fff}.profile-device-enable{background:#eef6ff!important;border:1px solid #c8dced!important;color:#245aa8!important}.profile-device-enable .notification-action-icon{background:#dcecff;color:#245aa8}.profile-device-disable{background:#fafbfd!important;border:1px solid #dfe5ea!important;color:#687482!important}.profile-device-disable .notification-action-icon{background:#eef1f4;color:#687482}.notification-push-status{margin-top:10px;padding:10px 12px;border-radius:12px;font-size:11px;line-height:1.4;border:1px solid #dfe5ea;background:#f8fafc;color:#687482}.notification-push-status.is-success{background:#edf8e6;border-color:#d5ebc8;color:#3f7d20}.notification-push-status.is-error{background:#fff7f5;border-color:#f0d8d2;color:#9a4c3e}.vybe-header-alert-actions{display:grid;grid-template-columns:1fr;gap:8px;padding:9px;border-top:1px solid #edf0f3;background:#fbfcfe}.vybe-header-alert-actions button,.vybe-header-alert-actions a{min-height:38px;display:flex;align-items:center;justify-content:center;padding:0 10px;border-radius:11px;font:inherit;font-size:11px;font-weight:800;text-decoration:none;box-sizing:border-box}.vybe-header-alert-actions button{border:1px solid #cbdced;background:#eef6ff;color:#245aa8;cursor:pointer}.vybe-header-alert-actions a{border:1px solid #e0e6eb;background:#fff;color:#344150}.admin-alert-section-title{padding:9px 10px 5px;font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#2f6fca}.admin-alert-section-spaced{margin-top:6px;border-top:1px solid #edf0f3;padding-top:12px}.admin-alert-panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px;border-top:1px solid #edf0f3;background:#fbfcfe}.admin-alert-panel-actions a,.admin-alert-enable{min-height:36px;display:flex;align-items:center;justify-content:center;border-radius:10px;padding:0 9px;font:inherit;font-size:10px;font-weight:800;text-decoration:none;box-sizing:border-box}.admin-alert-enable{border:1px solid #cbdced;background:#eef6ff;color:#245aa8;cursor:pointer}.admin-alert-panel-actions a{border:1px solid #e0e6eb;background:#fff;color:#344150}.admin-alert-panel-actions a:last-child{grid-column:1/-1}.admin-alert-push-status{grid-column:1/-1;text-align:center;font-size:10px;color:#718090;padding:2px 4px}.admin-alert-push-status.is-success{color:#3f7d20}.admin-alert-push-status.is-error{color:#9a4c3e}
+.profile-notification-actions{margin-top:16px;display:grid;gap:10px}.profile-device-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.notification-save,.profile-device-enable,.profile-device-disable{width:100%!important;min-height:50px!important;border-radius:15px!important;gap:10px!important;font-size:13px!important;line-height:1.2!important;box-shadow:none!important;white-space:normal!important}.notification-action-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:8px;font-size:13px;flex:0 0 24px}.notification-save .notification-action-icon{background:rgba(255,255,255,.16);color:#fff}.profile-device-enable{background:#eef6ff!important;border:1px solid #c8dced!important;color:#245aa8!important}.profile-device-enable .notification-action-icon{background:#dcecff;color:#245aa8}.profile-device-disable{background:#fafbfd!important;border:1px solid #dfe5ea!important;color:#687482!important}.profile-device-disable .notification-action-icon{background:#eef1f4;color:#687482}.notification-push-status{display:block;box-sizing:border-box;width:100%;margin-top:10px;padding:12px 13px;border-radius:13px;font-size:11px;line-height:1.45;border:1px solid #dfe5ea;background:#f8fafc;color:#687482;overflow-wrap:anywhere}.notification-push-status.is-success{background:#edf8e6;border-color:#d5ebc8;color:#3f7d20} .notification-push-status.is-error{background:#fff7f5;border-color:#f0d8d2;color:#9a4c3e}.notification-permission-card{padding:0!important;overflow:hidden}.notification-permission-inner{display:flex;align-items:flex-start;gap:12px;padding:14px}.notification-permission-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:12px;background:#eef5ff;border:1px solid #d7e5f5;font-size:18px}.notification-permission-copy{min-width:0}.notification-permission-copy strong{display:block;color:#273544;font-size:13px;line-height:1.3;margin-bottom:4px}.notification-permission-copy p{margin:0 0 9px;color:#687482;font-size:11px;line-height:1.5}.notification-permission-steps{padding:9px 10px;border-radius:10px;background:#f7f9fb;border:1px solid #e6ebf0;color:#536171;font-size:10.5px;line-height:1.5}.notification-permission-retry{margin-top:10px;min-height:38px;padding:0 12px;border:1px solid #c8dced;border-radius:10px;background:#eef6ff;color:#245aa8;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.notification-permission-retry:hover{background:#e6f1fc}@media(max-width:560px){.notification-permission-inner{padding:12px;gap:10px}.notification-permission-icon{width:34px;height:34px;flex-basis:34px;border-radius:10px;font-size:16px}.notification-permission-copy strong{font-size:12px}.notification-permission-copy p,.notification-permission-steps{font-size:10px}.notification-permission-retry{width:100%}}.vybe-header-alert-actions{display:grid;grid-template-columns:1fr;gap:8px;padding:9px;border-top:1px solid #edf0f3;background:#fbfcfe}.vybe-header-alert-actions button,.vybe-header-alert-actions a{min-height:38px;display:flex;align-items:center;justify-content:center;padding:0 10px;border-radius:11px;font:inherit;font-size:11px;font-weight:800;text-decoration:none;box-sizing:border-box}.vybe-header-alert-actions button{border:1px solid #cbdced;background:#eef6ff;color:#245aa8;cursor:pointer}.vybe-header-alert-actions a{border:1px solid #e0e6eb;background:#fff;color:#344150}.admin-alert-section-title{padding:9px 10px 5px;font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#2f6fca}.admin-alert-section-spaced{margin-top:6px;border-top:1px solid #edf0f3;padding-top:12px}.admin-alert-panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px;border-top:1px solid #edf0f3;background:#fbfcfe}.admin-alert-panel-actions a,.admin-alert-enable{min-height:36px;display:flex;align-items:center;justify-content:center;border-radius:10px;padding:0 9px;font:inherit;font-size:10px;font-weight:800;text-decoration:none;box-sizing:border-box}.admin-alert-enable{border:1px solid #cbdced;background:#eef6ff;color:#245aa8;cursor:pointer}.admin-alert-panel-actions a{border:1px solid #e0e6eb;background:#fff;color:#344150}.admin-alert-panel-actions a:last-child{grid-column:1/-1}.admin-alert-push-status{grid-column:1/-1;text-align:center;font-size:10px;color:#718090;padding:2px 4px}.admin-alert-push-status.is-success{color:#3f7d20}.admin-alert-push-status.is-error{color:#9a4c3e}
 
+.notification-storage-note{display:flex;gap:10px;align-items:flex-start;margin-top:16px!important;padding:14px 16px!important;border:1px solid #dfe8f0!important;border-radius:15px!important;background:#f7fbff!important;color:#526272!important;font-size:11px!important;line-height:1.5!important}.notification-storage-note strong{color:#245aa8!important;white-space:nowrap}.notification-storage-note span{min-width:0}.notification-admin-status{line-height:1.45}.notification-admin-status.is-success{color:#3f7d20!important}.notification-admin-status.is-error{color:#9a4c3e!important}
 .profile-panel{display:none!important}.profile-panel.is-open{display:block!important}.profile-card{padding:23px!important;border:1px solid #dfe5ea!important;border-radius:22px!important;background:#fff!important;box-shadow:0 10px 30px rgba(23,32,43,.055)!important}.panel-heading{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}.panel-heading h2{margin:3px 0 5px!important}.panel-heading p{margin:0;color:#687482;font-size:13px}.panel-close{border:1px solid #dfe5ea;background:#f7f9fb;border-radius:10px;padding:8px 11px;color:#687482;cursor:pointer}.profile-solutions{display:grid;gap:10px;margin-top:17px}.profile-solution-item{padding:15px 16px;border:1px solid #e1e6eb;border-radius:16px;background:#fafbfd}.solution-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.solution-top strong{color:#17202b;font-size:14px}.solution-top span{font-size:9px;font-weight:800;letter-spacing:.8px;padding:5px 8px;border-radius:999px;background:#edf8e6;color:#4f8f25}.profile-solution-item p{margin:9px 0 7px;color:#344150;white-space:pre-wrap;line-height:1.55;font-size:13px}.profile-solution-item small{color:#7a8590;font-size:10px}.profile-empty{padding:22px;text-align:center;border:1px dashed #cfd7df;border-radius:16px;color:#687482;background:#fafbfd}.password-card{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,#17202b,#101827)!important;color:#fff!important;border-color:#17202b!important}.password-card h2{color:#fff!important;margin:3px 0 5px!important}.password-card p{color:#b9c3cf!important;margin:0!important;font-size:13px}.password-card .mini-label{color:#8fc2f3!important}.profile-dark{background:#fff!important;color:#17202b!important;border:1px solid rgba(255,255,255,.35)!important;white-space:nowrap}
+@media(max-width:700px){.admin-alert-panel-actions{grid-template-columns:1fr!important}.admin-alert-panel-actions a:last-child{grid-column:auto!important}}
 @media(max-width:700px){.profile-page{padding:12px 12px 112px!important}.profile-device-actions{grid-template-columns:1fr}.notification-save,.profile-device-enable,.profile-device-disable{width:100%!important}.vybe-header-alert-actions{grid-template-columns:1fr}.admin-alert-panel-actions{grid-template-columns:1fr}.admin-alert-panel-actions a:last-child{grid-column:auto}.profile-page .profile-hero{padding:19px!important;border-radius:21px!important}.profile-avatar{width:61px!important;height:61px!important;border-radius:18px!important;font-size:21px!important}.profile-main{gap:13px}.profile-name{font-size:28px!important}.profile-sub{font-size:12px!important}.id-card-panel,.profile-card{padding:18px!important;border-radius:19px!important}.id-card-heading{align-items:flex-start}.id-card-icon{width:46px;height:46px}.id-card-current{align-items:flex-start}.id-upload-form{grid-template-columns:1fr!important}.id-upload-form .profile-action{width:100%!important}.profile-stat-grid{grid-template-columns:1fr!important;gap:10px}.profile-stat-button{padding:14px}.password-card{display:block!important}.password-card .profile-action{width:100%!important;margin-top:14px}.panel-heading{align-items:flex-start}.panel-close{flex:0 0 auto}.profile-solution-item{padding:13px}.solution-top{align-items:flex-start}.solution-top strong{font-size:13px}}
 @media(max-width:390px){.profile-page{padding-left:10px!important;padding-right:10px!important}.profile-name{font-size:25px!important}.profile-avatar{width:55px!important;height:55px!important}.id-card-current{gap:9px}.profile-stat-button{border-radius:16px}}
 </style>''' + body
@@ -10760,10 +10717,7 @@ ADMIN_DESKTOP_POLISH_CSS = r"""
 @app.route("/admin/notifications/read", methods=["POST"])
 @admin_required
 def admin_notifications_read():
-    con=db()
-    try:
-        _ensure_push_schema(con); con.execute("UPDATE notifications SET read_at=? WHERE read_at IS NULL",(now(),)); con.commit(); return jsonify(ok=True)
-    finally: con.close()
+    return jsonify(ok=True,stored=False)
 
 @app.route("/admin/notifications", methods=["GET","POST"])
 @admin_required
@@ -10798,10 +10752,8 @@ def admin_notifications_settings():
     settings=con.execute("SELECT * FROM admin_notification_settings WHERE id=1").fetchone()
     if not settings:
         settings={"enabled":1,"registrations":1,"password_resets":1,"student_messages":1,"campus_updates":1}
-    rows=con.execute("SELECT id,kind,title,message,created_at,read_at FROM notifications ORDER BY id DESC LIMIT 30").fetchall()
     con.close()
-    history=''.join(f'<div id="notification-{int(r["id"])}" class="card" style="padding:14px"><div style="display:flex;justify-content:space-between;gap:12px"><b>{esc(r["title"])}</b><span class="small">{esc(r["created_at"])}</span></div><div class="small" style="margin-top:6px;white-space:pre-wrap">{esc(r["message"])}</div></div>' for r in rows) or '<div class="card"><div class="empty">No admin notification history yet.</div></div>'
-    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE NOTIFICATIONS</span><h1>Notifications.</h1><p>Device alerts use VYBE's native Web Push layer. No page polling is added for push delivery.</p></div></div><div class="two"><div class="card"><div class="settings-editor-icon">🔔</div><h2>Admin device notifications</h2><p class="muted">Enable the notification permission on this admin device. New registrations and password-recovery requests can then alert you even when the VYBE tab is closed.</p><button id="vybeEnableAdminNotifications" class="btn accent" type="button">Allow VYBE notifications on this device</button><div id="vybeAdminPushStatus" class="small" style="margin-top:9px"></div><form class="form" method="post" style="margin-top:18px"><input type="hidden" name="action" value="settings"><label class="settings-check"><input type="checkbox" name="enabled" value="1"{' checked' if settings['enabled'] else ''}><span><b>Enable admin notifications</b><small>Master switch for device alerts.</small></span></label><label class="settings-check"><input type="checkbox" name="registrations" value="1"{' checked' if settings['registrations'] else ''}><span><b>New registrations</b><small>Alert when a new student requests access.</small></span></label><label class="settings-check"><input type="checkbox" name="password_resets" value="1"{' checked' if settings['password_resets'] else ''}><span><b>Password recovery</b><small>Alert when a student requests a password change.</small></span></label><label class="settings-check"><input type="checkbox" name="student_messages" value="1"{' checked' if settings['student_messages'] else ''}><span><b>Student messages / problems</b><small>Alert for student messages that need admin attention.</small></span></label><label class="settings-check"><input type="checkbox" name="campus_updates" value="1"{' checked' if settings['campus_updates'] else ''}><span><b>Campus updates</b><small>Alert for VYBE update events.</small></span></label><button class="btn accent">Save admin notification settings →</button></form></div><div class="card"><h2>Send a direct message</h2><p class="muted">Send to one approved student by exact roll number or name, or type <b>all</b> for every approved student.</p><form class="form" method="post"><input type="hidden" name="action" value="send"><input name="target" maxlength="120" placeholder="Student roll number, exact name, or all" required><input name="title" maxlength="160" placeholder="Notification title" required><textarea name="message" maxlength="3000" placeholder="Write the message…" required></textarea><button class="btn accent">Send notification →</button></form><p class="small" style="margin-top:10px">Student device notification clicks always open VYBE login when logged out, or the dashboard when already logged in.</p></div></div><section class="section"><div class="admin-page-head"><div><span class="admin-page-kicker">RECENT ADMIN ALERTS</span><h2>Notification history.</h2></div></div><div style="display:grid;gap:10px">{history}</div></section></section>'''
+    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE NOTIFICATIONS</span><h1>Notifications.</h1><p>Native Web Push is used for device alerts. VYBE does <strong>not</strong> keep notification history or an in-app notification inbox.</p></div></div><div class="two"><div class="card"><div class="settings-editor-icon">🔔</div><h2>Admin device notifications</h2><p class="muted">Enable notifications on this device. New registrations and password-recovery requests can alert you even when the VYBE tab is closed, when supported by the browser/device.</p><button id="vybeEnableAdminNotifications" class="btn accent" type="button">Allow VYBE notifications on this device</button><div id="vybeAdminPushStatus" class="small notification-admin-status" style="margin-top:9px"></div><form class="form" method="post" style="margin-top:18px"><input type="hidden" name="action" value="settings"><label class="settings-check"><input type="checkbox" name="enabled" value="1"{' checked' if settings['enabled'] else ''}><span><b>Enable admin notifications</b><small>Master switch for device alerts.</small></span></label><label class="settings-check"><input type="checkbox" name="registrations" value="1"{' checked' if settings['registrations'] else ''}><span><b>New registrations</b><small>Alert when a new student requests access.</small></span></label><label class="settings-check"><input type="checkbox" name="password_resets" value="1"{' checked' if settings['password_resets'] else ''}><span><b>Password recovery</b><small>Alert when a student requests a password change.</small></span></label><label class="settings-check"><input type="checkbox" name="student_messages" value="1"{' checked' if settings['student_messages'] else ''}><span><b>Student messages / problems</b><small>Alert for student messages that need admin attention.</small></span></label><label class="settings-check"><input type="checkbox" name="campus_updates" value="1"{' checked' if settings['campus_updates'] else ''}><span><b>Campus updates</b><small>Alert for VYBE update events.</small></span></label><button class="btn accent">Save admin notification settings →</button></form></div><div class="card"><h2>Send a direct message</h2><p class="muted">Send to one approved student by exact roll number or name, or type <b>all</b> for every approved student.</p><form class="form" method="post"><input type="hidden" name="action" value="send"><input name="target" maxlength="120" placeholder="Student roll number, exact name, or all" required><input name="title" maxlength="160" placeholder="Notification title" required><textarea name="message" maxlength="3000" placeholder="Write the message…" required></textarea><button class="btn accent">Send notification →</button></form><p class="small" style="margin-top:10px">Student device notification clicks always open VYBE login when logged out, or the dashboard when already logged in.</p></div></div><div class="card notification-storage-note"><strong>Private by design.</strong><span>VYBE keeps the device subscription and your notification preferences only. Notification titles, bodies and delivery history are not stored in the VYBE database.</span></div></section>'''
     return layout("VYBE Notifications",body,admin=True)
 
 @app.route("/admin/settings")
