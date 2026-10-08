@@ -180,7 +180,43 @@ class DB:
             self.conn.execute("PRAGMA foreign_keys = ON")
 
     def _sql(self, sql):
-        return sql.replace("?", "%s") if self.is_pg else sql
+        if not self.is_pg:
+            return sql
+        # Convert DB-API style `?` placeholders to psycopg `%s` placeholders,
+        # but NEVER change literal question marks inside SQL string literals
+        # (for example `/notification-open?audience=student`).
+        out = []
+        in_single = False
+        in_double = False
+        i = 0
+        while i < len(sql):
+            ch = sql[i]
+            if ch == "\\" and i + 1 < len(sql):
+                out.append(ch)
+                out.append(sql[i + 1])
+                i += 2
+                continue
+            if ch == "'" and not in_double:
+                # SQL escapes a single quote by doubling it.
+                out.append(ch)
+                if in_single and i + 1 < len(sql) and sql[i + 1] == "'":
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                in_single = not in_single
+                i += 1
+                continue
+            if ch == '"' and not in_single:
+                out.append(ch)
+                in_double = not in_double
+                i += 1
+                continue
+            if ch == "?" and not in_single and not in_double:
+                out.append("%s")
+            else:
+                out.append(ch)
+            i += 1
+        return "".join(out)
 
     def execute(self, sql, params=()):
         return self.conn.execute(self._sql(sql), params)
