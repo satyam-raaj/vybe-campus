@@ -17,6 +17,7 @@ import threading
 import time
 import ipaddress
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
@@ -43,6 +44,8 @@ try:
     from google.auth.transport.requests import Request as GoogleAuthRequest
     from google_auth_oauthlib.flow import Flow as GoogleOAuthFlow
     from cryptography.fernet import Fernet, InvalidToken as FernetInvalidToken
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
     GOOGLE_AUTH_AVAILABLE = True
 except Exception as _google_auth_exc:
     GoogleOAuthCredentials = None
@@ -444,8 +447,9 @@ def create_admin_notification(kind, title, message, student_id=None):
     try:
         con = db()
         try:
+            _ensure_push_schema(con)
             con.execute(
-                "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent) VALUES(?,?,?,?,?,?)",
+                "INSERT INTO notifications(kind,title,message,student_id,created_at,whatsapp_sent,read_at) VALUES(?,?,?,?,?,?,NULL)",
                 (kind, title, message, student_id, now(), bool(sent)),
             )
             con.commit()
@@ -453,9 +457,270 @@ def create_admin_notification(kind, title, message, student_id=None):
             con.close()
     except Exception:
         # The admin notification is supplementary. Never fail the user's
-        # password-reset request because this optional audit/alert failed.
+        # request because an optional alert/audit failed.
         return sent
+    try:
+        create_admin_push_notification(kind,title,message,student_id)
+    except Exception:
+        pass
+    return True or sent
 
+
+
+# ---------------------------------------------------------------------------
+# VYBE native Web Push notifications. No Firebase/OneSignal SDK is required.
+# The browser's own Web Push service delivers the encrypted notification; VYBE
+# stores only the browser push subscription and never stores notification secrets.
+# ---------------------------------------------------------------------------
+def _ensure_push_schema(con):
+    """Repair/migrate notification tables on older VYBE databases safely."""
+    stmts = []
+    if con.is_pg:
+        stmts = [
+            "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read_at TEXT",
+            "ALTER TABLE student_notifications ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general'",
+            "ALTER TABLE student_notifications ADD COLUMN IF NOT EXISTS target_url TEXT NOT NULL DEFAULT '/notification-open?audience=student'",
+            "ALTER TABLE student_notifications ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE",
+            "CREATE TABLE IF NOT EXISTS push_subscriptions (id BIGSERIAL PRIMARY KEY,audience TEXT NOT NULL,student_id BIGINT REFERENCES students(id) ON DELETE CASCADE,endpoint TEXT NOT NULL UNIQUE,p256dh TEXT NOT NULL,auth TEXT NOT NULL,enabled BOOLEAN NOT NULL DEFAULT TRUE,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS notification_preferences (student_id BIGINT PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,enabled BOOLEAN NOT NULL DEFAULT TRUE,account BOOLEAN NOT NULL DEFAULT TRUE,academic BOOLEAN NOT NULL DEFAULT TRUE,community BOOLEAN NOT NULL DEFAULT TRUE,announcements BOOLEAN NOT NULL DEFAULT TRUE,admin_messages BOOLEAN NOT NULL DEFAULT TRUE,updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS admin_notification_settings (id INTEGER PRIMARY KEY,enabled BOOLEAN NOT NULL DEFAULT TRUE,registrations BOOLEAN NOT NULL DEFAULT TRUE,password_resets BOOLEAN NOT NULL DEFAULT TRUE,student_messages BOOLEAN NOT NULL DEFAULT TRUE,campus_updates BOOLEAN NOT NULL DEFAULT TRUE,updated_at TEXT NOT NULL)",
+        ]
+    else:
+        stmts = [
+            "ALTER TABLE notifications ADD COLUMN read_at TEXT",
+            "ALTER TABLE student_notifications ADD COLUMN category TEXT NOT NULL DEFAULT 'general'",
+            "ALTER TABLE student_notifications ADD COLUMN target_url TEXT NOT NULL DEFAULT '/notification-open?audience=student'",
+            "ALTER TABLE student_notifications ADD COLUMN push_sent INTEGER NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,audience TEXT NOT NULL,student_id INTEGER,endpoint TEXT NOT NULL UNIQUE,p256dh TEXT NOT NULL,auth TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE)",
+            "CREATE TABLE IF NOT EXISTS notification_preferences (student_id INTEGER PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 1,account INTEGER NOT NULL DEFAULT 1,academic INTEGER NOT NULL DEFAULT 1,community INTEGER NOT NULL DEFAULT 1,announcements INTEGER NOT NULL DEFAULT 1,admin_messages INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL,FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE)",
+            "CREATE TABLE IF NOT EXISTS admin_notification_settings (id INTEGER PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 1,registrations INTEGER NOT NULL DEFAULT 1,password_resets INTEGER NOT NULL DEFAULT 1,student_messages INTEGER NOT NULL DEFAULT 1,campus_updates INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)",
+        ]
+    for sql in stmts:
+        try:
+            con.execute(sql)
+        except Exception as exc:
+            # SQLite has no IF NOT EXISTS for ALTER COLUMN. If the column is
+            # already present, ignore only that migration error.
+            if not con.is_pg and sql.startswith("ALTER TABLE") and "duplicate column" in str(exc).lower():
+                try: con.rollback()
+                except Exception: pass
+                continue
+            try: con.rollback()
+            except Exception: pass
+    try:
+        con.commit()
+    except Exception:
+        pass
+
+
+def _push_fernet():
+    if Fernet is None:
+        return None
+    key = base64.urlsafe_b64encode(hashlib.sha256(("vybe-push-secrets|" + SECRET_KEY).encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _b64u(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64udata(value):
+    raw = str(value or "").encode("ascii")
+    return base64.urlsafe_b64decode(raw + b"=" * ((4 - len(raw) % 4) % 4))
+
+
+def _vapid_material(con, create=True):
+    """Return (private_pem, public_raw_b64url, subject)."""
+    if Fernet is None or 'ec' not in globals():
+        raise RuntimeError("VYBE push cryptography is unavailable. Install cryptography.")
+    private_enc = setting(con, "push_vapid_private", "")
+    public_b64 = setting(con, "push_vapid_public", "")
+    subject = setting(con, "push_vapid_subject", "")
+    if private_enc and public_b64 and subject:
+        try:
+            private_pem = _push_fernet().decrypt(private_enc.encode("ascii"))
+            return private_pem, public_b64, subject
+        except Exception:
+            private_enc = public_b64 = ""
+    if not create:
+        return None
+    key = ec.generate_private_key(ec.SECP256R1())
+    private_pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    public_raw = key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    public_b64 = _b64u(public_raw)
+    subject = os.environ.get("VYBE_VAPID_SUBJECT", "").strip() or ((request.url_root.rstrip("/") if has_request_context() else "https://" + (PASSKEY_RP_ID or "localhost")))
+    encrypted = _push_fernet().encrypt(private_pem).decode("ascii")
+    set_setting(con, "push_vapid_private", encrypted)
+    set_setting(con, "push_vapid_public", public_b64)
+    set_setting(con, "push_vapid_subject", subject)
+    con.commit()
+    return private_pem, public_b64, subject
+
+
+def _vapid_jwt(endpoint, private_pem, public_b64, subject):
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+    # ES256 JWT signing with raw (r,s) converted to the JOSE 64-byte signature.
+    private_key = serialization.load_pem_private_key(private_pem, password=None)
+    parsed = urlparse(endpoint)
+    audience = f"{parsed.scheme}://{parsed.netloc}"
+    header = {"typ":"JWT","alg":"ES256"}
+    payload = {"aud":audience,"exp":int(time.time())+12*60*60,"sub":subject}
+    signing_input = (_b64u(json.dumps(header,separators=(",",":"),sort_keys=True).encode()) + "." + _b64u(json.dumps(payload,separators=(",",":"),sort_keys=True).encode())).encode()
+    sig_der = private_key.sign(signing_input, ec.ECDSA(hashes.SHA256()))
+    r, ss = __import__('cryptography.hazmat.primitives.asymmetric.utils', fromlist=['decode_dss_signature']).decode_dss_signature(sig_der)
+    sig_raw = int(r).to_bytes(32,'big') + int(ss).to_bytes(32,'big')
+    return signing_input.decode() + "." + _b64u(sig_raw)
+
+
+def _hkdf_extract(salt, ikm):
+    import hmac
+    return hmac.new(salt, ikm, hashlib.sha256).digest()
+
+
+def _hkdf_expand(prk, info, length):
+    import hmac
+    out=b""; prev=b""
+    for i in range(1, 256):
+        prev=hmac.new(prk, prev+info+bytes([i]), hashlib.sha256).digest()
+        out+=prev
+        if len(out)>=length: return out[:length]
+    raise ValueError("HKDF expansion too long")
+
+
+def _encrypt_webpush(payload_bytes, ua_public_b64, ua_auth_b64):
+    """RFC 8291 + RFC 8188 aes128gcm single-record Web Push encryption."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    ua_public=_b64udata(ua_public_b64); auth=_b64udata(ua_auth_b64)
+    if len(ua_public)!=65 or len(auth)<16: raise ValueError("Invalid Web Push subscription keys")
+    ua_key=ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ua_public)
+    as_key=ec.generate_private_key(ec.SECP256R1())
+    as_public=as_key.public_key().public_bytes(serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
+    shared=as_key.exchange(ec.ECDH(), ua_key)
+    auth_prk=_hkdf_extract(auth, shared)
+    key_info=b"WebPush: info\0"+ua_public+as_public
+    ikm=_hkdf_expand(auth_prk,key_info,32)
+    salt=secrets.token_bytes(16)
+    content_prk=_hkdf_extract(salt,ikm)
+    cek=_hkdf_expand(content_prk,b"Content-Encoding: aes128gcm\0",16)
+    nonce=_hkdf_expand(content_prk,b"Content-Encoding: nonce\0",12)
+    plaintext=payload_bytes+b"\x02"
+    rs=4096
+    ciphertext=AESGCM(cek).encrypt(nonce,plaintext,None)
+    header=salt+rs.to_bytes(4,'big')+bytes([len(as_public)])+as_public
+    return header+ciphertext
+
+
+def _send_webpush_one(endpoint,p256dh,auth,title,message,audience="student"):
+    con=db()
+    try:
+        material=_vapid_material(con,create=True)
+    finally:
+        con.close()
+    private_pem, public_b64, subject=material
+    payload=json.dumps({"title":"VYBE","body":message[:240],"tag":"vybe-notification","url":"/notification-open?audience="+quote(audience,safe="") ,"icon":"/vybe-notification-icon.svg","badge":"/vybe-notification-icon.svg"},separators=(",",":")).encode()
+    encrypted=_encrypt_webpush(payload,p256dh,auth)
+    jwt=_vapid_jwt(endpoint,private_pem,public_b64,subject)
+    req=URLRequest(endpoint,data=encrypted,headers={"TTL":"60","Content-Type":"application/octet-stream","Content-Encoding":"aes128gcm","Authorization":"vapid t="+jwt+", k="+public_b64},method="POST")
+    with urlopen(req,timeout=3) as response:
+        return 200 <= int(response.status) < 300
+
+
+def _send_push_to_subscriptions(rows,title,message,audience):
+    """Best-effort bounded push fan-out. Uses a small worker pool so a broadcast never serially blocks VYBE."""
+    rows=list(rows or [])
+    if not rows: return 0
+    def one(row):
+        try:
+            ok=_send_webpush_one(str(row["endpoint"]),str(row["p256dh"]),str(row["auth"]),title,message,audience)
+            if ok: return 1
+        except HTTPError as exc:
+            if int(getattr(exc,"code",0) or 0) in (404,410):
+                try:
+                    con=db(); con.execute("DELETE FROM push_subscriptions WHERE endpoint=?",(row["endpoint"],)); con.commit(); con.close()
+                except Exception: pass
+        except Exception:
+            pass
+        return 0
+    # Four workers is deliberately conservative: the feature must not compete
+    # with normal VYBE page requests or Drive traffic.
+    with ThreadPoolExecutor(max_workers=4,thread_name_prefix="vybe-push") as pool:
+        return sum(pool.map(one,rows))
+
+
+def _student_notification_allowed(con, student_id, category):
+    try:
+        row=con.execute("SELECT enabled,account,academic,community,announcements,admin_messages FROM notification_preferences WHERE student_id=?",(student_id,)).fetchone()
+        if not row: return True
+        if not bool(row["enabled"]): return False
+        key={"account":"account","academic":"academic","community":"community","announcement":"announcements","admin":"admin_messages","general":"announcements"}.get(category,"announcements")
+        return bool(row[key])
+    except Exception:
+        return True
+
+
+def create_student_notification(student_id,title,message,category="general",target_url="/notification-open?audience=student",push=True):
+    """Create one in-VYBE bell item and optionally deliver the same message as Web Push."""
+    con=db(); created=False; nid=None
+    try:
+        _ensure_push_schema(con)
+        if not _student_notification_allowed(con,student_id,category):
+            return False
+        con.execute("INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at,category,target_url,push_sent) VALUES(?,?,?,?,?,?,?,?,?,?)",(int(student_id),None,None,title[:160],message[:3000],now(),None,category,target_url,False))
+        row=con.execute("SELECT id FROM student_notifications WHERE recipient_student_id=? ORDER BY id DESC LIMIT 1",(int(student_id),)).fetchone(); nid=int(row["id"]) if row else None
+        con.commit(); created=True
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+    finally: con.close()
+    if not created or not push: return created
+    try:
+        con=db(); rows=con.execute("SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id=?",(int(student_id),)).fetchall(); con.close()
+    except Exception:
+        rows=[]
+    sent=_send_push_to_subscriptions(rows,title,message,"student") if rows else 0
+    if nid is not None and sent:
+        try:
+            con=db(); con.execute("UPDATE student_notifications SET push_sent=? WHERE id=?",(True,nid)); con.commit(); con.close()
+        except Exception: pass
+    return True
+
+
+def broadcast_student_notification(title,message,category="academic",target_url="/notification-open?audience=student"):
+    """Create one lightweight inbox record per approved student, then send push only to subscribed devices."""
+    con=db(); eligible=[]
+    try:
+        _ensure_push_schema(con)
+        rows=con.execute("SELECT s.id,COALESCE(p.enabled,TRUE) AS enabled,COALESCE(p.account,TRUE) AS account,COALESCE(p.academic,TRUE) AS academic,COALESCE(p.community,TRUE) AS community,COALESCE(p.announcements,TRUE) AS announcements,COALESCE(p.admin_messages,TRUE) AS admin_messages FROM students s LEFT JOIN notification_preferences p ON p.student_id=s.id WHERE s.status='approved'").fetchall()
+        for row in rows:
+            key={"account":"account","academic":"academic","community":"community","announcement":"announcements","admin":"admin_messages","general":"announcements"}.get(category,"announcements")
+            if bool(row["enabled"]) and bool(row[key]): eligible.append(int(row["id"]))
+        for sid in eligible:
+            con.execute("INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at,category,target_url,push_sent) VALUES(?,?,?,?,?,?,?,?,?,?)",(sid,None,None,title[:160],message[:3000],now(),None,category,target_url,False))
+        con.commit()
+        if not eligible:
+            return 0
+        marks=','.join('?' for _ in eligible)
+        subs=con.execute(f"SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='student' AND student_id IN ({marks})",tuple(eligible)).fetchall()
+    finally:
+        con.close()
+    _send_push_to_subscriptions(subs,title,message,"student") if subs else 0
+    return len(eligible)
+
+
+def create_admin_push_notification(kind,title,message,student_id=None):
+    """Deliver an admin device notification using the same native Web Push layer."""
+    con=db()
+    try:
+        _ensure_push_schema(con)
+        settings=con.execute("SELECT * FROM admin_notification_settings WHERE id=1").fetchone()
+        if not settings:
+            con.execute("INSERT INTO admin_notification_settings(id,enabled,registrations,password_resets,student_messages,campus_updates,updated_at) VALUES(1,?,?,?,?,?,?)",(True,True,True,True,now())); con.commit(); settings=con.execute("SELECT * FROM admin_notification_settings WHERE id=1").fetchone()
+        if not bool(settings["enabled"]): return False
+        key={"registration":"registrations","password_reset":"password_resets","student_message":"student_messages","student_problem":"student_messages","campus_update":"campus_updates"}.get(kind,"campus_updates")
+        if not bool(settings[key]): return False
+        rows=con.execute("SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE enabled=TRUE AND audience='admin' AND student_id IS NULL").fetchall()
+    finally: con.close()
+    return bool(_send_push_to_subscriptions(rows,title,message,"admin")) if rows else False
 
 def setting(con, key, default=""):
     row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -572,7 +837,40 @@ def init_db():
                 title TEXT NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                read_at TEXT
+                read_at TEXT,
+                category TEXT NOT NULL DEFAULT 'general',
+                target_url TEXT NOT NULL DEFAULT '/notification-open?audience=student',
+                push_sent BOOLEAN NOT NULL DEFAULT FALSE
+            )""",
+            """CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id BIGSERIAL PRIMARY KEY,
+                audience TEXT NOT NULL,
+                student_id BIGINT REFERENCES students(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS notification_preferences (
+                student_id BIGINT PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                account BOOLEAN NOT NULL DEFAULT TRUE,
+                academic BOOLEAN NOT NULL DEFAULT TRUE,
+                community BOOLEAN NOT NULL DEFAULT TRUE,
+                announcements BOOLEAN NOT NULL DEFAULT TRUE,
+                admin_messages BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS admin_notification_settings (
+                id INTEGER PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                registrations BOOLEAN NOT NULL DEFAULT TRUE,
+                password_resets BOOLEAN NOT NULL DEFAULT TRUE,
+                student_messages BOOLEAN NOT NULL DEFAULT TRUE,
+                campus_updates BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS assistant_knowledge (
                 id BIGSERIAL PRIMARY KEY,
@@ -724,9 +1022,44 @@ def init_db():
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 read_at TEXT,
+                category TEXT NOT NULL DEFAULT 'general',
+                target_url TEXT NOT NULL DEFAULT '/notification-open?audience=student',
+                push_sent INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(recipient_student_id) REFERENCES students(id) ON DELETE CASCADE,
                 FOREIGN KEY(sender_student_id) REFERENCES students(id) ON DELETE SET NULL,
                 FOREIGN KEY(reply_message_id) REFERENCES community_messages(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                audience TEXT NOT NULL,
+                student_id INTEGER,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS notification_preferences (
+                student_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                account INTEGER NOT NULL DEFAULT 1,
+                academic INTEGER NOT NULL DEFAULT 1,
+                community INTEGER NOT NULL DEFAULT 1,
+                announcements INTEGER NOT NULL DEFAULT 1,
+                admin_messages INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS admin_notification_settings (
+                id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                registrations INTEGER NOT NULL DEFAULT 1,
+                password_resets INTEGER NOT NULL DEFAULT 1,
+                student_messages INTEGER NOT NULL DEFAULT 1,
+                campus_updates INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS assistant_knowledge (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3470,11 +3803,12 @@ def _admin_update_feed(con, student_id, limit=18):
         ("announcement", "SELECT id,title,message,created_at FROM announcements ORDER BY id DESC LIMIT 50", "Announcement"),
         ("event", "SELECT id,title,description,created_at FROM events ORDER BY id DESC LIMIT 50", "Campus event"),
         ("admin_solution", "SELECT aps.id,i.title,aps.solution_text AS description,aps.created_at FROM admin_problem_solutions aps JOIN issues i ON i.id=aps.issue_id WHERE aps.student_id=? ORDER BY aps.id DESC LIMIT 50", "Admin solution"),
+        ("student_notification", "SELECT id,title,message,created_at FROM student_notifications WHERE recipient_student_id=? AND read_at IS NULL ORDER BY id DESC LIMIT 50", "VYBE notification"),
     ]
     items=[]
     for typ,sql,label in sources:
         try:
-            rows=con.execute(sql,(student_id,)).fetchall() if typ=="admin_solution" else con.execute(sql).fetchall()
+            rows=con.execute(sql,(student_id,)).fetchall() if typ in ("admin_solution","student_notification") else con.execute(sql).fetchall()
         except Exception:
             rows=[]
         for r in rows:
@@ -3491,6 +3825,7 @@ def _admin_update_feed(con, student_id, limit=18):
                 "announcement":"/announcements",
                 "event":"/events",
                 "admin_solution":f"/student-admin-solution/{rid}",
+                "student_notification":"/notification-open?audience=student",
             }[typ]
             items.append({"type":typ,"id":rid,"title":str(r["title"] or "Untitled"),"detail":detail,"created_at":str(r["created_at"] or ""),"label":label,"url":target})
 
@@ -3544,6 +3879,9 @@ def student_header_notifications_read():
     try:
         items=_admin_update_feed(con,sid,20)
         for x in items:
+            if x["type"]=="student_notification":
+                con.execute("UPDATE student_notifications SET read_at=? WHERE id=? AND recipient_student_id=?",(now(),int(x["id"]),sid))
+                continue
             if con.is_pg:
                 con.execute(
                     "INSERT INTO student_update_views(student_id,item_type,item_id,viewed_at) VALUES(?,?,?,?) ON CONFLICT(student_id,item_type,item_id) DO NOTHING",
@@ -3771,7 +4109,15 @@ def layout(title, body, admin=False):
             for x in _admin_problem_rows
         ) or '<div class="admin-problem-alert-empty">No active student problems.</div>'
         admin_problem_alert = f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminProblemBell" type="button" aria-label="Reported student problems" aria-expanded="false" aria-controls="vybeAdminProblemPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>{_problem_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminProblemPanel" hidden><div class="admin-problem-alert-head"><div><strong>Reported Problems</strong><small>Student reports needing admin attention</small></div><span id="vybeAdminProblemCount">{_problem_count} open</span></div><div class="admin-problem-alert-list" id="vybeAdminProblemList">{_problem_items}</div><a class="admin-problem-alert-all" href="/admin/problems">Open Problems &amp; Solutions →</a></div></div>"""
-        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
+        try:
+            _admin_notif_con=db(); _ensure_push_schema(_admin_notif_con); _admin_notifs=_admin_notif_con.execute("SELECT id,title,message,created_at FROM notifications WHERE read_at IS NULL ORDER BY id DESC LIMIT 12").fetchall(); _admin_notif_con.close()
+        except Exception:
+            _admin_notifs=[]
+        _admin_notif_count=len(_admin_notifs)
+        _admin_notif_badge=f'<span class="admin-problem-alert-count">{_admin_notif_count if _admin_notif_count<100 else "99+"}</span>' if _admin_notif_count else ''
+        _admin_notif_items=''.join(f'<a class="admin-problem-alert-item" href="/admin/notifications#notification-{int(x["id"])}"><span class="admin-problem-alert-dot">•</span><span class="admin-problem-alert-copy"><strong>{esc(x["title"])}</strong><small>{esc(x["created_at"])}</small><p>{esc(x["message"])}</p></span><span class="admin-problem-alert-arrow">›</span></a>' for x in _admin_notifs) or '<div class="admin-problem-alert-empty">No new notifications.</div>'
+        admin_notification_alert=f"""<div class="admin-problem-alert-wrap"><button class="admin-problem-alert" id="vybeAdminNotificationBell" type="button" aria-label="VYBE notifications" aria-expanded="false" aria-controls="vybeAdminNotificationPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>{_admin_notif_badge}</button><div class="admin-problem-alert-panel" id="vybeAdminNotificationPanel" hidden><div class="admin-problem-alert-head"><div><strong>VYBE Notifications</strong><small>New registrations, recovery and messages</small></div><span>{_admin_notif_count} new</span></div><div class="admin-problem-alert-list">{_admin_notif_items}</div><a class="admin-problem-alert-all" href="/admin/notifications">Open notification settings →</a></div></div>"""
+        header = f'<div class="navin admin-header">{brand}<nav class="admin-navlinks" aria-label="Admin navigation">{links}</nav><div class="admin-header-actions">{admin_notification_alert}{admin_problem_alert}{admin_alert}<button class="nav-toggle admin-menu-toggle" id="vybeNavToggle" type="button" aria-label="Open admin menu" aria-expanded="false">☰</button></div></div>'
         bottom_nav = ""
     elif student:
         # Keep the desktop student navigation exactly as it was.
@@ -4856,6 +5202,15 @@ document.addEventListener("keydown",function(e){{if(e.key==="Escape")setAssistan
     syncing=false;
   }}
   setInterval(function(){{ if(document.visibilityState==='visible' && !scrolling) check(); }},180000);
+}})();
+(function(){{const b=document.getElementById("vybeAdminNotificationBell"),p=document.getElementById("vybeAdminNotificationPanel");if(!b||!p)return;b.addEventListener("click",function(e){{e.preventDefault();e.stopPropagation();p.hidden=!p.hidden;b.setAttribute("aria-expanded",p.hidden?"false":"true");if(!p.hidden)fetch('/admin/notifications/read',{{method:'POST',credentials:'same-origin',headers:{{'X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||''}}}}).catch(function(){{}});}});p.addEventListener("click",function(e){{e.stopPropagation();}});document.addEventListener("click",function(e){{if(!p.hidden&&!e.target.closest('#vybeAdminNotificationBell'))p.hidden=true;}});}})();
+(function(){{
+async function enableVYBEPush(statusId,scope){{const status=document.getElementById(statusId);try{{if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw new Error('This browser does not support background VYBE notifications.');const reg=await navigator.serviceWorker.register('/push/service-worker.js',{{scope:'/'}});const key=await fetch('/push/public-key',{{credentials:'same-origin',cache:'no-store'}}).then(r=>r.json());const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Notification permission was not granted.');const existing=await reg.pushManager.getSubscription();const sub=existing||await reg.pushManager.subscribe({{userVisibleOnly:true,applicationServerKey:(()=>{{const s=key.publicKey.replace(/-/g,'+').replace(/_/g,'/');const p=s+'='.repeat((4-s.length%4)%4);const raw=atob(p);return Uint8Array.from(raw,c=>c.charCodeAt(0));}})()}});const r=await fetch('/push/subscribe',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||''}},body:JSON.stringify({{subscription:sub.toJSON()}})}});if(!r.ok){{const d=await r.json().catch(()=>({{}}));throw new Error(d.error||'Could not save notification permission.');}}if(status)status.textContent='✓ VYBE notifications are enabled on this device.';return true;}}catch(e){{if(status)status.textContent=e.message||'Notification setup could not be completed.';return false;}}}}
+window.vybeEnableNotifications=enableVYBEPush;
+const regBtn=document.getElementById('vybeEnableRegistrationNotifications');if(regBtn)regBtn.addEventListener('click',()=>enableVYBEPush('vybeRegistrationNotificationStatus','student'));
+const adminBtn=document.getElementById('vybeEnableAdminNotifications');if(adminBtn)adminBtn.addEventListener('click',()=>enableVYBEPush('vybeAdminPushStatus','admin'));
+const profileBtn=document.getElementById('vybeEnableProfileNotifications');if(profileBtn)profileBtn.addEventListener('click',()=>enableVYBEPush('vybeProfilePushStatus','student'));
+const off=document.getElementById('vybeDisableDeviceNotifications');if(off)off.addEventListener('click',async()=>{{const status=document.getElementById('vybeProfilePushStatus');try{{const reg=await navigator.serviceWorker.getRegistration('/push/');const sub=reg?await reg.pushManager.getSubscription():null;if(sub){{await fetch('/push/unsubscribe',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||''}},body:JSON.stringify({{endpoint:sub.endpoint}})}});await sub.unsubscribe();}}if(status)status.textContent='VYBE notifications are turned off on this device.';}}catch(e){{if(status)status.textContent='Could not turn off notifications on this device.';}}}});
 }})();</script></body></html>'''
 
 
@@ -4917,6 +5272,78 @@ def _auth_status_plate(title, badge, heading, message, primary_href=None, primar
     return layout(title, body)
 
 
+
+def _registration_pending_notification_page(name,sid):
+    body=f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">REQUEST SENT</div><h1>You're on the list.</h1><p class="muted">Your VYBE account is waiting for admin approval. You can safely close this page after enabling notifications.</p><div class="card" style="margin:18px 0;padding:16px"><strong>🔔 Approval notification</strong><p class="small" style="margin:7px 0 12px">When the admin approves you, VYBE can notify this device. Tapping the notification opens VYBE — login if you are logged out, or your dashboard if you are already signed in.</p><button id="vybeEnableRegistrationNotifications" class="btn accent" type="button">Allow VYBE notifications</button><div id="vybeRegistrationNotificationStatus" class="small" style="margin-top:9px"></div></div><p class="small">Student: <b>{esc(name)}</b> · Roll number: <b>{esc(sid)}</b></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">You can close VYBE after notifications are enabled.</span></div></div></div>'''
+    return layout("Registration sent",body)
+
+
+@app.route("/vybe-notification-icon.svg")
+def vybe_notification_icon():
+    svg='\"\"\"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#1eaaff"/><stop offset="1" stop-color="#0a568e"/></linearGradient></defs><rect x="4" y="4" width="120" height="120" rx="30" fill="url(#g)"/><text x="64" y="82" text-anchor="middle" font-family="Arial,sans-serif" font-size="64" font-weight="900" fill="white">V</text></svg>\"\"\"'
+    return app.response_class(svg,mimetype="image/svg+xml",headers={"Cache-Control":"public,max-age=86400"})
+
+@app.route("/push/public-key", methods=["GET"])
+def push_public_key():
+    con=db()
+    try:
+        _ensure_push_schema(con)
+        _,public_b64,_=_vapid_material(con,create=True)
+        return jsonify(publicKey=public_b64)
+    finally:
+        con.close()
+
+@app.route("/push/service-worker.js", methods=["GET"])
+def push_service_worker():
+    js=r"""self.addEventListener('push',event=>{let data={};try{data=event.data?event.data.json():{}}catch(_){data={title:'VYBE',body:'You have a new VYBE update.'}}const title=data.title||'VYBE';const options={body:data.body||'You have a new VYBE update.',icon:data.icon||'/vybe-notification-icon.svg',badge:data.badge||'/vybe-notification-icon.svg',tag:data.tag||'vybe-notification',renotify:true,data:{url:data.url||'/notification-open?audience=student'}};event.waitUntil(self.registration.showNotification(title,options));});self.addEventListener('notificationclick',event=>{event.notification.close();const url=(event.notification.data&&event.notification.data.url)||'/notification-open?audience=student';event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{for(const c of list){if('focus' in c)return c.navigate(url).then(()=>c.focus());}if(clients.openWindow)return clients.openWindow(url);}));});"""
+    return app.response_class(js,mimetype="application/javascript",headers={"Cache-Control":"no-store"})
+
+@app.route("/push/subscribe", methods=["POST"])
+def push_subscribe():
+    if not (session.get("student_db_id") or session.get("admin_authenticated") or session.get("pending_notification_student_id")):
+        return jsonify(error="VYBE notification access is not available for this session."),403
+    data=request.get_json(silent=True) or {}
+    sub=data.get("subscription") or data
+    endpoint=str(sub.get("endpoint") or "").strip()[:2000]
+    keys=sub.get("keys") or {}
+    p256dh=str(keys.get("p256dh") or "").strip()[:500]
+    auth=str(keys.get("auth") or "").strip()[:500]
+    if not endpoint or not p256dh or not auth or not endpoint.startswith("https://"):
+        return jsonify(error="Invalid notification subscription."),400
+    audience="admin" if session.get("admin_authenticated") else "student"
+    sid=int(session["student_db_id"]) if session.get("student_db_id") else (int(session["pending_notification_student_id"]) if session.get("pending_notification_student_id") else None)
+    con=db()
+    try:
+        _ensure_push_schema(con)
+        if con.is_pg:
+            con.execute("INSERT INTO push_subscriptions(audience,student_id,endpoint,p256dh,auth,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET audience=EXCLUDED.audience,student_id=EXCLUDED.student_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,enabled=TRUE,updated_at=EXCLUDED.updated_at",(audience,sid,endpoint,p256dh,auth,True,now(),now()))
+        else:
+            con.execute("INSERT INTO push_subscriptions(audience,student_id,endpoint,p256dh,auth,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET audience=excluded.audience,student_id=excluded.student_id,p256dh=excluded.p256dh,auth=excluded.auth,enabled=1,updated_at=excluded.updated_at",(audience,sid,endpoint,p256dh,auth,1,now(),now()))
+        con.commit()
+        return jsonify(ok=True)
+    except Exception:
+        try: con.rollback()
+        except Exception: pass
+        return jsonify(error="Could not save notification permission."),500
+    finally: con.close()
+
+@app.route("/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    data=request.get_json(silent=True) or {}
+    endpoint=str(data.get("endpoint") or "").strip()
+    if not endpoint:return jsonify(ok=True)
+    con=db()
+    try:
+        _ensure_push_schema(con); con.execute("DELETE FROM push_subscriptions WHERE endpoint=?",(endpoint,)); con.commit(); return jsonify(ok=True)
+    finally: con.close()
+
+@app.route("/notification-open")
+def notification_open():
+    audience=request.args.get("audience","student")
+    if audience=="admin":
+        return redirect(url_for("admin_panel") if session.get("admin_authenticated") else url_for("admin_login"))
+    return redirect(url_for("dashboard") if session.get("student_db_id") else url_for("login"))
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -4936,7 +5363,9 @@ def register():
                 "INSERT INTO students(name,student_id,password_hash,status,created_at,last_seen) VALUES(?,?,?,?,?,?)",
                 (name, sid, password_hash_value, "pending", now(), None),
             )
+            row=con.execute("SELECT id FROM students WHERE student_id=?",(sid,)).fetchone()
             con.commit()
+            session["pending_notification_student_id"] = int(row["id"]) if row else None
         except Exception:
             con.rollback()
             con.close()
@@ -4946,7 +5375,11 @@ def register():
                 con.close()
             except Exception:
                 pass
-        return _auth_status_plate("Registration sent", "REQUEST SENT", "Your request is sent to the admin.", "Kindly try to login after some time.", back_href="/")
+        try:
+            create_admin_notification("registration","New student registration",f"{name} ({sid}) has registered and is waiting for approval.",student_id=int(session.get("pending_notification_student_id") or 0) or None)
+        except Exception:
+            pass
+        return _registration_pending_notification_page(name,sid)
     body = '''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, roll number and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
     return layout("Register", body)
 
@@ -6101,8 +6534,21 @@ def profile():
         if action == "delete_id_card":
             con.execute("UPDATE students SET id_card_file_name=NULL,id_card_original_name=NULL,id_card_mime_type=NULL,id_card_file_data=NULL WHERE id=?",(sid,))
             con.commit(); con.close(); flash("ID card removed from your profile."); return redirect(url_for("profile"))
+        if action == "notification_settings":
+            _ensure_push_schema(con)
+            enabled=1 if request.form.get("notifications_enabled")=="1" else 0
+            vals={k:(1 if request.form.get(k)=="1" else 0) for k in ("account","academic","community","announcements","admin_messages")}
+            if con.is_pg:
+                con.execute("INSERT INTO notification_preferences(student_id,enabled,account,academic,community,announcements,admin_messages,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(student_id) DO UPDATE SET enabled=EXCLUDED.enabled,account=EXCLUDED.account,academic=EXCLUDED.academic,community=EXCLUDED.community,announcements=EXCLUDED.announcements,admin_messages=EXCLUDED.admin_messages,updated_at=EXCLUDED.updated_at",(sid,enabled,vals["account"],vals["academic"],vals["community"],vals["announcements"],vals["admin_messages"],now()))
+            else:
+                con.execute("INSERT INTO notification_preferences(student_id,enabled,account,academic,community,announcements,admin_messages,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(student_id) DO UPDATE SET enabled=excluded.enabled,account=excluded.account,academic=excluded.academic,community=excluded.community,announcements=excluded.announcements,admin_messages=excluded.admin_messages,updated_at=excluded.updated_at",(sid,enabled,vals["account"],vals["academic"],vals["community"],vals["announcements"],vals["admin_messages"],now()))
+            con.commit(); con.close(); flash("Notification settings saved."); return redirect(url_for("profile"))
         con.close(); return redirect(url_for("profile"))
 
+    _ensure_push_schema(con)
+    pref=con.execute("SELECT enabled,account,academic,community,announcements,admin_messages FROM notification_preferences WHERE student_id=?",(sid,)).fetchone()
+    if not pref:
+        pref={"enabled":1,"account":1,"academic":1,"community":1,"announcements":1,"admin_messages":1}
     st=con.execute("SELECT name,student_id,reputation_points,helpful_answers,accepted_solutions,id_card_original_name FROM students WHERE id=?",(sid,)).fetchone()
     accepted=con.execute("SELECT issue_title,solution_text,solver_name,accepted_at FROM accepted_solutions WHERE student_id=? ORDER BY id DESC LIMIT 30",(sid,)).fetchall()
     given=con.execute("SELECT s.id,i.title AS issue_title,s.text AS solution_text,s.created_at,COALESCE(i.status,'') AS issue_status FROM solutions s LEFT JOIN issues i ON i.id=s.issue_id WHERE s.student_id=? ORDER BY s.id DESC LIMIT 50",(sid,)).fetchall()
@@ -6118,7 +6564,7 @@ def profile():
 <section class="section"><div class="profile-stat-grid"><button class="profile-stat-button blue" type="button" data-profile-panel="given"><span class="stat-icon">↗</span><span><strong>{st["helpful_answers"]}</strong><small>Helpful answers</small></span><b>View</b></button><button class="profile-stat-button green" type="button" data-profile-panel="accepted"><span class="stat-icon">✓</span><span><strong>{st["accepted_solutions"]}</strong><small>Accepted solutions</small></span><b>View</b></button></div></section>
 <section class="section profile-panel" id="profile-panel-given"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR ACTIVITY</div><h2>Solutions you gave</h2><p>Answers and solutions you posted for campus problems.</p></div><button type="button" class="panel-close" data-close-panel="given">Close</button></div><div class="profile-solutions">{given_html or '<div class="profile-empty">You have not given any solutions yet.</div>'}</div></div></section>
 <section class="section profile-panel" id="profile-panel-accepted"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR SAVED HELP</div><h2>Solutions you received</h2><p>Solutions you accepted from other students.</p></div><button type="button" class="panel-close" data-close-panel="accepted">Close</button></div><div class="profile-solutions">{accepted_html or '<div class="profile-empty">You have not accepted any solutions yet.</div>'}</div></div></section>
-<section class="section"><div class="profile-card password-card"><div><div class="mini-label">ACCOUNT SECURITY</div><h2>Password</h2><p>Change your VYBE student password from your account settings.</p></div><a class="profile-action profile-dark" href="/account/password">Password settings →</a></div></section>'''
+<section class="section"><div class="profile-card" id="notification-settings"><div class="panel-heading"><div><div class="mini-label">NOTIFICATIONS</div><h2>VYBE notifications</h2><p>Choose what VYBE can send to this device. You can turn notifications off at any time.</p></div><div class="id-card-icon" aria-hidden="true">🔔</div></div><form method="post" class="form" style="margin-top:17px"><input type="hidden" name="action" value="notification_settings"><label class="settings-check"><input type="checkbox" name="notifications_enabled" value="1"{' checked' if pref['enabled'] else ''}><span><b>Allow VYBE notifications</b><small>Receive device notifications even when the VYBE tab is closed, when supported by your browser/device.</small></span></label><div class="profile-notification-grid"><label><input type="checkbox" name="account" value="1"{' checked' if pref['account'] else ''}> Account &amp; security</label><label><input type="checkbox" name="academic" value="1"{' checked' if pref['academic'] else ''}> Academic updates</label><label><input type="checkbox" name="community" value="1"{' checked' if pref['community'] else ''}> Community replies</label><label><input type="checkbox" name="announcements" value="1"{' checked' if pref['announcements'] else ''}> Announcements &amp; new resources</label><label><input type="checkbox" name="admin_messages" value="1"{' checked' if pref['admin_messages'] else ''}> Messages from VYBE admin</label></div><div class="actions"><button class="profile-action profile-primary" type="submit">Save notification settings</button><button class="profile-action profile-outline" id="vybeEnableProfileNotifications" type="button">Allow on this device</button><button class="profile-action profile-outline" id="vybeDisableDeviceNotifications" type="button">Turn off on this device</button></div><div id="vybeProfilePushStatus" class="small"></div></form></div></section><section class="section"><div class="profile-card password-card"><div><div class="mini-label">ACCOUNT SECURITY</div><h2>Password</h2><p>Change your VYBE student password from your account settings.</p></div><a class="profile-action profile-dark" href="/account/password">Password settings →</a></div></section>'''
     body += '''<script>(function(){
 const buttons=document.querySelectorAll('[data-profile-panel]');
 const panels={given:document.getElementById('profile-panel-given'),accepted:document.getElementById('profile-panel-accepted')};
@@ -6137,7 +6583,7 @@ if(idForm)idForm.addEventListener('submit',()=>{if(idButton){idButton.disabled=t
 .profile-page{max-width:1040px!important;margin:0 auto!important;padding:24px 18px 90px!important}.profile-page .section{margin:0 0 18px!important}
 .profile-page .profile-hero{padding:28px!important;border:1px solid #dfe5ea!important;border-radius:26px!important;background:linear-gradient(135deg,#fff 0%,#f8fbff 72%,#eef8e8 100%)!important;box-shadow:0 18px 45px rgba(23,32,43,.07)!important}.profile-main{display:flex;align-items:center;gap:18px}.profile-avatar{width:76px!important;height:76px!important;border-radius:23px!important;display:grid!important;place-items:center!important;background:linear-gradient(145deg,#2f6fca,#245aa8)!important;color:#fff!important;font-size:26px!important;font-weight:800!important;box-shadow:0 10px 25px rgba(47,111,202,.22)!important}.profile-name{margin:5px 0 4px!important;font-size:clamp(30px,4vw,44px)!important;letter-spacing:-1.3px!important;color:#17202b!important}.profile-sub{margin:0!important;color:#687482!important;font-size:14px!important}
 .id-card-panel{padding:23px!important;border:1px solid #dfe5ea!important;border-radius:22px!important;background:#fff!important;box-shadow:0 10px 30px rgba(23,32,43,.055)!important}.id-card-heading{display:flex;justify-content:space-between;align-items:center;gap:18px}.id-card-heading h2{margin:3px 0 5px!important;font-size:21px!important}.id-card-heading p{margin:0!important;color:#687482!important;font-size:13px!important}.mini-label{font-size:10px!important;font-weight:800!important;letter-spacing:1.1px!important;color:#2f6fca!important}.id-card-icon{width:52px;height:52px;border-radius:16px;background:#edf8e6;color:#4f8f25;display:grid;place-items:center;font-weight:900}.id-card-current{display:flex;align-items:center;gap:13px;margin-top:18px;padding:13px;border:1px solid #e3e8ed;border-radius:16px;background:#f8fafc}.id-file-icon{width:40px;height:40px;border-radius:12px;background:#eaf2fb;color:#2f6fca;display:grid;place-items:center;font-weight:800;flex:0 0 auto}.id-file-info{min-width:0;flex:1}.id-file-info strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#17202b;font-size:13px}.id-file-info span{display:block;color:#687482;font-size:11px;margin-top:3px}.id-upload-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.upload-file{display:flex;align-items:center;min-height:46px;border:1px dashed #b9c8d8;border-radius:13px;background:#f8fbff;color:#2f6fca;padding:0 14px;cursor:pointer;font-weight:700;font-size:13px}.upload-file input{display:none}.profile-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:46px;border-radius:13px;padding:0 17px;font-weight:750;text-decoration:none;cursor:pointer;box-sizing:border-box}.profile-primary{border:1px solid #245aa8!important;background:#2f6fca!important;color:#fff!important;box-shadow:0 8px 18px rgba(47,111,202,.18)!important}.profile-primary:hover{background:#245aa8!important}.profile-outline{border:1px solid #cbd8e5!important;background:#fff!important;color:#245aa8!important;min-height:38px!important;padding:0 13px!important}.profile-delete{margin-top:9px;border:0;background:none;color:#b34b4b;font-size:12px;font-weight:700;cursor:pointer;padding:3px 0}.id-delete-form{margin:0}
-.profile-stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.profile-stat-button{width:100%;display:flex;align-items:center;gap:13px;text-align:left;padding:16px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;cursor:pointer;box-shadow:0 9px 25px rgba(23,32,43,.05);transition:.18s}.profile-stat-button:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(23,32,43,.09)}.profile-stat-button .stat-icon{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-size:18px;font-weight:900}.profile-stat-button.blue .stat-icon{background:#eaf2fb;color:#2f6fca}.profile-stat-button.green .stat-icon{background:#edf8e6;color:#4f8f25}.profile-stat-button span:nth-child(2){flex:1}.profile-stat-button strong{display:block;font-size:20px;color:#17202b}.profile-stat-button small{display:block;color:#687482;font-size:11px;margin-top:2px}.profile-stat-button b{font-size:11px;color:#2f6fca}.profile-stat-button.green b{color:#4f8f25}
+.profile-notification-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}.profile-notification-grid label{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #dfe5ea;border-radius:12px;background:#fafbfd;color:#344150;font-size:12px}.profile-notification-grid input{width:auto!important}.profile-notification-grid + .actions{margin-top:12px}.profile-stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.profile-stat-button{width:100%;display:flex;align-items:center;gap:13px;text-align:left;padding:16px;border:1px solid #dfe5ea;border-radius:19px;background:#fff;cursor:pointer;box-shadow:0 9px 25px rgba(23,32,43,.05);transition:.18s}.profile-stat-button:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(23,32,43,.09)}.profile-stat-button .stat-icon{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-size:18px;font-weight:900}.profile-stat-button.blue .stat-icon{background:#eaf2fb;color:#2f6fca}.profile-stat-button.green .stat-icon{background:#edf8e6;color:#4f8f25}.profile-stat-button span:nth-child(2){flex:1}.profile-stat-button strong{display:block;font-size:20px;color:#17202b}.profile-stat-button small{display:block;color:#687482;font-size:11px;margin-top:2px}.profile-stat-button b{font-size:11px;color:#2f6fca}.profile-stat-button.green b{color:#4f8f25}
 .profile-panel{display:none!important}.profile-panel.is-open{display:block!important}.profile-card{padding:23px!important;border:1px solid #dfe5ea!important;border-radius:22px!important;background:#fff!important;box-shadow:0 10px 30px rgba(23,32,43,.055)!important}.panel-heading{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}.panel-heading h2{margin:3px 0 5px!important}.panel-heading p{margin:0;color:#687482;font-size:13px}.panel-close{border:1px solid #dfe5ea;background:#f7f9fb;border-radius:10px;padding:8px 11px;color:#687482;cursor:pointer}.profile-solutions{display:grid;gap:10px;margin-top:17px}.profile-solution-item{padding:15px 16px;border:1px solid #e1e6eb;border-radius:16px;background:#fafbfd}.solution-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.solution-top strong{color:#17202b;font-size:14px}.solution-top span{font-size:9px;font-weight:800;letter-spacing:.8px;padding:5px 8px;border-radius:999px;background:#edf8e6;color:#4f8f25}.profile-solution-item p{margin:9px 0 7px;color:#344150;white-space:pre-wrap;line-height:1.55;font-size:13px}.profile-solution-item small{color:#7a8590;font-size:10px}.profile-empty{padding:22px;text-align:center;border:1px dashed #cfd7df;border-radius:16px;color:#687482;background:#fafbfd}.password-card{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,#17202b,#101827)!important;color:#fff!important;border-color:#17202b!important}.password-card h2{color:#fff!important;margin:3px 0 5px!important}.password-card p{color:#b9c3cf!important;margin:0!important;font-size:13px}.password-card .mini-label{color:#8fc2f3!important}.profile-dark{background:#fff!important;color:#17202b!important;border:1px solid rgba(255,255,255,.35)!important;white-space:nowrap}
 @media(max-width:700px){.profile-page{padding:12px 12px 112px!important}.profile-page .profile-hero{padding:19px!important;border-radius:21px!important}.profile-avatar{width:61px!important;height:61px!important;border-radius:18px!important;font-size:21px!important}.profile-main{gap:13px}.profile-name{font-size:28px!important}.profile-sub{font-size:12px!important}.id-card-panel,.profile-card{padding:18px!important;border-radius:19px!important}.id-card-heading{align-items:flex-start}.id-card-icon{width:46px;height:46px}.id-card-current{align-items:flex-start}.id-upload-form{grid-template-columns:1fr!important}.id-upload-form .profile-action{width:100%!important}.profile-stat-grid{grid-template-columns:1fr!important;gap:10px}.profile-stat-button{padding:14px}.password-card{display:block!important}.password-card .profile-action{width:100%!important;margin-top:14px}.panel-heading{align-items:flex-start}.panel-close{flex:0 0 auto}.profile-solution-item{padding:13px}.solution-top{align-items:flex-start}.solution-top strong{font-size:13px}}
 @media(max-width:390px){.profile-page{padding-left:10px!important;padding-right:10px!important}.profile-name{font-size:25px!important}.profile-avatar{width:55px!important;height:55px!important}.id-card-current{gap:9px}.profile-stat-button{border-radius:16px}}
@@ -7601,11 +8047,10 @@ def community_chat():
                     reply_message_id = int(sent_row["id"]) if sent_row else None
                     sender_row = con.execute("SELECT name FROM students WHERE id=?", (my_id,)).fetchone()
                     sender_name = sender_row["name"] if sender_row else "A student"
-                    con.execute(
-                        "INSERT INTO student_notifications(recipient_student_id,sender_student_id,reply_message_id,title,message,created_at,read_at) VALUES(?,?,?,?,?,?,NULL)",
-                        (reply_recipient_id, my_id, reply_message_id, "New reply in Community Chat", f"{sender_name} replied to your message: {text[:180]}", created_at),
-                    )
-                    con.commit()
+                    try:
+                        create_student_notification(reply_recipient_id,"New reply in Community Chat",f"{sender_name} replied to your question: {text[:180]}","community","/notification-open?audience=student",True)
+                    except Exception:
+                        pass
                 except Exception:
                     # Notifications are optional; never break Community Chat.
                     try: con.rollback()
@@ -8508,8 +8953,13 @@ def student_action(sid, action):
         con.execute("DELETE FROM students WHERE id=?", (sid,))
     else:
         status = "approved" if action in ("approve", "unblock") else "blocked"
+        student_row=con.execute("SELECT name,student_id FROM students WHERE id=?",(sid,)).fetchone()
         con.execute("UPDATE students SET status=? WHERE id=?", (status, sid))
-    con.commit(); con.close(); flash(f"Student {action}d." if action != "unblock" else "Student unblocked."); return redirect(url_for("admin_students"))
+    con.commit(); con.close()
+    if action in ("approve","unblock") and student_row:
+        try: create_student_notification(sid,"Your VYBE access is approved",f"Welcome to VYBE, {student_row['name']}. Your student account is now ready.","account","/notification-open?audience=student",True)
+        except Exception: pass
+    flash(f"Student {action}d." if action != "unblock" else "Student unblocked."); return redirect(url_for("admin_students"))
 
 
 @app.route("/admin/students/delete-all", methods=["POST"])
@@ -8638,6 +9088,11 @@ def publisher():
             flash("Could not publish right now. Please try again.")
         finally:
             con.close()
+        try:
+            kind_label={"announcements":"announcement","events":"campus event","timetable":"timetable","academic_updates":"academic update","academic_resources":"study resource"}.get(str(request.form.get("kind") or ""),"campus update")
+            broadcast_student_notification("New VYBE update",f"A new {kind_label} has been published in VYBE.","academic","/notification-open?audience=student")
+        except Exception:
+            pass
         return redirect(url_for("publisher"))
 
     cards=[]
@@ -8676,6 +9131,8 @@ def admin_announcements():
             con.close(); flash("Automatic deletion must be after the publish date."); return redirect(url_for("admin_announcements"))
         con.execute("INSERT INTO announcements(title,message,priority,created_at,publish_at,expires_at) VALUES(?,?,?,?,?,?)", (title,message,priority,publish_utc,publish_utc,expires_utc))
         con.commit(); con.close()
+        try: broadcast_student_notification("New announcement",title,"announcement","/notification-open?audience=student")
+        except Exception: pass
         flash("Announcement published to VYBE.")
         return redirect(url_for("admin_announcements"))
     rows=con.execute("SELECT * FROM announcements ORDER BY id DESC").fetchall()
@@ -10227,6 +10684,54 @@ ADMIN_DESKTOP_POLISH_CSS = r"""
 </style>
 """
 
+
+@app.route("/admin/notifications/read", methods=["POST"])
+@admin_required
+def admin_notifications_read():
+    con=db()
+    try:
+        _ensure_push_schema(con); con.execute("UPDATE notifications SET read_at=? WHERE read_at IS NULL",(now(),)); con.commit(); return jsonify(ok=True)
+    finally: con.close()
+
+@app.route("/admin/notifications", methods=["GET","POST"])
+@admin_required
+def admin_notifications_settings():
+    con=db(); _ensure_push_schema(con)
+    if request.method=="POST":
+        action=request.form.get("action","").strip()
+        if action=="settings":
+            enabled=1 if request.form.get("enabled")=="1" else 0
+            vals={k:(1 if request.form.get(k)=="1" else 0) for k in ("registrations","password_resets","student_messages","campus_updates")}
+            if con.is_pg:
+                con.execute("INSERT INTO admin_notification_settings(id,enabled,registrations,password_resets,student_messages,campus_updates,updated_at) VALUES(1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET enabled=EXCLUDED.enabled,registrations=EXCLUDED.registrations,password_resets=EXCLUDED.password_resets,student_messages=EXCLUDED.student_messages,campus_updates=EXCLUDED.campus_updates,updated_at=EXCLUDED.updated_at",(enabled,vals["registrations"],vals["password_resets"],vals["student_messages"],vals["campus_updates"],now()))
+            else:
+                con.execute("INSERT INTO admin_notification_settings(id,enabled,registrations,password_resets,student_messages,campus_updates,updated_at) VALUES(1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,registrations=excluded.registrations,password_resets=excluded.password_resets,student_messages=excluded.student_messages,campus_updates=excluded.campus_updates,updated_at=excluded.updated_at",(enabled,vals["registrations"],vals["password_resets"],vals["student_messages"],vals["campus_updates"],now()))
+            con.commit(); con.close(); flash("Admin notification settings saved."); return redirect(url_for("admin_notifications_settings"))
+        if action=="send":
+            target=" ".join(request.form.get("target","").split())[:120]
+            title=" ".join(request.form.get("title","").split())[:160]
+            message=request.form.get("message","").strip()[:3000]
+            if not target or not title or not message:
+                con.close(); flash("Student name/ID, title and message are required."); return redirect(url_for("admin_notifications_settings"))
+            if target.lower() in {"all","all students","everyone"}:
+                con.close(); broadcast_student_notification(title,message,"admin","/notification-open?audience=student"); flash("Message sent to all approved students."); return redirect(url_for("admin_notifications_settings"))
+            row=con.execute("SELECT id,name,student_id FROM students WHERE student_id=? OR lower(name)=lower(?) ORDER BY CASE WHEN student_id=? THEN 0 ELSE 1 END LIMIT 1",(target,target,target)).fetchone()
+            con.close()
+            if not row: flash("No approved student matched that name or roll number."); return redirect(url_for("admin_notifications_settings"))
+            # Only approved students receive admin messages.
+            con=db(); status=con.execute("SELECT status FROM students WHERE id=?",(row["id"],)).fetchone(); con.close()
+            if not status or status["status"]!="approved": flash("That student is not currently approved."); return redirect(url_for("admin_notifications_settings"))
+            create_student_notification(int(row["id"]),title,message,"admin","/notification-open?audience=student",True)
+            flash(f"Message sent to {row['name']}."); return redirect(url_for("admin_notifications_settings"))
+    settings=con.execute("SELECT * FROM admin_notification_settings WHERE id=1").fetchone()
+    if not settings:
+        settings={"enabled":1,"registrations":1,"password_resets":1,"student_messages":1,"campus_updates":1}
+    rows=con.execute("SELECT id,kind,title,message,created_at,read_at FROM notifications ORDER BY id DESC LIMIT 30").fetchall()
+    con.close()
+    history=''.join(f'<div class="card" style="padding:14px"><div style="display:flex;justify-content:space-between;gap:12px"><b>{esc(r["title"])}</b><span class="small">{esc(r["created_at"])}</span></div><div class="small" style="margin-top:6px;white-space:pre-wrap">{esc(r["message"])}</div></div>' for r in rows) or '<div class="card"><div class="empty">No admin notification history yet.</div></div>'
+    body=f'''<section class="section settings-detail"><div class="admin-page-head"><div><a href="/admin/settings" class="admin-back">← Settings</a><span class="admin-page-kicker">VYBE NOTIFICATIONS</span><h1>Notifications.</h1><p>Device alerts use VYBE's native Web Push layer. No page polling is added for push delivery.</p></div></div><div class="two"><div class="card"><div class="settings-editor-icon">🔔</div><h2>Admin device notifications</h2><p class="muted">Enable the notification permission on this admin device. New registrations and password-recovery requests can then alert you even when the VYBE tab is closed.</p><button id="vybeEnableAdminNotifications" class="btn accent" type="button">Allow VYBE notifications on this device</button><div id="vybeAdminPushStatus" class="small" style="margin-top:9px"></div><form class="form" method="post" style="margin-top:18px"><input type="hidden" name="action" value="settings"><label class="settings-check"><input type="checkbox" name="enabled" value="1"{' checked' if settings['enabled'] else ''}><span><b>Enable admin notifications</b><small>Master switch for device alerts.</small></span></label><label class="settings-check"><input type="checkbox" name="registrations" value="1"{' checked' if settings['registrations'] else ''}><span><b>New registrations</b><small>Alert when a new student requests access.</small></span></label><label class="settings-check"><input type="checkbox" name="password_resets" value="1"{' checked' if settings['password_resets'] else ''}><span><b>Password recovery</b><small>Alert when a student requests a password change.</small></span></label><label class="settings-check"><input type="checkbox" name="student_messages" value="1"{' checked' if settings['student_messages'] else ''}><span><b>Student messages / problems</b><small>Alert for student messages that need admin attention.</small></span></label><label class="settings-check"><input type="checkbox" name="campus_updates" value="1"{' checked' if settings['campus_updates'] else ''}><span><b>Campus updates</b><small>Alert for VYBE update events.</small></span></label><button class="btn accent">Save admin notification settings →</button></form></div><div class="card"><h2>Send a direct message</h2><p class="muted">Send to one approved student by exact roll number or name, or type <b>all</b> for every approved student.</p><form class="form" method="post"><input type="hidden" name="action" value="send"><input name="target" maxlength="120" placeholder="Student roll number, exact name, or all" required><input name="title" maxlength="160" placeholder="Notification title" required><textarea name="message" maxlength="3000" placeholder="Write the message…" required></textarea><button class="btn accent">Send notification →</button></form><p class="small" style="margin-top:10px">Student device notification clicks always open VYBE login when logged out, or the dashboard when already logged in.</p></div></div><section class="section"><div class="admin-page-head"><div><span class="admin-page-kicker">RECENT ADMIN ALERTS</span><h2>Notification history.</h2></div></div><div style="display:grid;gap:10px">{history}</div></section></section>'''
+    return layout("VYBE Notifications",body,admin=True)
+
 @app.route("/admin/settings")
 @admin_required
 def admin_settings():
@@ -10237,7 +10742,7 @@ def admin_settings():
     pub=con.execute("SELECT COUNT(*) AS c FROM settings WHERE key LIKE ? AND value=?", ("content_manager_%", "1")).fetchone()["c"]
     con_email=setting(con,"contact_admin_email","")
     con.close()
-    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Manage multiple student WhatsApp groups and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile online-classes" href="/admin/youtube-channels"><span class="settings-icon">▶</span><div><b>YouTube Channels</b><small>Manage multiple learning channels for every semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
+    body=f'''<section class="section settings-hub"><div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a><span class="admin-page-kicker">VYBE SETTINGS</span><h1>Settings.</h1><p>Keep the important controls separate and easy to operate. Open a section, make the change, then return here.</p></div></div><div class="settings-grid"><a class="settings-tile security" href="/admin/password"><span class="settings-icon">🔐</span><div><b>Security Center</b><small>Change admin password, verify passkey and register passkeys.</small></div><strong>→</strong></a><a class="settings-tile status" href="/admin/status"><span class="settings-icon">◉</span><div><b>VYBE ON / OFF</b><small>Control whether students and public visitors can access VYBE.</small></div><span class="settings-state {'on' if online else 'off'}">{'ON' if online else 'OFF'}</span></a><a class="settings-tile whatsapp" href="/admin/whatsapp-community"><span class="settings-icon">💬</span><div><b>WhatsApp Community</b><small>Manage multiple student WhatsApp groups and control the student community button.</small></div><span class="settings-state {'on' if wa else 'off'}">{'LINKED' if wa else 'NOT SET'}</span></a><a class="settings-tile drive" href="/admin/drive"><span class="settings-icon">☁</span><div><b>VYBE Drive Library</b><small>Master file storage, direct large uploads and automatic Drive sync.</small></div><span class="settings-state on">OPEN</span></a><a class="settings-tile online-classes" href="/admin/online-classes"><span class="settings-icon">▣</span><div><b>Online Classes</b><small>Paste and manage online class links by semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile online-classes" href="/admin/youtube-channels"><span class="settings-icon">▶</span><div><b>YouTube Channels</b><small>Manage multiple learning channels for every semester and subject.</small></div><span class="settings-state on">MANAGE</span></a><a class="settings-tile publisher" href="/admin/publisher-access"><span class="settings-icon">✎</span><div><b>Publisher Access</b><small>Choose trusted students and select exactly what they can publish.</small></div><span class="settings-state on">{pub} ACTIVE</span></a><a class="settings-tile contact-terms" href="/admin/contact-terms"><span class="settings-icon">✉</span><div><b>Contact / Terms</b><small>Set your admin name/email and review consent records from visitors and students.</small></div><span class="settings-state {'on' if con_email else 'off'}">{'READY' if con_email else 'SETUP'}</span></a><a class="settings-tile notifications" href="/admin/notifications"><span class="settings-icon">🔔</span><div><b>VYBE Notifications</b><small>Manage device notifications, direct student messages and admin alerts.</small></div><span class="settings-state on">MANAGE</span></a></div><div class="settings-footer-grid"><a class="card settings-mini" href="/admin/assistant"><b>VYBE AI Settings</b><small>Ask VYBE switch and student shortcuts.</small><span>Open →</span></a><a class="card settings-mini" href="/admin/analytics"><b>Analytics</b><small>Usage and activity overview.</small><span>Open →</span></a></div></section>'''
     return layout("Settings",body,admin=True)
 
 
