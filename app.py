@@ -4483,7 +4483,7 @@ body{background-attachment:scroll!important}
 }
 
 '''
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}{performance_css}
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#020817"><meta name="description" content="VYBE is a student-powered campus space for academics, study resources, campus support and student community."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.webmanifest"><meta name="vybe-csrf-token" content="{esc(session.get("_csrf_token", ""))}"><title>{esc(title)} · VYBE</title><style>{CSS}{AUTH_PAGE_CSS}{ADMIN_PASSWORD_ALERT_CSS if admin else ""}{ADMIN_PROBLEM_ALERT_CSS if admin else ""}{mobile_runtime_css}{performance_css}
   /* ===== PHONE HEADER + BOTTOM NAV FINAL FIX ===== */
   @media(max-width:850px){{
     html,body{{width:100%!important;max-width:100%!important;overflow-x:hidden!important}}
@@ -5342,7 +5342,7 @@ const regBtn=document.getElementById('vybeEnableRegistrationNotifications');if(r
 # ---------------------------------------------------------------------------
 
 def _vybe_public_shell(title, body):
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f"><title>{title} · VYBE</title><style>
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f"><meta name="description" content="VYBE — Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community."><link rel="manifest" href="/manifest.webmanifest"><title>{title} · VYBE</title><style>
 *{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#f6f8fb;color:#17202b}}body{{overflow-x:hidden}}a{{color:inherit;text-decoration:none}}
 .vybe-public{{min-height:100vh;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 0%,rgba(47,111,202,.13),transparent 34%),linear-gradient(180deg,#fbfdff 0%,#f4f7fa 100%)}}.vybe-public::before{{content:"";position:absolute;width:620px;height:620px;border-radius:50%;left:50%;top:-340px;transform:translateX(-50%);background:radial-gradient(circle,rgba(47,111,202,.15),rgba(104,184,46,.035) 45%,transparent 70%);filter:blur(8px);pointer-events:none}}
 .vybe-top{{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;max-width:1180px;margin:auto;padding:24px 24px 0}}.vybe-brand{{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.04em;font-size:20px}}.vybe-brand-mark{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#163b69,#07111f);box-shadow:0 12px 30px rgba(7,17,31,.18);position:relative;overflow:hidden}}.vybe-brand-mark span{{position:relative;z-index:1}}.vybe-brand-mark::after{{content:"";position:absolute;inset:-20%;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.3),transparent 65%);animation:shine 3.8s linear infinite}}.vybe-admin-mini{{padding:10px 14px;border:1px solid rgba(7,17,31,.1);background:rgba(255,255,255,.72);backdrop-filter:blur(16px);border-radius:13px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(18,36,56,.06);transition:.22s ease}}.vybe-admin-mini:hover{{transform:translateY(-2px)}}
@@ -5356,6 +5356,62 @@ def _vybe_public_shell(title, body):
 @keyframes rise{{from{{opacity:0;transform:translateY(22px)}}to{{opacity:1;transform:none}}}}@keyframes cardIn{{from{{opacity:0;transform:translateY(28px) scale(.98)}}to{{opacity:1;transform:none}}}}@keyframes logoIn{{from{{opacity:0;transform:scale(.55) rotate(-10deg)}}to{{opacity:1;transform:none}}}}@keyframes logoSweep{{0%,30%{{left:-80%}}65%,100%{{left:125%}}}}@keyframes shine{{0%,45%{{transform:translateX(-130%)}}75%,100%{{transform:translateX(130%)}}}}@keyframes orbit{{to{{transform:rotate(360deg)}}}}@keyframes float{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-8px)}}}}@keyframes pulse{{0%,100%{{transform:scale(1);opacity:.8}}50%{{transform:scale(1.35);opacity:1}}}}
 @media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
 </style></head><body><main class="vybe-public">{body}</main></body></html>'''
+
+@app.route("/manifest.webmanifest")
+def vybe_manifest():
+    """Minimal install manifest; it does not cache or alter application pages."""
+    manifest = {
+        "id": "/",
+        "name": "VYBE Campus",
+        "short_name": "VYBE",
+        "description": "Your Campus. Your Community. Your Space.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#07111f",
+        "theme_color": "#07111f",
+        "icons": [{"src": "/vybe-notification-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+    }
+    return jsonify(manifest), 200, {"Cache-Control": "public, max-age=86400"}
+
+
+@app.route("/robots.txt")
+def vybe_robots_txt():
+    base = request.url_root.rstrip("/")
+    body = "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /profile\nDisallow: /api/\nDisallow: /push/\nDisallow: /notification-open\nDisallow: /logout\nDisallow: /admin/logout\nSitemap: " + base + "/sitemap.xml\n"
+    return app.response_class(body, mimetype="text/plain", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.route("/sitemap.xml")
+def vybe_sitemap():
+    # Only public entry pages are listed; private student/admin routes are excluded.
+    base = request.url_root.rstrip("/")
+    urls = ["/", "/offline", "/contact-terms"]
+    body = '<?xml version="1.0" encoding="UTF-8"?>' + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join('<url><loc>' + html.escape(base + path, quote=True) + '</loc></url>' for path in urls) + '</urlset>'
+    return app.response_class(body, mimetype="application/xml", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.after_request
+def _vybe_safe_performance_headers(response):
+    """Cache only public, non-personal responses; never cache signed-in pages or APIs."""
+    path = request.path or "/"
+    if request.method != "GET" or path.startswith(("/admin", "/dashboard", "/profile", "/student/", "/community", "/api/", "/push/", "/notification-open", "/login", "/register", "/forgot-password", "/reset-password", "/account/", "/logout", "/service-worker.js")) or (path == "/" and response.status_code != 200):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    elif path == "/":
+        response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    elif path in ("/offline", "/robots.txt", "/sitemap.xml"):
+        response.headers.setdefault("Cache-Control", "public, max-age=3600")
+    elif path == "/manifest.webmanifest":
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
+    elif path == "/vybe-notification-icon.svg":
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
+    # Basic hardening headers that do not interfere with inline CSS/JS or existing flows.
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
+
 
 @app.route("/offline")
 def offline():
