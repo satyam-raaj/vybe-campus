@@ -9522,8 +9522,11 @@ def api_academic_timetable():
     # Campus-wide break takes priority. Otherwise only show a room/group break
     # when it matches a class that would otherwise be displayed in this slot.
     campus_break=next((b for b in bs if (b['group_name'] or '*').strip()=='*'),None)
-    if campus_break:
-        return jsonify({'mode':'break','title':'BREAK TIME','meta':f"{campus_break['start_time']}–{campus_break['end_time']} · {campus_break['name']}",'items':[],'slot_key':f"break-{campus_break['start_time']}-{campus_break['end_time']}-{campus_break['name']}"})
+    # A break must be shown even when there are no classes in the current slot.
+    # If there is no campus-wide break, show any currently active room/group break.
+    active_break=campus_break or (bs[0] if bs else None)
+    if active_break:
+        return jsonify({'mode':'break','title':'BREAK TIME','meta':f"{active_break['start_time']}–{active_break['end_time']} · {active_break['name']}",'items':[],'slot_key':f"break-{active_break['start_time']}-{active_break['end_time']}-{active_break['name']}"})
     rows=[dict(r) for r in periods if active(r)]
     rows.sort(key=lambda r:(r['start_time'],r['room'],r['subject']))
     current=[r for r in rows if r['start_time']<=clock<r['end_time']]
