@@ -972,12 +972,6 @@ def init_db():
                 id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
                 file_data BYTEA, assistant_text TEXT NOT NULL DEFAULT ''
             )""",
-            """CREATE TABLE IF NOT EXISTS academic_timetable_documents (
-                id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, original_name TEXT NOT NULL,
-                semester TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '',
-                end_date TEXT NOT NULL DEFAULT '', published BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TEXT NOT NULL, drive_file_id TEXT, drive_folder_id TEXT, drive_web_url TEXT
-            )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id BIGSERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -1168,12 +1162,6 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
                 file_data BLOB, assistant_text TEXT NOT NULL DEFAULT ''
-            )""",
-            """CREATE TABLE IF NOT EXISTS academic_timetable_documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, original_name TEXT NOT NULL,
-                semester TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '',
-                end_date TEXT NOT NULL DEFAULT '', published INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL, drive_file_id TEXT, drive_folder_id TEXT, drive_web_url TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5366,8 +5354,9 @@ def _vybe_public_shell(title, body):
 .vybe-showcase{{max-width:1020px;margin:30px auto 0;padding:0 24px 62px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;position:relative;z-index:2}}.vybe-show-card{{min-height:130px;padding:21px;border-radius:24px;background:rgba(255,255,255,.68);border:1px solid rgba(23,32,43,.075);box-shadow:0 18px 50px rgba(18,36,56,.06);backdrop-filter:blur(18px);text-align:left;transition:.25s ease;animation:cardIn .8s both}}.vybe-show-card:nth-child(2){{animation-delay:.08s}}.vybe-show-card:nth-child(3){{animation-delay:.16s}}.vybe-show-card:hover{{transform:translateY(-5px)}}.vybe-show-icon{{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:#edf3fb;color:#2f6fca;font-weight:900;margin-bottom:15px}}.vybe-show-card:nth-child(2) .vybe-show-icon{{background:#edf8e6;color:#5a9e29}}.vybe-show-card:nth-child(3) .vybe-show-icon{{background:#f0eefb;color:#6657b4}}.vybe-show-card h3{{margin:0 0 6px;font-size:16px}}.vybe-show-card p{{margin:0;color:#71808e;font-size:13px;line-height:1.5}}.vybe-footer{{position:relative;z-index:2;text-align:center;padding:0 20px 28px;color:#8a96a3;font-size:11px}}
 .vybe-status-wrap{{min-height:calc(100vh - 100px);display:grid;place-items:center;padding:40px 20px;position:relative;z-index:2}}.vybe-status-card{{width:min(620px,100%);text-align:center;padding:42px 34px;border-radius:30px;background:rgba(255,255,255,.76);border:1px solid rgba(23,32,43,.09);box-shadow:0 25px 80px rgba(18,36,56,.1);backdrop-filter:blur(22px);animation:rise .75s both}}.vybe-status-mark{{width:88px;height:88px;margin:0 auto 22px;border-radius:27px;display:grid;place-items:center;background:#07111f;color:#fff;font-size:35px;font-weight:900;box-shadow:0 20px 50px rgba(7,17,31,.2);animation:float 4s ease-in-out infinite}}.vybe-status-card .badge{{display:inline-block;font-size:11px;font-weight:900;letter-spacing:.08em;color:#5f6d7c;padding:7px 10px;border-radius:999px;background:#eef2f6}}.vybe-status-card h1{{font-size:clamp(38px,8vw,66px);letter-spacing:-.06em;margin:14px 0 10px;color:#101923}}.vybe-status-card p{{max-width:480px;margin:0 auto;color:#6d7a88;line-height:1.65;font-size:15px}}.status-actions{{display:flex;justify-content:center;gap:10px;margin-top:25px}}.vybe-error-code{{font-size:12px;font-weight:900;letter-spacing:.12em;color:#2f6fca;margin-bottom:8px}}
 @keyframes rise{{from{{opacity:0;transform:translateY(22px)}}to{{opacity:1;transform:none}}}}@keyframes cardIn{{from{{opacity:0;transform:translateY(28px) scale(.98)}}to{{opacity:1;transform:none}}}}@keyframes logoIn{{from{{opacity:0;transform:scale(.55) rotate(-10deg)}}to{{opacity:1;transform:none}}}}@keyframes logoSweep{{0%,30%{{left:-80%}}65%,100%{{left:125%}}}}@keyframes shine{{0%,45%{{transform:translateX(-130%)}}75%,100%{{transform:translateX(130%)}}}}@keyframes orbit{{to{{transform:rotate(360deg)}}}}@keyframes float{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-8px)}}}}@keyframes pulse{{0%,100%{{transform:scale(1);opacity:.8}}50%{{transform:scale(1.35);opacity:1}}}}
-@media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
-</style></head><body><main class="vybe-public">{body}</main></body></html>'''
+@media (max-width:700px){{.vybe-top{{padding:17px 16px 0}}.vybe-brand{{font-size:18px}}.vybe-brand-mark{{width:35px;height:35px;border-radius:11px}}.vybe-admin-mini{{font-size:12px;padding:9px 11px}}.vybe-hero{{padding:57px 18px 22px}}.vybe-logo-orbit{{width:132px;height:132px;margin-bottom:25px}}.vybe-logo-core{{width:82px;height:82px;border-radius:25px;font-size:39px}}.vybe-hero h1{{font-size:65px;margin-top:18px}}.vybe-hero p{{font-size:15px;max-width:350px}}.vybe-actions{{display:grid;grid-template-columns:1fr;max-width:340px;margin-left:auto;margin-right:auto}}.vybe-action{{width:100%;padding:13px 16px}}.vybe-fake-row{{margin-top:27px;gap:7px}}.vybe-fake{{font-size:10px;padding:7px 9px}}.vybe-showcase{{grid-template-columns:1fr;padding:0 18px 40px;margin-top:22px}}.vybe-show-card{{min-height:auto;padding:18px;border-radius:20px}}.vybe-status-wrap{{min-height:calc(100vh - 78px);padding:26px 16px}}.vybe-status-card{{padding:32px 20px;border-radius:25px}}.vybe-status-card h1{{font-size:46px}}.vybe-status-card p{{font-size:14px}}.status-actions{{display:grid;grid-template-columns:1fr;max-width:280px;margin:23px auto 0}}}}@media (min-width:701px){{.vybe-mobile-live-classes{{display:none!important}}}}.vybe-mobile-live-classes{{display:none}}@media (max-width:700px){{.vybe-hero{{padding-top:24px}}.vybe-logo-orbit{{margin-bottom:12px}}.vybe-mobile-live-classes{{display:block;width:min(100%,390px);margin:0 auto 20px;padding:15px 16px 13px;text-align:left;border-radius:20px;background:linear-gradient(145deg,rgba(7,17,31,.97),rgba(17,43,70,.96));color:#f6f9ff;box-shadow:0 15px 35px rgba(7,17,31,.15);border:1px solid rgba(255,255,255,.1);min-height:112px}}.vmlc-top{{display:flex;align-items:center;gap:7px;color:#a9c3df;font-size:9px;font-weight:850;letter-spacing:.13em}}.vmlc-dot{{width:6px;height:6px;border-radius:50%;background:#79d34a;box-shadow:0 0 0 4px rgba(121,211,74,.12);animation:pulse 1.8s infinite}}.vmlc-live{{margin-left:auto;color:#8ce16c;font-size:9px;letter-spacing:.1em}}.vmlc-subject{{font-size:17px;font-weight:850;letter-spacing:-.03em;margin-top:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.vmlc-meta{{font-size:11px;color:#b5c3d3;margin-top:5px}}.vmlc-progress{{height:2px;background:rgba(255,255,255,.1);border-radius:9px;margin-top:12px;overflow:hidden}}.vmlc-progress i{{display:block;height:100%;width:35%;background:linear-gradient(90deg,#2f6fca,#79d34a);border-radius:9px;animation:vmlcMove 2.6s ease-in-out infinite alternate}}@keyframes vmlcMove{{to{{width:92%}}}}}}@media (prefers-reduced-motion:reduce){{*,*::before,*::after{{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}}}}
+@media (max-width:700px){{}}
+</style></head><body><main class="vybe-public">{body}</main><script>(function(){{const el=document.getElementById('vybe-mobile-live-classes');if(!el||!matchMedia('(max-width:700px)').matches)return;let items=[],idx=0;const title=el.querySelector('.vmlc-subject'),meta=el.querySelector('.vmlc-meta'),live=el.querySelector('.vmlc-live');function paint(d){{if(d.mode==='break'){{title.textContent='BREAK TIME';meta.textContent=d.meta;live.textContent='CAMPUS';return}}items=d.items||[];if(!items.length){{title.textContent=d.title||'No classes scheduled right now';meta.textContent=d.meta||'';live.textContent='';return}}idx=idx%items.length;const x=items[idx];title.textContent=x.subject;meta.textContent=(x.start+'–'+x.end)+(x.room?' · '+x.room:'')+(d.mode==='classes'?' · '+d.title:'');live.textContent=d.mode==='classes'?'SCHEDULED':'UP NEXT'}}async function refresh(){{if(document.hidden)return;try{{const r=await fetch('/api/academic-timetable',{{credentials:'same-origin',cache:'no-store'}});if(r.ok)paint(await r.json())}}catch(e){{}}}}refresh();const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;if(!reduced)setInterval(()=>{{if(items.length>1&&!document.hidden){{idx=(idx+1)%items.length;refresh()}}}},6500);setInterval(refresh,90000);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)refresh()}})}})();</script></body></html>'''
 
 @app.route("/manifest.webmanifest")
 def vybe_manifest():
@@ -5438,7 +5427,7 @@ def home():
         return redirect(url_for("admin_panel"))
     admin_button = '<a class="vybe-action" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
     admin_mini = '<a class="vybe-admin-mini" href="/admin">Admin Login</a>' if _admin_device_is_trusted() else ""
-    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
+    body=f'''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a>{admin_mini}</header><section class="vybe-hero"><div class="vybe-logo-orbit"><div class="vybe-logo-core"><span>V</span></div></div><div id="vybe-mobile-live-classes" class="vybe-mobile-live-classes" aria-live="polite"><div class="vmlc-top"><span class="vmlc-dot"></span><span>ACADEMIC TIMETABLE</span><span class="vmlc-live">LIVE</span></div><div class="vmlc-subject">Checking schedule…</div><div class="vmlc-meta">Published classes appear here</div><div class="vmlc-progress"><i></i></div></div><div class="vybe-kicker"><i></i> Student-powered campus space</div><h1>Welcome to <em>VYBE.</em></h1><p>Your Campus. Your Community. Your Space. A focused digital home for academics, campus support and student community.</p><div class="vybe-actions"><a class="vybe-action primary" href="/login">Login</a><a class="vybe-action green" href="/register">Register</a><a class="vybe-action" href="/contact-terms" target="_blank" rel="noopener">Contact / Terms</a>{admin_button}</div><div class="vybe-fake-row" aria-hidden="true"><span class="vybe-fake">Academics</span><span class="vybe-fake">Campus</span><span class="vybe-fake">Community</span><span class="vybe-fake">Updates</span><span class="vybe-fake">Resources</span><span class="vybe-fake">Help Desk</span></div></section><section class="vybe-showcase"><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">▦</div><h3>Academics</h3><p>Study resources, updates and useful campus learning material.</p></article><article class="vybe-show-card"><div class="vybe-show-icon" aria-hidden="true">◉</div><h3>Campus</h3><p>One simple place for campus information and support.</p></article><article class="vybe-show-card"><div class="vybe-show-icon">✦</div><h3>Community</h3><p>A student space built around useful conversations and solutions.</p></article></section><footer class="vybe-footer">VYBE · Your Campus. Your Community. Your Space.</footer>'''
     return _vybe_public_shell("Welcome",body)
 
 ROLL_NUMBER_RE = re.compile(r"^\d{11,12}$")
@@ -8850,7 +8839,7 @@ def admin_panel():
         ("01", "Students & Access", "Approve requests, block/unblock students and manage publisher access.", "/admin/students", stats["students"], "STUDENTS", "blue", "♙"),
         ("02", "Community", "Turn Community Chat on/off and moderate student messages.", "/admin/community-chat", stats["messages"], "MESSAGES", "purple", "◉"),
         ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green", "◷"),
-        ("03A", "Academic Timetable PDFs", "Upload semester timetable PDFs separately from the existing timetable library.", "/admin/academic-timetable", "PDFs", "ACADEMIC", "blue", "▤"),
+        ("04", "Academic Timetable", "Manage published classes, rooms and breaks for the phone homepage.", "/admin/academic-timetable", "NEW", "SCHEDULE", "blue", "◷"),
         ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue", "⚑"),
         ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green", "▦"),
         ("06", "Help Desk", "Review student problems, send official solutions and manage reports.", "/admin/problems", stats["problems"], "REPORTS", "orange", "?"),
@@ -9502,132 +9491,75 @@ window.vybeDriveUpload = async function(file,status,category){
 VYBE_TIMETABLE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminTimetableDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file.files[0],status=document.getElementById(\'adminTimetableDriveStatus\');if(!file)return;b.disabled=true;try{const meta=await window.vybeDriveUpload(file,status,\'Timetable\');const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-timetable\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({file_id:meta.id,title:f.elements.title.value,assistant_text:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish timetable.\');status.textContent=\'✓ Timetable uploaded and published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
 VYBE_ACADEMIC_UPDATE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminAcademicDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file?f.elements.file.files[0]:document.getElementById(\'adminAcademicDriveFile\').files[0],status=document.getElementById(\'adminAcademicDriveStatus\'),kind=f.elements.kind.value,title=f.elements.title.value,external=f.elements.external_url.value.trim();if(!kind||!title||!f.elements.description.value.trim()){status.textContent=\'Choose an update type and enter the title and description.\';return}if((kind===\'Result\'||kind===\'Admit Card\')&&!external){status.textContent=\'A direct website link is required for \'+kind+\'.\';return}b.disabled=true;try{let meta=null;if(file){const category=kind===\'Result\'?\'Results\':kind===\'Date Sheet\'?\'Date Sheets\':kind===\'Admit Card\'?\'Admit Cards\':\'Exam Forms & Notices\';meta=await window.vybeDriveUpload(file,status,category)}const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-update\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({kind,title,description:f.elements.description.value,event_date:f.elements.event_date.value,external_url:external,file_id:meta?meta.id:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish update.\');status.textContent=\'✓ Update published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
 
+# Separate structured Academic Timetable: does not modify legacy timetable records.
+def _ensure_academic_schedule_schema():
+    con=db()
+    try:
+        if con.is_pg:
+            con.execute("CREATE TABLE IF NOT EXISTS vybe_academic_periods (id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, room TEXT NOT NULL DEFAULT '', weekdays TEXT NOT NULL DEFAULT '1,2,3,4,5', start_date TEXT NOT NULL DEFAULT '', end_date TEXT NOT NULL DEFAULT '', group_name TEXT NOT NULL DEFAULT '', published INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)")
+            con.execute("CREATE TABLE IF NOT EXISTS vybe_academic_breaks (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, weekdays TEXT NOT NULL DEFAULT '1,2,3,4,5', start_date TEXT NOT NULL DEFAULT '', end_date TEXT NOT NULL DEFAULT '', group_name TEXT NOT NULL DEFAULT '*', published INTEGER NOT NULL DEFAULT 0)")
+        else:
+            con.execute("CREATE TABLE IF NOT EXISTS vybe_academic_periods (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, room TEXT NOT NULL DEFAULT '', weekdays TEXT NOT NULL DEFAULT '1,2,3,4,5', start_date TEXT NOT NULL DEFAULT '', end_date TEXT NOT NULL DEFAULT '', group_name TEXT NOT NULL DEFAULT '', published INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)")
+            con.execute("CREATE TABLE IF NOT EXISTS vybe_academic_breaks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, weekdays TEXT NOT NULL DEFAULT '1,2,3,4,5', start_date TEXT NOT NULL DEFAULT '', end_date TEXT NOT NULL DEFAULT '', group_name TEXT NOT NULL DEFAULT '*', published INTEGER NOT NULL DEFAULT 0)")
+        con.commit()
+    finally: con.close()
 
-@app.route("/admin/academic-timetable", methods=["GET", "POST"])
+_ensure_academic_schedule_schema()
+
+@app.route('/api/academic-timetable')
+def api_academic_timetable():
+    from zoneinfo import ZoneInfo
+    dt=datetime.now(ZoneInfo('Asia/Kolkata'))
+    day=str(dt.isoweekday()); today=dt.strftime('%Y-%m-%d'); clock=dt.strftime('%H:%M')
+    con=db()
+    try:
+        periods=con.execute("SELECT id,subject,start_time,end_time,room,weekdays,start_date,end_date,group_name FROM vybe_academic_periods WHERE published=1").fetchall()
+        breaks=con.execute("SELECT name,start_time,end_time,weekdays,start_date,end_date,group_name FROM vybe_academic_breaks WHERE published=1").fetchall()
+    finally: con.close()
+    def active(r):
+        return day in (r['weekdays'] or '').split(',') and (not r['start_date'] or r['start_date']<=today) and (not r['end_date'] or r['end_date']>=today)
+    bs=[dict(r) for r in breaks if active(r) and r['start_time']<=clock<r['end_time']]
+    if any((b['group_name'] or '*')=='*' for b in bs):
+        b=next(b for b in bs if (b['group_name'] or '*')=='*')
+        return jsonify({'mode':'break','title':'BREAK TIME','meta':f"{b['start_time']}–{b['end_time']} · {b['name']}",'items':[]})
+    rows=[dict(r) for r in periods if active(r)]
+    rows=[r for r in rows if not any((b['group_name'] or '*')=='*' or (b['group_name'] or '').lower() in (r['room']+' '+r['group_name']).lower() for b in bs)]
+    rows.sort(key=lambda r:(r['start_time'],r['room'],r['subject']))
+    current=[r for r in rows if r['start_time']<=clock<r['end_time']]
+    upcoming=[r for r in rows if r['start_time']>clock]
+    chosen=current or upcoming
+    if not chosen: return jsonify({'mode':'empty','title':'No classes scheduled right now','meta':'Check back for the next published class.','items':[]})
+    return jsonify({'mode':'classes','title':'Live Classes' if current else 'UP NEXT','meta':'Scheduled timetable · '+dt.strftime('%a, %d %b'),'items':[{'subject':r['subject'],'start':r['start_time'],'end':r['end_time'],'room':r['room'],'group':r['group_name']} for r in chosen]})
+
+@app.route('/admin/academic-timetable', methods=['GET','POST'])
 @admin_required
 def admin_academic_timetable():
-    """Separate PDF library for the new Academic Timetable feature."""
-    con = db()
-    if request.method == "POST":
-        title = request.form.get("title", "").strip()[:160]
-        semester = request.form.get("semester", "").strip()[:100]
-        start_date = request.form.get("start_date", "").strip()[:10]
-        end_date = request.form.get("end_date", "").strip()[:10]
-        published = request.form.get("published") == "on"
-        f = request.files.get("file")
-        if not title or not f or not f.filename:
-            con.close(); flash("Enter a title and choose a timetable PDF.")
-            return redirect(url_for("admin_academic_timetable"))
-        if Path(f.filename).suffix.lower() != ".pdf" or (f.mimetype and f.mimetype not in ("application/pdf", "application/octet-stream")):
-            con.close(); flash("Academic Timetable accepts PDF files only.")
-            return redirect(url_for("admin_academic_timetable"))
-        if start_date and end_date and start_date > end_date:
-            con.close(); flash("The end date must be on or after the start date.")
-            return redirect(url_for("admin_academic_timetable"))
-        data = f.read()
-        if not data or len(data) > 20 * 1024 * 1024 or not data.startswith(b"%PDF"):
-            con.close(); flash("Choose a valid PDF file up to 20 MB.")
-            return redirect(url_for("admin_academic_timetable"))
-        original_name = Path(f.filename).name[:240]
-        drive_id = None
-        try:
-            folder = _drive_find_or_create_folder(VYBE_DRIVE_ROOT_FOLDER_ID, "Academic Timetable PDFs")
-            meta = _drive_upload_bytes(original_name, "application/pdf", folder, data)
-            drive_id, drive_folder, drive_url = _drive_metadata_values(meta)
-            con.execute(
-                """INSERT INTO academic_timetable_documents
-                   (title, original_name, semester, start_date, end_date, published,
-                    created_at, drive_file_id, drive_folder_id, drive_web_url)
-                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (title, original_name, semester, start_date, end_date, published,
-                 now(), drive_id, drive_folder, drive_url)
-            )
-            con.commit()
-            flash("Academic timetable PDF uploaded to its separate library.")
-        except Exception:
-            con.rollback()
-            if drive_id:
-                try: _drive_delete_file(drive_id)
-                except Exception: app.logger.exception("Could not clean up failed Academic Timetable PDF upload")
-            app.logger.exception("Academic Timetable PDF upload failed")
-            flash("Could not upload the Academic Timetable PDF. Please try again; the error was logged.")
-        finally:
-            con.close()
-        return redirect(url_for("admin_academic_timetable"))
-
-    rows = con.execute(
-        """SELECT id,title,original_name,semester,start_date,end_date,published,created_at,
-                  drive_file_id,drive_web_url
-           FROM academic_timetable_documents ORDER BY id DESC"""
-    ).fetchall()
-    con.close()
-    items = "".join(
-        f"""<div class="admin-list-row"><div><strong>{esc(r["title"])}</strong>
-        <small>{esc(r["original_name"])} · {esc(r["semester"] or "Semester not specified")} ·
-        {esc(r["start_date"] or "Start date not set")} – {esc(r["end_date"] or "End date not set")} ·
-        {"Published to students" if r["published"] else "Draft / hidden from students"}</small></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a class="btn dark" href="/academic-timetable-file/{r["id"]}" target="_blank" rel="noopener">View PDF</a>
-        <form method="post" action="/admin/academic-timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this Academic Timetable PDF?')">
-        <button class="btn danger" type="submit">Delete</button></form></div></div>"""
-        for r in rows
-    )
-    body = f"""<section class="section admin-content-page">
-      <div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a>
-      <span class="admin-page-kicker">ACADEMIC TIMETABLE · SEPARATE LIBRARY</span>
-      <h1>Academic Timetable PDFs.</h1>
-      <p>This PDF library is separate from the existing Timetable settings. Upload semester schedules here without changing legacy timetable uploads.</p></div></div>
-      <div class="admin-editor-grid"><div class="card admin-editor-card">
-      <div class="admin-editor-label">UPLOAD PDF</div><h2>New academic timetable</h2>
-      <form class="form" method="post" enctype="multipart/form-data">
-      <input name="title" maxlength="160" placeholder="Title e.g. B.Sc. CS Semester 1 · Aug–Dec 2026" required>
-      <input name="semester" maxlength="100" placeholder="Semester / batch (optional)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <label>Valid from<input type="date" name="start_date"></label>
-      <label>Valid until<input type="date" name="end_date"></label></div>
-      <input type="file" name="file" accept="application/pdf,.pdf" required>
-      <label style="display:flex;gap:9px;align-items:center"><input type="checkbox" name="published" checked style="width:auto"> Publish PDF to students</label>
-      <p class="muted">PDF only · up to 20 MB · stored in the separate “Academic Timetable PDFs” Google Drive folder. Image-based PDFs can be stored and viewed; entries are not automatically treated as a verified structured schedule.</p>
-      <button class="btn accent" type="submit">Upload Academic Timetable PDF →</button></form>
-      </div><div class="card admin-editor-side"><h2>Separate from legacy timetable</h2>
-      <p>Uploads on this page use their own database table and Drive folder. They do not replace, delete, or edit files in the existing Timetable settings.</p>
-      <div class="admin-side-rule"></div><b>{len(rows)} Academic Timetable PDF(s)</b></div></div>
-      <div class="admin-list-card"><div class="admin-list-head"><div><span>ACADEMIC TIMETABLE LIBRARY</span><h2>Uploaded PDFs</h2></div></div>
-      {items or '<div class="admin-empty">No Academic Timetable PDFs uploaded yet.</div>'}</div></section>"""
-    return layout("Academic Timetable PDFs", body, admin=True)
-
-
-@app.route("/admin/academic-timetable/<int:document_id>/delete", methods=["POST"])
-@admin_required
-def delete_academic_timetable_pdf(document_id):
-    con = db()
-    row = con.execute("SELECT drive_file_id FROM academic_timetable_documents WHERE id=?", (document_id,)).fetchone()
-    if not row:
-        con.close(); flash("Academic Timetable PDF not found.")
-        return redirect(url_for("admin_academic_timetable"))
+    con=db(); message=''
     try:
-        if row["drive_file_id"]: _drive_delete_file(row["drive_file_id"])
-        con.execute("DELETE FROM academic_timetable_documents WHERE id=?", (document_id,))
-        con.commit(); flash("Academic Timetable PDF deleted.")
-    except Exception:
-        con.rollback(); app.logger.exception("Academic Timetable PDF delete failed")
-        flash("Could not delete the PDF. Please try again.")
-    finally:
-        con.close()
-    return redirect(url_for("admin_academic_timetable"))
-
-
-@app.route("/academic-timetable-file/<int:document_id>")
-def academic_timetable_pdf_file(document_id):
-    con = db()
-    row = con.execute("SELECT drive_web_url, published FROM academic_timetable_documents WHERE id=?", (document_id,)).fetchone()
-    con.close()
-    if not row or not row["published"]: abort(404)
-    target = str(row["drive_web_url"] or "").strip()
-    parsed = urlparse(target)
-    if parsed.scheme not in ("https", "http") or not parsed.netloc: abort(404)
-    return redirect(target, code=302)
-
+        action=request.form.get('action','save')
+        if request.method=='POST':
+            if action=='period':
+                subject=request.form.get('subject','').strip()[:160]; start=request.form.get('start_time',''); end=request.form.get('end_time',''); room=request.form.get('room','').strip()[:100]
+                weekdays=','.join(str(x) for x in request.form.getlist('weekdays')) or '1,2,3,4,5'; sd=request.form.get('start_date',''); ed=request.form.get('end_date',''); group=request.form.get('group_name','').strip()[:100]; published=1 if request.form.get('published')=='1' else 0
+                if not subject or not re.fullmatch(r'\d{2}:\d{2}',start) or not re.fullmatch(r'\d{2}:\d{2}',end) or start>=end: raise ValueError('Enter a subject and valid start/end times.')
+                con.execute('INSERT INTO vybe_academic_periods(subject,start_time,end_time,room,weekdays,start_date,end_date,group_name,published,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(subject,start,end,room,weekdays,sd,ed,group,published,now())); message='Class saved.'
+            elif action=='break':
+                name=request.form.get('name','').strip()[:100]; start=request.form.get('start_time',''); end=request.form.get('end_time',''); group=request.form.get('group_name','*').strip()[:100] or '*'; weekdays=','.join(str(x) for x in request.form.getlist('weekdays')) or '1,2,3,4,5'
+                if not name or start>=end: raise ValueError('Enter a break name and valid times.')
+                con.execute('INSERT INTO vybe_academic_breaks(name,start_time,end_time,weekdays,start_date,end_date,group_name,published) VALUES(?,?,?,?,?,?,?,?)',(name,start,end,weekdays,request.form.get('start_date',''),request.form.get('end_date',''),group,1 if request.form.get('published')=='1' else 0)); message='Break saved.'
+            elif action=='publish_all':
+                con.execute('UPDATE vybe_academic_periods SET published=1'); con.execute('UPDATE vybe_academic_breaks SET published=1'); message='Schedule published.'
+            elif action.startswith('delete-period-'): con.execute('DELETE FROM vybe_academic_periods WHERE id=?',(int(action.rsplit('-',1)[1]),)); message='Class removed.'
+            elif action.startswith('delete-break-'): con.execute('DELETE FROM vybe_academic_breaks WHERE id=?',(int(action.rsplit('-',1)[1]),)); message='Break removed.'
+            con.commit()
+    except Exception as e:
+        con.rollback(); message=str(e)
+    periods=con.execute('SELECT * FROM vybe_academic_periods ORDER BY start_time,room,id').fetchall(); breaks=con.execute('SELECT * FROM vybe_academic_breaks ORDER BY start_time,id').fetchall(); con.close()
+    days=''.join(f'<label style="display:inline-block;margin:5px"><input type="checkbox" name="weekdays" value="{i}" {"checked" if i<6 else ""}> {d}</label>' for i,d in enumerate(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],1))
+    pr=''.join(f'<tr><td>{esc(r["subject"])}</td><td>{esc(r["start_time"])}–{esc(r["end_time"])}</td><td>{esc(r["room"])}</td><td>{"Published" if r["published"] else "Draft"}</td><td><form method="post"><button name="action" value="delete-period-{r["id"]}" class="btn danger">Remove</button></form></td></tr>' for r in periods)
+    br=''.join(f'<tr><td>{esc(r["name"])}</td><td>{esc(r["start_time"])}–{esc(r["end_time"])}</td><td>{esc(r["group_name"])}</td><td>{"Published" if r["published"] else "Draft"}</td><td><form method="post"><button name="action" value="delete-break-{r["id"]}" class="btn danger">Remove</button></form></td></tr>' for r in breaks)
+    body=f"""<section class="section"><div class="badge">NEW · SEPARATE FROM EXISTING TIMETABLE</div><h1>Academic Timetable</h1><p class="muted">Add classes and breaks here. Only published entries appear in the phone homepage widget.</p><p>{esc(message)}</p><div class="grid2"><div class="card"><h2>Add class</h2><form method="post" class="form"><input type="hidden" name="action" value="period"><input name="subject" placeholder="Subject / class name" required><div class="grid2"><label>Start<input type="time" name="start_time" required></label><label>End<input type="time" name="end_time" required></label></div><input name="room" placeholder="Room (e.g. Room 204)" required><input name="group_name" placeholder="Group / section (optional)"><div>{days}</div><div class="grid2"><label>Start date<input type="date" name="start_date"></label><label>End date<input type="date" name="end_date"></label></div><label><input type="checkbox" name="published" value="1"> Publish immediately</label><button class="btn accent">Save class</button></form></div><div class="card"><h2>Add break</h2><form method="post" class="form"><input type="hidden" name="action" value="break"><input name="name" placeholder="Break name" required><div class="grid2"><label>Start<input type="time" name="start_time" required></label><label>End<input type="time" name="end_time" required></label></div><input name="group_name" value="*" placeholder="* = campus-wide; otherwise room/group"><div>{days}</div><div class="grid2"><label>Start date<input type="date" name="start_date"></label><label>End date<input type="date" name="end_date"></label></div><label><input type="checkbox" name="published" value="1"> Publish immediately</label><button class="btn accent">Save break</button></form></div><div class="card"><h2>Publish schedule</h2><p>Review entries, then publish drafts.</p><form method="post"><button class="btn accent" name="action" value="publish_all">Publish all classes and breaks</button></form></div></div></section><section class="section"><div class="card tablewrap"><table><tr><th>Class</th><th>Time</th><th>Room</th><th>Status</th><th></th></tr>{pr or "<tr><td colspan=5>No classes added yet.</td></tr>"}</table><h2>Breaks</h2><table><tr><th>Break</th><th>Time</th><th>Scope</th><th>Status</th><th></th></tr>{br or "<tr><td colspan=5>No breaks added yet.</td></tr>"}</table></div></section>"""
+    return layout('Academic Timetable',body,admin=True)
 
 @app.route("/admin/timetable", methods=["GET","POST"])
 @admin_required
