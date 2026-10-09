@@ -972,6 +972,12 @@ def init_db():
                 id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
                 file_data BYTEA, assistant_text TEXT NOT NULL DEFAULT ''
             )""",
+            """CREATE TABLE IF NOT EXISTS academic_timetable_documents (
+                id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, original_name TEXT NOT NULL,
+                semester TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '',
+                end_date TEXT NOT NULL DEFAULT '', published BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TEXT NOT NULL, drive_file_id TEXT, drive_folder_id TEXT, drive_web_url TEXT
+            )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id BIGSERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -1162,6 +1168,12 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL, file_name TEXT NOT NULL, original_name TEXT NOT NULL, created_at TEXT NOT NULL,
                 file_data BLOB, assistant_text TEXT NOT NULL DEFAULT ''
+            )""",
+            """CREATE TABLE IF NOT EXISTS academic_timetable_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, original_name TEXT NOT NULL,
+                semester TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '',
+                end_date TEXT NOT NULL DEFAULT '', published INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL, drive_file_id TEXT, drive_folder_id TEXT, drive_web_url TEXT
             )""",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8838,6 +8850,7 @@ def admin_panel():
         ("01", "Students & Access", "Approve requests, block/unblock students and manage publisher access.", "/admin/students", stats["students"], "STUDENTS", "blue", "♙"),
         ("02", "Community", "Turn Community Chat on/off and moderate student messages.", "/admin/community-chat", stats["messages"], "MESSAGES", "purple", "◉"),
         ("03", "Timetable", "Upload new timetable versions, view them and delete old files.", "/admin/timetable", stats["timetables"], "FILES", "green", "◷"),
+        ("03A", "Academic Timetable PDFs", "Upload semester timetable PDFs separately from the existing timetable library.", "/admin/academic-timetable", "PDFs", "ACADEMIC", "blue", "▤"),
         ("04", "Academic Update", "Publish results, date sheets, exam notices and other updates.", "/admin/academic-updates", stats["updates"], "UPDATES", "blue", "⚑"),
         ("05", "Academic Hub", "Manage resources, study material, PYQs and academic content.", "/admin/academic-hub", stats["resources"], "RESOURCES", "green", "▦"),
         ("06", "Help Desk", "Review student problems, send official solutions and manage reports.", "/admin/problems", stats["problems"], "REPORTS", "orange", "?"),
@@ -9488,6 +9501,133 @@ window.vybeDriveUpload = async function(file,status,category){
 
 VYBE_TIMETABLE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminTimetableDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file.files[0],status=document.getElementById(\'adminTimetableDriveStatus\');if(!file)return;b.disabled=true;try{const meta=await window.vybeDriveUpload(file,status,\'Timetable\');const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-timetable\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({file_id:meta.id,title:f.elements.title.value,assistant_text:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish timetable.\');status.textContent=\'✓ Timetable uploaded and published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
 VYBE_ACADEMIC_UPDATE_FORM_JS = '<script>(function(){const f=document.getElementById(\'adminAcademicDriveForm\');if(!f)return;f.addEventListener(\'submit\',async()=>{const b=f.querySelector(\'button\'),file=f.elements.file?f.elements.file.files[0]:document.getElementById(\'adminAcademicDriveFile\').files[0],status=document.getElementById(\'adminAcademicDriveStatus\'),kind=f.elements.kind.value,title=f.elements.title.value,external=f.elements.external_url.value.trim();if(!kind||!title||!f.elements.description.value.trim()){status.textContent=\'Choose an update type and enter the title and description.\';return}if((kind===\'Result\'||kind===\'Admit Card\')&&!external){status.textContent=\'A direct website link is required for \'+kind+\'.\';return}b.disabled=true;try{let meta=null;if(file){const category=kind===\'Result\'?\'Results\':kind===\'Date Sheet\'?\'Date Sheets\':kind===\'Admit Card\'?\'Admit Cards\':\'Exam Forms & Notices\';meta=await window.vybeDriveUpload(file,status,category)}const csrf=(document.querySelector(\'meta[name="vybe-csrf-token"]\')||{}).content||\'\';const r=await fetch(\'/admin/drive/register-update\',{method:\'POST\',credentials:\'same-origin\',headers:{\'Content-Type\':\'application/json\',\'X-VYBE-CSRF\':csrf},body:JSON.stringify({kind,title,description:f.elements.description.value,event_date:f.elements.event_date.value,external_url:external,file_id:meta?meta.id:\'\'})});let d={};try{d=await r.json()}catch(_){ }if(!r.ok)throw new Error(d.error||\'Could not publish update.\');status.textContent=\'✓ Update published successfully.\';f.reset()}catch(e){status.textContent=\'Upload failed: \'+e.message}finally{b.disabled=false}})})();</script>'
+
+
+@app.route("/admin/academic-timetable", methods=["GET", "POST"])
+@admin_required
+def admin_academic_timetable():
+    """Separate PDF library for the new Academic Timetable feature."""
+    con = db()
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()[:160]
+        semester = request.form.get("semester", "").strip()[:100]
+        start_date = request.form.get("start_date", "").strip()[:10]
+        end_date = request.form.get("end_date", "").strip()[:10]
+        published = request.form.get("published") == "on"
+        f = request.files.get("file")
+        if not title or not f or not f.filename:
+            con.close(); flash("Enter a title and choose a timetable PDF.")
+            return redirect(url_for("admin_academic_timetable"))
+        if Path(f.filename).suffix.lower() != ".pdf" or (f.mimetype and f.mimetype not in ("application/pdf", "application/octet-stream")):
+            con.close(); flash("Academic Timetable accepts PDF files only.")
+            return redirect(url_for("admin_academic_timetable"))
+        if start_date and end_date and start_date > end_date:
+            con.close(); flash("The end date must be on or after the start date.")
+            return redirect(url_for("admin_academic_timetable"))
+        data = f.read()
+        if not data or len(data) > 20 * 1024 * 1024 or not data.startswith(b"%PDF"):
+            con.close(); flash("Choose a valid PDF file up to 20 MB.")
+            return redirect(url_for("admin_academic_timetable"))
+        original_name = Path(f.filename).name[:240]
+        drive_id = None
+        try:
+            folder = _drive_find_or_create_folder(VYBE_DRIVE_ROOT_FOLDER_ID, "Academic Timetable PDFs")
+            meta = _drive_upload_bytes(original_name, "application/pdf", folder, data)
+            drive_id, drive_folder, drive_url = _drive_metadata_values(meta)
+            con.execute(
+                """INSERT INTO academic_timetable_documents
+                   (title, original_name, semester, start_date, end_date, published,
+                    created_at, drive_file_id, drive_folder_id, drive_web_url)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (title, original_name, semester, start_date, end_date, published,
+                 now(), drive_id, drive_folder, drive_url)
+            )
+            con.commit()
+            flash("Academic timetable PDF uploaded to its separate library.")
+        except Exception:
+            con.rollback()
+            if drive_id:
+                try: _drive_delete_file(drive_id)
+                except Exception: app.logger.exception("Could not clean up failed Academic Timetable PDF upload")
+            app.logger.exception("Academic Timetable PDF upload failed")
+            flash("Could not upload the Academic Timetable PDF. Please try again; the error was logged.")
+        finally:
+            con.close()
+        return redirect(url_for("admin_academic_timetable"))
+
+    rows = con.execute(
+        """SELECT id,title,original_name,semester,start_date,end_date,published,created_at,
+                  drive_file_id,drive_web_url
+           FROM academic_timetable_documents ORDER BY id DESC"""
+    ).fetchall()
+    con.close()
+    items = "".join(
+        f"""<div class="admin-list-row"><div><strong>{esc(r["title"])}</strong>
+        <small>{esc(r["original_name"])} · {esc(r["semester"] or "Semester not specified")} ·
+        {esc(r["start_date"] or "Start date not set")} – {esc(r["end_date"] or "End date not set")} ·
+        {"Published to students" if r["published"] else "Draft / hidden from students"}</small></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn dark" href="/academic-timetable-file/{r["id"]}" target="_blank" rel="noopener">View PDF</a>
+        <form method="post" action="/admin/academic-timetable/{r["id"]}/delete" onsubmit="return confirm('Delete this Academic Timetable PDF?')">
+        <button class="btn danger" type="submit">Delete</button></form></div></div>"""
+        for r in rows
+    )
+    body = f"""<section class="section admin-content-page">
+      <div class="admin-page-head"><div><a href="/admin/panel" class="admin-back">← Dashboard</a>
+      <span class="admin-page-kicker">ACADEMIC TIMETABLE · SEPARATE LIBRARY</span>
+      <h1>Academic Timetable PDFs.</h1>
+      <p>This PDF library is separate from the existing Timetable settings. Upload semester schedules here without changing legacy timetable uploads.</p></div></div>
+      <div class="admin-editor-grid"><div class="card admin-editor-card">
+      <div class="admin-editor-label">UPLOAD PDF</div><h2>New academic timetable</h2>
+      <form class="form" method="post" enctype="multipart/form-data">
+      <input name="title" maxlength="160" placeholder="Title e.g. B.Sc. CS Semester 1 · Aug–Dec 2026" required>
+      <input name="semester" maxlength="100" placeholder="Semester / batch (optional)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label>Valid from<input type="date" name="start_date"></label>
+      <label>Valid until<input type="date" name="end_date"></label></div>
+      <input type="file" name="file" accept="application/pdf,.pdf" required>
+      <label style="display:flex;gap:9px;align-items:center"><input type="checkbox" name="published" checked style="width:auto"> Publish PDF to students</label>
+      <p class="muted">PDF only · up to 20 MB · stored in the separate “Academic Timetable PDFs” Google Drive folder. Image-based PDFs can be stored and viewed; entries are not automatically treated as a verified structured schedule.</p>
+      <button class="btn accent" type="submit">Upload Academic Timetable PDF →</button></form>
+      </div><div class="card admin-editor-side"><h2>Separate from legacy timetable</h2>
+      <p>Uploads on this page use their own database table and Drive folder. They do not replace, delete, or edit files in the existing Timetable settings.</p>
+      <div class="admin-side-rule"></div><b>{len(rows)} Academic Timetable PDF(s)</b></div></div>
+      <div class="admin-list-card"><div class="admin-list-head"><div><span>ACADEMIC TIMETABLE LIBRARY</span><h2>Uploaded PDFs</h2></div></div>
+      {items or '<div class="admin-empty">No Academic Timetable PDFs uploaded yet.</div>'}</div></section>"""
+    return layout("Academic Timetable PDFs", body, admin=True)
+
+
+@app.route("/admin/academic-timetable/<int:document_id>/delete", methods=["POST"])
+@admin_required
+def delete_academic_timetable_pdf(document_id):
+    con = db()
+    row = con.execute("SELECT drive_file_id FROM academic_timetable_documents WHERE id=?", (document_id,)).fetchone()
+    if not row:
+        con.close(); flash("Academic Timetable PDF not found.")
+        return redirect(url_for("admin_academic_timetable"))
+    try:
+        if row["drive_file_id"]: _drive_delete_file(row["drive_file_id"])
+        con.execute("DELETE FROM academic_timetable_documents WHERE id=?", (document_id,))
+        con.commit(); flash("Academic Timetable PDF deleted.")
+    except Exception:
+        con.rollback(); app.logger.exception("Academic Timetable PDF delete failed")
+        flash("Could not delete the PDF. Please try again.")
+    finally:
+        con.close()
+    return redirect(url_for("admin_academic_timetable"))
+
+
+@app.route("/academic-timetable-file/<int:document_id>")
+def academic_timetable_pdf_file(document_id):
+    con = db()
+    row = con.execute("SELECT drive_web_url, published FROM academic_timetable_documents WHERE id=?", (document_id,)).fetchone()
+    con.close()
+    if not row or not row["published"]: abort(404)
+    target = str(row["drive_web_url"] or "").strip()
+    parsed = urlparse(target)
+    if parsed.scheme not in ("https", "http") or not parsed.netloc: abort(404)
+    return redirect(target, code=302)
+
 
 @app.route("/admin/timetable", methods=["GET","POST"])
 @admin_required
