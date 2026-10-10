@@ -812,6 +812,34 @@ def set_setting(con, key, value):
 
 def init_db():
     con = db()
+    # Idempotent student-passkey migration: older production databases may predate this table.
+    # This is separate from admin passkeys and does not alter existing student accounts.
+    if con.is_pg:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_passkeys (
+            id BIGSERIAL PRIMARY KEY,
+            student_db_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            credential_id TEXT NOT NULL UNIQUE,
+            public_key TEXT NOT NULL,
+            sign_count BIGINT NOT NULL DEFAULT 0,
+            device_type TEXT,
+            backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+            transports TEXT,
+            created_at TEXT NOT NULL
+        )""")
+    else:
+        con.execute("""CREATE TABLE IF NOT EXISTS student_passkeys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_db_id INTEGER NOT NULL,
+            credential_id TEXT NOT NULL UNIQUE,
+            public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            device_type TEXT,
+            backed_up INTEGER NOT NULL DEFAULT 0,
+            transports TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(student_db_id) REFERENCES students(id) ON DELETE CASCADE
+        )""")
+    con.commit()
     if con.is_pg:
         statements = [
             """CREATE TABLE IF NOT EXISTS students (
