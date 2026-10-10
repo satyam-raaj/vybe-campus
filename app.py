@@ -93,8 +93,12 @@ if not SECRET_KEY:
     SECRET_KEY = secrets.token_hex(32)
 INITIAL_ADMIN_PASSWORD = os.environ.get("VYBE_ADMIN_INITIAL_PASSWORD", "").strip()
 VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
-PASSKEY_RP_ID = os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower() or VERCEL_HOST or "localhost"
-PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or (f"https://{PASSKEY_RP_ID}" if PASSKEY_RP_ID != "localhost" else "http://localhost:5000")
+# Use a stable production RP ID, not Vercel's per-deployment VERCEL_URL.
+# Set VYBE_PASSKEY_RP_ID / VYBE_PASSKEY_ORIGIN explicitly when using a custom domain.
+PASSKEY_RP_ID = (os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower()
+                 or os.environ.get("VYBE_CANONICAL_HOST", "").strip().lower()
+                 or "vybe-campus.vercel.app")
+PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or f"https://{PASSKEY_RP_ID}"
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
 VYBE_GOOGLE_OAUTH_CLIENT_ID = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_ID", "").strip()
@@ -5784,7 +5788,10 @@ def login():
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
         remember_passkey = request.form.get("remember_me") == "1"
-        session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
+        session.clear()
+        session.permanent = bool(remember_passkey)
+        session["student_db_id"] = row["id"]
+        session["_csrf_token"] = secrets.token_urlsafe(32)
         if remember_passkey and webauthn_configured():
             con = db()
             existing = con.execute("SELECT id FROM student_passkeys WHERE student_db_id=? LIMIT 1", (row["id"],)).fetchone()
@@ -5794,7 +5801,7 @@ def login():
                 return redirect(url_for("student_passkey_setup"))
         return redirect(url_for("dashboard"))
     password_error = bool(session.pop("student_login_password_error", False))
-    body = f"""<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your roll number and personal password, or use a passkey you previously registered.</p><form class="form" method="post"><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{{11,12}}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Password</div><div class="password-wrap{' password-error' if password_error else ''}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 6.8 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><label class="settings-check" id="studentRememberLabel" style="margin:4px 0 8px"><input type="checkbox" name="remember_me" value="1"><span><b>Remember me</b></span></label><p id="studentRememberHint" class="small" hidden>After you log in, you can set up fingerprint, face unlock, or your device PIN for next time.</p><button class="btn accent" type="submit">Login</button></form><div class="vybe-auth-or" id="studentPasskeyOr" hidden><span>or</span></div><div class="vybe-passkey-row" id="studentPasskeyLoginPanel" hidden><span class="vybe-fingerprint" aria-hidden="true">◎</span><div class="vybe-passkey-copy"><b>Sign in with your phone</b><small>Use fingerprint, face or device PIN</small></div><button class="vybe-passkey-action" id="studentLoginPasskey" type="button">Use passkey</button><div id="studentLoginPkMsg" class="small" style="margin-top:8px;grid-column:1/-1" aria-live="polite"></div></div><div class="actions"><a href="/forgot-password">Forgot password?</a><span aria-hidden="true">·</span><a href="/register">New student? Request access</a></div><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>"""
+    body = f"""<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your roll number and personal password, or use a passkey you previously registered.</p><form class="form" method="post"><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{{11,12}}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Password</div><div class="password-wrap{' password-error' if password_error else ''}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 6.8 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><label class="student-remember" id="studentRememberLabel"><input type="checkbox" name="remember_me" value="1"><span class="remember-track" aria-hidden="true"><span class="remember-thumb"></span></span><span class="remember-copy"><b>Remember this device</b><small>Set up faster sign-in with a passkey</small></span></label><p id="studentRememberHint" class="small" hidden>After you log in, you can set up fingerprint, face unlock, or your device PIN for next time.</p><button class="btn accent" type="submit">Login</button></form><div class="vybe-auth-or" id="studentPasskeyOr" hidden><span>or</span></div><div class="vybe-passkey-row" id="studentPasskeyLoginPanel" hidden><span class="vybe-fingerprint" aria-hidden="true">◎</span><div class="vybe-passkey-copy"><b>Sign in with your phone</b><small>Use fingerprint, face or device PIN</small></div><button class="vybe-passkey-action" id="studentLoginPasskey" type="button">Use passkey</button><div id="studentLoginPkMsg" class="small" style="margin-top:8px;grid-column:1/-1" aria-live="polite"></div></div><div class="actions"><a href="/forgot-password">Forgot password?</a><span aria-hidden="true">·</span><a href="/register">New student? Request access</a></div><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>"""
     body += """<script>
 (function(){
  const idInput=document.querySelector('input[name="student_id"]');
@@ -5809,9 +5816,8 @@ def login():
   // Restore the account identifier saved after successful passkey registration.
   if(saved&&idInput&&!idInput.value.trim())idInput.value=saved;
   const hasPasskey=!!saved;
-  if(label)label.hidden=hasPasskey;
-  if(remember&&hasPasskey)remember.checked=false;
-  if(hint)hint.hidden=hasPasskey||!remember||!remember.checked;
+  if(label)label.hidden=false;
+  if(hint)hint.hidden=!remember||!remember.checked;
   if(panel)panel.hidden=!hasPasskey;
   if(divider)divider.hidden=!hasPasskey;
  }
@@ -5821,6 +5827,19 @@ def login():
  render();
 })();
 </script>"""
+    body += """<style>
+.student-remember{display:flex;align-items:center;gap:12px;margin:5px 0 12px;padding:14px 15px;border:1px solid #dce8f2;border-radius:17px;background:rgba(255,255,255,.72);cursor:pointer;transition:border-color .2s,background .2s,box-shadow .2s;user-select:none}
+.student-remember:has(input:checked){border-color:#a8c9ef;background:#f1f7ff;box-shadow:0 5px 16px rgba(36,91,155,.07)}
+.student-remember input{position:absolute;width:1px;height:1px;opacity:0}
+.remember-track{position:relative;flex:0 0 48px;width:48px;height:28px;border-radius:999px;background:#dbe5ef;box-shadow:inset 0 1px 3px rgba(18,43,77,.12);transition:background .22s}
+.remember-thumb{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(18,43,77,.2);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.student-remember input:checked+.remember-track{background:linear-gradient(135deg,#286cc1,#17427f)}
+.student-remember input:checked+.remember-track .remember-thumb{transform:translateX(20px)}
+.student-remember input:focus-visible+.remember-track{outline:3px solid #91bff1;outline-offset:3px}
+.remember-copy{display:block;min-width:0}.remember-copy b,.remember-copy small{display:block}.remember-copy b{font-size:14px;color:#18345b}.remember-copy small{font-size:11px;color:#8094aa;margin-top:3px;line-height:1.4}
+.student-remember[hidden]{display:none!important}
+@media(max-width:520px){.student-remember{padding:13px 14px;border-radius:16px}}
+</style>"""
     return layout("Student Login", body)
 
 # Student passkeys are deliberately stored separately from admin credentials.
@@ -5846,6 +5865,20 @@ def student_passkey_setup():
         flash("Device passkeys are not configured yet. You can continue using your password.")
         return redirect(url_for("dashboard"))
     body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">OPTIONAL DEVICE SECURITY</div><h1>Sign in faster next time.</h1><p class="muted">Create a passkey for your VYBE account using your fingerprint, face, or device PIN. Your biometric data stays on your device.</p><button class="btn accent" id="studentRegisterPasskey" type="button">Set up passkey <span aria-hidden="true">→</span></button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" href="/student/passkey/skip">Skip for now · Go to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(student["student_id"]))};</script><script>{WEBAUTHN_JS}</script>'''
+    body += """<style>
+body:has(#studentRegisterPasskey){background:radial-gradient(ellipse at 12% 8%,#d7ebff 0,transparent 42%),radial-gradient(ellipse at 90% 88%,#c8e5ff 0,transparent 42%),#f4f9fc!important}
+body:has(#studentRegisterPasskey) .wrap{width:100%!important;max-width:none!important;padding:0!important;margin:0!important}
+body:has(#studentRegisterPasskey) .vybe-auth-page{min-height:100svh;display:grid;place-items:center;padding:clamp(12px,3vw,30px);box-sizing:border-box}
+body:has(#studentRegisterPasskey) .authbox{width:min(100%,560px)!important;max-width:560px!important;box-sizing:border-box!important;padding:clamp(22px,5vw,42px)!important;border:1px solid rgba(173,204,229,.7)!important;border-radius:30px!important;background:rgba(255,255,255,.9)!important;box-shadow:0 24px 70px rgba(35,78,120,.13)!important;backdrop-filter:blur(18px);animation:vybePasskeyIn .5s ease both}
+body:has(#studentRegisterPasskey) .authbox h1{font-size:clamp(30px,6vw,43px)!important;line-height:1.08!important;letter-spacing:-.045em!important}
+body:has(#studentRegisterPasskey) #studentRegisterPasskey{width:100%;min-height:60px;border-radius:17px!important;background:linear-gradient(135deg,#1c4382,#0d2454)!important;box-shadow:0 12px 24px rgba(20,54,107,.2);transition:transform .2s,box-shadow .2s}
+body:has(#studentRegisterPasskey) #studentRegisterPasskey:hover{transform:translateY(-2px);box-shadow:0 16px 30px rgba(20,54,107,.25)}
+body:has(#studentRegisterPasskey) .btn.dark{display:flex;align-items:center;justify-content:center;min-height:54px;box-sizing:border-box;margin-top:14px;border:1px solid #dce8f2!important;border-radius:15px!important;background:rgba(255,255,255,.75)!important;color:#315b89!important;text-align:center;text-decoration:none}
+body:has(#studentRegisterPasskey) #studentRegisterPkMsg{min-height:22px;line-height:1.5}
+@keyframes vybePasskeyIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:520px){body:has(#studentRegisterPasskey) .vybe-auth-page{padding:10px;align-items:stretch}body:has(#studentRegisterPasskey) .authbox{width:100%!important;max-width:none!important;min-height:calc(100svh - 20px);display:flex;flex-direction:column;justify-content:center;padding:22px 19px!important;border-radius:25px!important;gap:12px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-header{margin-bottom:12px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-watermark{top:80px;right:20px;font-size:90px;opacity:.07}body:has(#studentRegisterPasskey) .authbox p.muted{font-size:14px;line-height:1.6;margin:0 0 8px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-back-row{margin-top:12px}}
+@media(prefers-reduced-motion:reduce){body:has(#studentRegisterPasskey) .authbox{animation:none}}
+</style>"""
     return layout("Remember this device", body)
 
 
@@ -11875,7 +11908,7 @@ function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was
 const studentLoginPk=document.getElementById("studentLoginPasskey");
 if(studentLoginPk)studentLoginPk.onclick=async()=>{const msg=document.getElementById("studentLoginPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try an up-to-date browser on your phone.");studentLoginPk.disabled=true;studentLoginPk.textContent="Waiting for device…";msg.textContent="Confirm with your fingerprint, face unlock, or device screen lock.";let o=await postJSON("/student/passkey/login/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/student/passkey/login/verify",serializeCredential(c));msg.textContent="Verified. Opening your dashboard…";location.href="/dashboard"}catch(e){msg.textContent=pkError(e);studentLoginPk.disabled=false;studentLoginPk.textContent="Continue with Passkey →"}}
 const studentReg=document.getElementById("studentRegisterPasskey");
-if(studentReg)studentReg.onclick=async()=>{const msg=document.getElementById("studentRegisterPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try an up-to-date browser on your phone.");studentReg.disabled=true;studentReg.textContent="Waiting for device…";msg.textContent="Follow your device prompt to create a secure passkey for this account.";let o=await postJSON("/student/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/student/passkey/register/verify",serializeCredential(c));try{localStorage.setItem("vybe.student.passkey.roll", window.VYBE_STUDENT_ROLL)}catch(e){}msg.textContent="Passkey enabled for this account. Opening your dashboard…";location.href="/dashboard"}catch(e){msg.textContent=pkError(e);studentReg.disabled=false;studentReg.textContent="Enable Passkey →"}}
+if(studentReg)studentReg.onclick=async()=>{const msg=document.getElementById("studentRegisterPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try an up-to-date browser on your phone.");studentReg.disabled=true;studentReg.textContent="Waiting for device…";msg.textContent="Follow your device prompt to create a secure passkey for this account.";let o=await postJSON("/student/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/student/passkey/register/verify",serializeCredential(c));try{localStorage.setItem("vybe.student.passkey.roll", window.VYBE_STUDENT_ROLL)}catch(e){}const card=document.getElementById("studentPasskeyCard");if(card)card.classList.add("is-success");const title=document.getElementById("studentPasskeyTitle");const lead=document.getElementById("studentPasskeyLead");if(title)title.textContent="Passkey enabled!";if(lead)lead.textContent="This device is ready for faster, secure sign-in.";msg.className="student-passkey-message success";msg.textContent="✓ Passkey saved securely. Taking you to your dashboard…";studentReg.classList.remove("is-loading");studentReg.querySelector(".passkey-button-label").textContent="Passkey enabled";studentReg.querySelector(".passkey-button-arrow").textContent="✓";setTimeout(()=>location.href="/dashboard",1300)}catch(e){msg.className="student-passkey-message error";msg.textContent=pkError(e);studentReg.disabled=false;studentReg.classList.remove("is-loading");studentReg.querySelector(".passkey-button-label").textContent="Try again";studentReg.querySelector(".passkey-button-arrow").textContent="→"}}
 const loginPk=document.getElementById("loginPasskey");
 if(loginPk)loginPk.onclick=async()=>{const msg=document.getElementById("loginPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");loginPk.disabled=true;loginPk.textContent="Waiting for device…";msg.textContent="Approve the passkey on your phone/device.";let o=await postJSON("/admin/login-passkey/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/admin/login-passkey/verify",serializeCredential(c));msg.textContent="Passkey verified. Opening admin panel…";setTimeout(()=>location.href="/admin/panel",250)}catch(e){msg.textContent=pkError(e);loginPk.disabled=false;loginPk.textContent="Continue with Passkey →"}}
 const reg=document.getElementById("registerPasskey");
