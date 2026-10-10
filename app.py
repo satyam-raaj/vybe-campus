@@ -2251,7 +2251,37 @@ def handle_http_exception(error):
 def handle_unexpected_exception(error):
     if isinstance(error,HTTPException): return handle_http_exception(error)
     app.logger.error("UNHANDLED VYBE EXCEPTION: %s: %s",type(error).__name__,str(error),exc_info=(type(error),error,error.__traceback__))
-    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">500 · SERVER ERROR</div><div class="vybe-status-mark">V</div><h1>Something went wrong.</h1><p>VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>'''
+    body='''<header class="vybe-top"><a class="vybe-brand" href="/"><span class="vybe-brand-mark"><span>V</span></span><span>VYBE</span></a><a class="vybe-admin-mini" href="/admin">Admin Login</a></header><section class="vybe-status-wrap"><div class="vybe-status-card"><div class="vybe-error-code">500 · SERVER ERROR</div><div class="vybe-status-mark">V</div><h1>Something went wrong.</h1><p>VYBE hit an unexpected application error. Your data was not intentionally changed. Please go back and try again.</p><div class="status-actions"><a class="vybe-action primary" href="/">Back to VYBE</a><a class="vybe-action" href="/admin">Admin Login</a></div></div></section>
+/* Final mobile passkey polish: auth screens only */
+.vybe-auth-page .settings-check{display:flex!important;align-items:center!important;gap:12px!important;min-height:52px!important;padding:10px 14px!important;border:1px solid #d5e5f4!important;border-radius:16px!important;background:#f8fbff!important;box-sizing:border-box!important}
+.vybe-auth-page .settings-check input[type=checkbox]{appearance:none!important;-webkit-appearance:none!important;flex:0 0 42px!important;width:42px!important;min-width:42px!important;height:25px!important;min-height:25px!important;margin:0!important;border:1px solid #bfd3e8!important;border-radius:999px!important;background:#dce8f5!important;position:relative!important;box-shadow:inset 0 1px 2px rgba(20,50,90,.08)!important;transition:background .18s ease,border-color .18s ease!important;cursor:pointer!important}
+.vybe-auth-page .settings-check input[type=checkbox]::after{content:""!important;position:absolute!important;left:3px!important;top:3px!important;width:17px!important;height:17px!important;border-radius:50%!important;background:#fff!important;box-shadow:0 1px 4px rgba(20,45,75,.22)!important;transition:transform .18s ease!important}
+.vybe-auth-page .settings-check input[type=checkbox]:checked{background:#1765d1!important;border-color:#1765d1!important}
+.vybe-auth-page .settings-check input[type=checkbox]:checked::after{transform:translateX(17px)!important}
+.vybe-auth-page .settings-check span{font-size:14px!important;color:#19365f!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey){padding-top:66px!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey) h1{max-width:100%!important;margin:14px 0 10px!important;font-size:clamp(28px,6vw,36px)!important;line-height:1.08!important;overflow-wrap:anywhere!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey)>p.muted{font-size:14px!important;line-height:1.55!important;margin:0 0 20px!important;color:#6f87a5!important}
+.vybe-auth-page #studentRegisterPasskey,.vybe-auth-page .authbox:has(#studentRegisterPasskey)>a.btn{width:100%!important;min-height:54px!important;box-sizing:border-box!important;margin:0!important;padding:12px 14px!important;white-space:normal!important;text-align:center!important;line-height:1.3!important;font-size:14px!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey)>a.btn{margin-top:10px!important}
+.vybe-auth-page #studentRegisterPkMsg{min-height:0!important;overflow-wrap:anywhere!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-back-row{display:flex!important;flex-direction:column!important;align-items:center!important;gap:4px!important}
+.vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-hint{font-size:11px!important}
+.vybe-passkey-row{grid-template-columns:42px minmax(0,1fr)!important;align-items:center!important}
+.vybe-passkey-action{grid-column:1/-1!important;min-height:48px!important;font-size:14px!important}
+@media(max-width:600px){
+ .vybe-auth-page{min-height:100svh!important;padding:12px!important;place-items:center!important}
+ .vybe-auth-page .authbox{padding:65px 17px 16px!important;width:100%!important;max-width:460px!important}
+ .vybe-auth-page .authbox:has(#studentRegisterPasskey){padding:65px 18px 16px!important}
+ .vybe-auth-page .authbox:has(#studentRegisterPasskey) .badge{font-size:10px!important;white-space:normal!important}
+ .vybe-auth-page .authbox:has(#studentRegisterPasskey)>p.muted{font-size:13px!important;margin-bottom:16px!important}
+ .vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-back-row{margin-top:12px!important;padding-top:10px!important}
+}
+@media(max-height:760px) and (max-width:600px){
+ .vybe-auth-page{align-items:flex-start!important;padding-top:8px!important;padding-bottom:8px!important}
+ .vybe-auth-page .authbox:has(#studentRegisterPasskey){padding-top:60px!important}
+}
+'''
     return _vybe_public_shell("500 · VYBE",body),500
 
 @app.errorhandler(500)
@@ -5775,12 +5805,15 @@ def login():
  const divider=document.getElementById("studentPasskeyOr");
  const key="vybe.student.passkey.roll";
  function savedRoll(){try{return localStorage.getItem(key)||""}catch(e){return ""}}
- function render(){const saved=savedRoll();const match=!!saved&&!!idInput&&idInput.value.trim()===saved;
-  if(label)label.hidden=match;
-  if(remember&&match)remember.checked=false;
-  if(hint)hint.hidden=match||!remember||!remember.checked;
-  if(panel)panel.hidden=!saved;
-  if(divider)divider.hidden=!saved;
+ function render(){const saved=savedRoll();
+  // Restore the account identifier saved after successful passkey registration.
+  if(saved&&idInput&&!idInput.value.trim())idInput.value=saved;
+  const hasPasskey=!!saved;
+  if(label)label.hidden=hasPasskey;
+  if(remember&&hasPasskey)remember.checked=false;
+  if(hint)hint.hidden=hasPasskey||!remember||!remember.checked;
+  if(panel)panel.hidden=!hasPasskey;
+  if(divider)divider.hidden=!hasPasskey;
  }
  if(remember)remember.addEventListener("change",render);
  if(idInput)idInput.addEventListener("input",render);
@@ -5812,7 +5845,7 @@ def student_passkey_setup():
         session.pop("student_passkey_setup_pending", None)
         flash("Device passkeys are not configured yet. You can continue using your password.")
         return redirect(url_for("dashboard"))
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">OPTIONAL DEVICE SECURITY</div><h1>Remember this device.</h1><p class="muted">Set up a passkey for your own VYBE account. Your fingerprint, face, or device PIN stays with your device; VYBE stores only the public credential.</p><button class="btn accent" id="studentRegisterPasskey" type="button">Enable Passkey →</button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" style="margin-top:12px" href="/student/passkey/skip">Not now — continue to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(student["student_id"]))};</script><script>{WEBAUTHN_JS}</script>'''
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">OPTIONAL DEVICE SECURITY</div><h1>Sign in faster next time.</h1><p class="muted">Create a passkey for your VYBE account using your fingerprint, face, or device PIN. Your biometric data stays on your device.</p><button class="btn accent" id="studentRegisterPasskey" type="button">Set up passkey <span aria-hidden="true">→</span></button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" href="/student/passkey/skip">Skip for now · Go to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(student["student_id"]))};</script><script>{WEBAUTHN_JS}</script>'''
     return layout("Remember this device", body)
 
 
