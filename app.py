@@ -98,7 +98,7 @@ VERCEL_HOST = os.environ.get("VERCEL_URL", "").strip().lower()
 PASSKEY_RP_ID = (os.environ.get("VYBE_PASSKEY_RP_ID", "").strip().lower()
                  or os.environ.get("VYBE_CANONICAL_HOST", "").strip().lower()
                  or "vybe-campus.vercel.app")
-PASSKEY_ORIGIN = os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip() or f"https://{PASSKEY_RP_ID}"
+PASSKEY_ORIGIN = (os.environ.get("VYBE_PASSKEY_ORIGIN", "").strip().rstrip("/") or f"https://{PASSKEY_RP_ID}")
 DRIVE_URL = "https://drive.google.com/drive/folders/1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA?usp=sharing"
 VYBE_DRIVE_ROOT_FOLDER_ID = os.environ.get("VYBE_DRIVE_ROOT_FOLDER_ID", "1ZsGPHVreKw3zi-crF4rGLexI77zuaOgA").strip()
 VYBE_GOOGLE_OAUTH_CLIENT_ID = os.environ.get("VYBE_GOOGLE_OAUTH_CLIENT_ID", "").strip()
@@ -5816,8 +5816,8 @@ def login():
   // Restore the account identifier saved after successful passkey registration.
   if(saved&&idInput&&!idInput.value.trim())idInput.value=saved;
   const hasPasskey=!!saved;
-  if(label)label.hidden=false;
-  if(hint)hint.hidden=!remember||!remember.checked;
+  if(label)label.hidden=hasPasskey;
+  if(hint)hint.hidden=hasPasskey||!remember||!remember.checked;
   if(panel)panel.hidden=!hasPasskey;
   if(divider)divider.hidden=!hasPasskey;
  }
@@ -5864,7 +5864,7 @@ def student_passkey_setup():
         session.pop("student_passkey_setup_pending", None)
         flash("Device passkeys are not configured yet. You can continue using your password.")
         return redirect(url_for("dashboard"))
-    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">OPTIONAL DEVICE SECURITY</div><h1>Sign in faster next time.</h1><p class="muted">Create a passkey for your VYBE account using your fingerprint, face, or device PIN. Your biometric data stays on your device.</p><button class="btn accent" id="studentRegisterPasskey" type="button">Set up passkey <span aria-hidden="true">→</span></button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" href="/student/passkey/skip">Skip for now · Go to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(student["student_id"]))};</script><script>{WEBAUTHN_JS}</script>'''
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox" id="studentPasskeyCard"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">OPTIONAL DEVICE SECURITY</div><h1 id="studentPasskeyTitle">Sign in faster next time.</h1><p class="muted" id="studentPasskeyLead">Create a passkey for your VYBE account using your fingerprint, face, or device PIN. Your biometric data stays on your device.</p><button class="btn accent" id="studentRegisterPasskey" type="button"><span class="passkey-button-label">Set up passkey</span> <span class="passkey-button-arrow" aria-hidden="true">→</span></button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" href="/student/passkey/skip">Skip for now · Go to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(student["student_id"]))};</script><script>{WEBAUTHN_JS}</script>'''
     body += """<style>
 body:has(#studentRegisterPasskey){background:radial-gradient(ellipse at 12% 8%,#d7ebff 0,transparent 42%),radial-gradient(ellipse at 90% 88%,#c8e5ff 0,transparent 42%),#f4f9fc!important}
 body:has(#studentRegisterPasskey) .wrap{width:100%!important;max-width:none!important;padding:0!important;margin:0!important}
@@ -5878,6 +5878,32 @@ body:has(#studentRegisterPasskey) #studentRegisterPkMsg{min-height:22px;line-hei
 @keyframes vybePasskeyIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:520px){body:has(#studentRegisterPasskey) .vybe-auth-page{padding:10px;align-items:stretch}body:has(#studentRegisterPasskey) .authbox{width:100%!important;max-width:none!important;min-height:calc(100svh - 20px);display:flex;flex-direction:column;justify-content:center;padding:22px 19px!important;border-radius:25px!important;gap:12px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-header{margin-bottom:12px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-watermark{top:80px;right:20px;font-size:90px;opacity:.07}body:has(#studentRegisterPasskey) .authbox p.muted{font-size:14px;line-height:1.6;margin:0 0 8px}body:has(#studentRegisterPasskey) .authbox .vybe-auth-back-row{margin-top:12px}}
 @media(prefers-reduced-motion:reduce){body:has(#studentRegisterPasskey) .authbox{animation:none}}
+</style>
+<style>
+/* This route is a standalone onboarding screen; hide the regular student chrome. */
+html body:has(.vybe-auth-page #studentRegisterPasskey) .nav,
+html body:has(.vybe-auth-page #studentRegisterPasskey) .student-header,
+html body:has(.vybe-auth-page #studentRegisterPasskey) .student-bottom-nav,
+html body:has(.vybe-auth-page #studentRegisterPasskey) .student-bottom-spacer,
+html body:has(.vybe-auth-page #studentRegisterPasskey) .footer,
+html body:has(.vybe-auth-page #studentRegisterPasskey) .student-control-row {display:none!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .wrap {width:100%!important;max-width:none!important;margin:0!important;padding:0!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page {min-height:100svh!important;min-height:100dvh!important;display:grid!important;place-items:center!important;align-items:center!important;padding:clamp(12px,3vw,28px)!important;box-sizing:border-box!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) {width:min(100%,520px)!important;max-width:520px!important;min-height:0!important;height:auto!important;display:flex!important;flex-direction:column!important;justify-content:center!important;gap:14px!important;padding:clamp(22px,5vw,38px)!important;margin:0 auto!important;box-sizing:border-box!important;overflow:visible!important;border-radius:28px!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) h1 {padding:0!important;margin:4px 0 0!important;font-size:clamp(29px,7vw,39px)!important;line-height:1.08!important;letter-spacing:-.04em!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) > p.muted {margin:0!important;font-size:15px!important;line-height:1.6!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page #studentRegisterPasskey {display:flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;width:100%!important;min-height:56px!important;margin:0!important;padding:14px 18px!important;box-sizing:border-box!important;white-space:normal!important;border-radius:16px!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) > a.btn {display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-height:52px!important;margin:0!important;padding:12px 16px!important;box-sizing:border-box!important;white-space:normal!important;text-align:center!important;border-radius:15px!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-back-row {display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;flex-wrap:wrap!important;margin:0!important;padding-top:8px!important}
+html body:has(.vybe-auth-page #studentRegisterPasskey) #studentRegisterPkMsg {min-height:22px!important;margin:0!important;overflow-wrap:anywhere!important}
+@media(max-width:520px){
+ html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page {min-height:100svh!important;min-height:100dvh!important;padding:12px!important;align-items:center!important;}
+ html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) {width:100%!important;max-width:480px!important;padding:24px 20px!important;gap:13px!important;border-radius:24px!important}
+ html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-header {margin:0 0 4px!important}
+ html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-watermark {top:64px!important;right:16px!important;font-size:82px!important;opacity:.055!important;pointer-events:none!important}
+ html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey) .vybe-auth-back-row {flex-direction:column!important;justify-content:center!important;text-align:center!important}
+}
+@media(max-height:650px) and (max-width:520px){html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page {align-items:start!important;padding-top:10px!important;padding-bottom:10px!important}html body:has(.vybe-auth-page #studentRegisterPasskey) .vybe-auth-page .authbox:has(#studentRegisterPasskey){margin:auto!important}}
 </style>"""
     return layout("Remember this device", body)
 
@@ -5955,7 +5981,7 @@ def student_passkey_register_verify():
             con.close()
         except Exception:
             pass
-        app.logger.warning("Student passkey registration failed: %s", type(exc).__name__)
+        app.logger.warning("Student passkey registration failed: %s: %s", type(exc).__name__, str(exc))
         return jsonify(error="Passkey registration failed. No passkey was enabled; you can continue with your password."), 400
 
 
@@ -6025,7 +6051,7 @@ def student_passkey_login_verify():
                 con.close()
         except Exception:
             pass
-        app.logger.warning("Student passkey authentication failed: %s", type(exc).__name__)
+        app.logger.warning("Student passkey authentication failed: %s: %s", type(exc).__name__, str(exc))
         return jsonify(error="Passkey verification failed. Please use your password or try again."), 403
 
 
