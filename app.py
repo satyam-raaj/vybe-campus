@@ -878,6 +878,17 @@ def init_db():
                 backed_up BOOLEAN NOT NULL DEFAULT FALSE,
                 transports TEXT,
                 created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS student_passkeys (
+                id BIGSERIAL PRIMARY KEY,
+                student_db_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                credential_id TEXT NOT NULL UNIQUE,
+                public_key TEXT NOT NULL,
+                sign_count BIGINT NOT NULL DEFAULT 0,
+                device_type TEXT,
+                backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+                transports TEXT,
+                created_at TEXT NOT NULL
             )""",            """CREATE TABLE IF NOT EXISTS community_messages (
                 id BIGSERIAL PRIMARY KEY,
                 student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -1059,6 +1070,18 @@ def init_db():
                 backed_up INTEGER NOT NULL DEFAULT 0,
                 transports TEXT,
                 created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS student_passkeys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_db_id INTEGER NOT NULL,
+                credential_id TEXT NOT NULL UNIQUE,
+                public_key TEXT NOT NULL,
+                sign_count INTEGER NOT NULL DEFAULT 0,
+                device_type TEXT,
+                backed_up INTEGER NOT NULL DEFAULT 0,
+                transports TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(student_db_id) REFERENCES students(id) ON DELETE CASCADE
             )""",            """CREATE TABLE IF NOT EXISTS community_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
@@ -5609,11 +5632,192 @@ def login():
         _security_successful_login(con, "Student", sid)
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
+        remember_passkey = request.form.get("remember_me") == "1"
         session.clear(); session.permanent = True; session["student_db_id"] = row["id"]; session["_csrf_token"] = secrets.token_urlsafe(32)
+        if remember_passkey and webauthn_configured():
+            con = db()
+            existing = con.execute("SELECT id FROM student_passkeys WHERE student_db_id=? LIMIT 1", (row["id"],)).fetchone()
+            con.close()
+            if not existing:
+                session["student_passkey_setup_pending"] = True
+                return redirect(url_for("student_passkey_setup"))
         return redirect(url_for("dashboard"))
     password_error = bool(session.pop("student_login_password_error", False))
-    body = f"""<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your roll number and personal password.</p><form class="form" method="post"><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{{11,12}}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Password</div><div class="password-wrap{' password-error' if password_error else ''}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 6.8 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Login</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>"""
+    body = f"""<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">STUDENT LOGIN</div><h1>Welcome back.</h1><p class="muted">Sign in with your roll number and personal password, or use a passkey you previously registered.</p><div class="card" style="margin:0 0 16px;padding:16px"><h2 style="margin:0 0 8px">Quick sign-in</h2><p class="small">Use your device’s fingerprint, face unlock, or screen lock. No password is sent to the device.</p><button class="btn dark" id="studentLoginPasskey" type="button">Continue with Passkey →</button><div id="studentLoginPkMsg" class="small" style="margin-top:8px" aria-live="polite"></div></div><form class="form" method="post"><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{{11,12}}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Password</div><div class="password-wrap{' password-error' if password_error else ''}"><input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle toggle-password" data-target="loginPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 6.8 2.5 12 2.5 12s3.3 6 9.5 6 9.5-6 9.5-6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><label class="settings-check" style="margin:4px 0 8px"><input type="checkbox" name="remember_me" value="1"><span><b>Remember me on this device</b><small>Optional: set up a device passkey after login. Existing accounts are not changed unless you opt in.</small></span></label><button class="btn accent" type="submit">Login</button></form><div class="actions"><a class="btn dark" href="/forgot-password">Forgot password?</a></div><p class="small">New student? <a href="/register" style="text-decoration:underline">Request access</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Secure campus access for approved students.</span></div></div></div>"""
     return layout("Student Login", body)
+
+# Student passkeys are deliberately stored separately from admin credentials.
+def _student_passkey_current_account():
+    student_db_id = session.get("student_db_id")
+    if not student_db_id or session.get("admin_authenticated"):
+        return None
+    con = db()
+    row = con.execute("SELECT id, name, student_id, status FROM students WHERE id=?", (student_db_id,)).fetchone()
+    con.close()
+    if not row or row["status"] != "approved":
+        return None
+    return row
+
+
+@app.route("/student/passkey/setup", methods=["GET"])
+def student_passkey_setup():
+    student = _student_passkey_current_account()
+    if not student or not session.get("student_passkey_setup_pending"):
+        return redirect(url_for("dashboard") if student else url_for("login"))
+    if not webauthn_configured():
+        session.pop("student_passkey_setup_pending", None)
+        flash("Device passkeys are not configured yet. You can continue using your password.")
+        return redirect(url_for("dashboard"))
+    body = f'''<div class="auth vybe-auth-page"><div class="card authbox"><a class="vybe-auth-logo" href="/" aria-label="VYBE home">V</a><div class="badge">OPTIONAL DEVICE SECURITY</div><h1>Remember this device.</h1><p class="muted">Set up a passkey for your own VYBE account. Your fingerprint, face, or device PIN stays with your device; VYBE stores only the public credential.</p><button class="btn accent" id="studentRegisterPasskey" type="button">Enable Passkey →</button><div id="studentRegisterPkMsg" class="small" style="margin-top:10px" aria-live="polite"></div><a class="btn dark" style="margin-top:12px" href="/student/passkey/skip">Not now — continue to dashboard</a><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/dashboard">← Dashboard</a><span class="vybe-auth-hint">Optional · can be skipped</span></div></div></div><script>{WEBAUTHN_JS}</script>'''
+    return layout("Remember this device", body)
+
+
+@app.route("/student/passkey/skip")
+def student_passkey_skip():
+    student = _student_passkey_current_account()
+    if not student:
+        return redirect(url_for("login"))
+    session.pop("student_passkey_setup_pending", None)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/student/passkey/register/options", methods=["POST"])
+def student_passkey_register_options():
+    student = _student_passkey_current_account()
+    if not student:
+        return jsonify(error="Sign in to your approved student account first."), 401
+    if not webauthn_configured():
+        return jsonify(error="Device passkeys are not configured on this server."), 503
+    con = db()
+    existing = con.execute("SELECT credential_id FROM student_passkeys WHERE student_db_id=?", (student["id"],)).fetchall()
+    con.close()
+    exclude = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"])) for r in existing]
+    options = generate_registration_options(
+        rp_id=PASSKEY_RP_ID,
+        rp_name="VYBE",
+        user_id=str(student["id"]).encode("utf-8"),
+        user_name=str(student["student_id"]),
+        user_display_name=str(student["name"]),
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+        exclude_credentials=exclude,
+    )
+    session["student_passkey_registration_challenge"] = base64.b64encode(options.challenge).decode("ascii")
+    session["student_passkey_registration_account"] = int(student["id"])
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/student/passkey/register/verify", methods=["POST"])
+def student_passkey_register_verify():
+    student = _student_passkey_current_account()
+    if not student or session.get("student_passkey_registration_account") != int(student["id"]):
+        return jsonify(error="Student account changed. Sign in again and retry."), 401
+    challenge_b64 = session.pop("student_passkey_registration_challenge", None)
+    session.pop("student_passkey_registration_account", None)
+    if not challenge_b64:
+        return jsonify(error="Passkey registration expired. Try again."), 400
+    try:
+        credential = request.get_json(force=True)
+        verification = verify_registration_response(
+            credential=credential,
+            expected_challenge=base64.b64decode(challenge_b64),
+            expected_rp_id=PASSKEY_RP_ID,
+            expected_origin=PASSKEY_ORIGIN,
+            require_user_verification=True,
+        )
+        cid = base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode("ascii")
+        pk = base64.urlsafe_b64encode(verification.credential_public_key).rstrip(b"=").decode("ascii")
+        transports = json.dumps(credential.get("response", {}).get("transports", []))
+        con = db()
+        # Global credential uniqueness prevents a credential being attached to multiple accounts.
+        con.execute(
+            "INSERT INTO student_passkeys(student_db_id,credential_id,public_key,sign_count,device_type,backed_up,transports,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            (int(student["id"]), cid, pk, int(verification.sign_count), str(verification.credential_device_type), bool(verification.credential_backed_up), transports, now()),
+        )
+        con.commit()
+        con.close()
+        session.pop("student_passkey_setup_pending", None)
+        return jsonify(ok=True)
+    except Exception as exc:
+        try:
+            con.close()
+        except Exception:
+            pass
+        app.logger.warning("Student passkey registration failed: %s", type(exc).__name__)
+        return jsonify(error="Passkey registration failed. No passkey was enabled; you can continue with your password."), 400
+
+
+@app.route("/student/passkey/login/options", methods=["POST"])
+def student_passkey_login_options():
+    if not webauthn_configured():
+        return jsonify(error="Device passkeys are not configured on this server."), 503
+    # Discoverable credentials let the device identify the account without asking for its roll number.
+    options = generate_authentication_options(rp_id=PASSKEY_RP_ID, allow_credentials=[], user_verification=UserVerificationRequirement.REQUIRED)
+    session["student_passkey_login_challenge"] = base64.b64encode(options.challenge).decode("ascii")
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/student/passkey/login/verify", methods=["POST"])
+def student_passkey_login_verify():
+    if not webauthn_configured():
+        return jsonify(error="Device passkeys are not configured on this server."), 503
+    challenge_b64 = session.pop("student_passkey_login_challenge", None)
+    if not challenge_b64:
+        return jsonify(error="Passkey request expired. Try again."), 400
+    con = None
+    try:
+        credential = request.get_json(force=True)
+        cid = str(credential.get("id", ""))
+        con = db()
+        row = con.execute("SELECT sp.*, s.student_id, s.name, s.status FROM student_passkeys sp JOIN students s ON s.id=sp.student_db_id WHERE sp.credential_id=?", (cid,)).fetchone()
+        if not row:
+            con.close()
+            failed_con = db()
+            try:
+                blocked, until, _ = _security_failed_login(failed_con, "Unknown student passkey", "passkey", "Student")
+            finally:
+                failed_con.close()
+            if blocked:
+                return jsonify(error="Too many failed attempts. Please wait before trying again."), 429
+            return jsonify(error="This device passkey is not registered to an approved VYBE student account."), 403
+        if row["status"] != "approved":
+            con.close()
+            return jsonify(error="This student account is not approved for access."), 403
+        verification = verify_authentication_response(
+            credential=credential,
+            expected_challenge=base64.b64decode(challenge_b64),
+            expected_rp_id=PASSKEY_RP_ID,
+            expected_origin=PASSKEY_ORIGIN,
+            credential_public_key=base64.urlsafe_b64decode(row["public_key"] + "=" * ((4-len(row["public_key"])%4)%4)),
+            credential_current_sign_count=int(row["sign_count"]),
+            require_user_verification=True,
+        )
+        sid = str(row["student_id"])
+        _security_successful_login(con, "Student", sid)
+        stamp = now()
+        con.execute("UPDATE student_passkeys SET sign_count=?,device_type=?,backed_up=? WHERE id=?", (int(verification.new_sign_count), str(verification.credential_device_type), bool(verification.credential_backed_up), row["id"]))
+        con.execute("UPDATE students SET last_login=?,last_seen=? WHERE id=?", (stamp, stamp, row["student_db_id"]))
+        con.commit()
+        student_db_id = int(row["student_db_id"])
+        con.close()
+        # A fresh session is created only after signature, origin, RP ID, challenge,
+        # user-verification, and active-account checks all pass.
+        session.clear()
+        session.permanent = True
+        session["student_db_id"] = student_db_id
+        session["_csrf_token"] = secrets.token_urlsafe(32)
+        return jsonify(ok=True, redirect=url_for("dashboard"))
+    except Exception as exc:
+        try:
+            if con is not None:
+                con.close()
+        except Exception:
+            pass
+        app.logger.warning("Student passkey authentication failed: %s", type(exc).__name__)
+        return jsonify(error="Passkey verification failed. Please use your password or try again."), 403
+
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
@@ -11491,6 +11695,10 @@ function decodeRequest(o){o.challenge=b64ToBuf(o.challenge);(o.allowCredentials|
 function serializeCredential(c){return {id:c.id,rawId:bufToB64(c.rawId),type:c.type,response:{clientDataJSON:bufToB64(c.response.clientDataJSON),attestationObject:c.response.attestationObject?bufToB64(c.response.attestationObject):undefined,authenticatorData:c.response.authenticatorData?bufToB64(c.response.authenticatorData):undefined,signature:c.response.signature?bufToB64(c.response.signature):undefined,userHandle:c.response.userHandle?bufToB64(c.response.userHandle):undefined},clientExtensionResults:c.getClientExtensionResults?c.getClientExtensionResults():{}}}
 async function postJSON(url,payload){const meta=document.querySelector('meta[name="vybe-csrf-token"]');const csrf=meta&&meta.content;const headers={"Content-Type":"application/json","Accept":"application/json"};if(csrf)headers["X-VYBE-CSRF"]=csrf;let r=await fetch(url,{method:"POST",headers,credentials:"same-origin",body:JSON.stringify(payload)});let j={};try{j=await r.json()}catch(_){throw new Error("Server returned an invalid response.")}if(!r.ok)throw new Error(j.error||j.detail||"Request failed");return j}
 function pkError(e){if(e&&e.name==="NotAllowedError")return "Passkey request was cancelled or timed out. Try again and choose your phone/device.";if(e&&e.name==="InvalidStateError")return "This passkey is already registered on this device.";if(e&&e.name==="SecurityError")return "WebAuthn SecurityError. Open VYBE using HTTPS on its configured domain.";return (e&&e.name?e.name+": ":"")+(e&&e.message)||"Passkey operation failed."}
+const studentLoginPk=document.getElementById("studentLoginPasskey");
+if(studentLoginPk)studentLoginPk.onclick=async()=>{const msg=document.getElementById("studentLoginPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try an up-to-date browser on your phone.");studentLoginPk.disabled=true;studentLoginPk.textContent="Waiting for device…";msg.textContent="Confirm with your fingerprint, face unlock, or device screen lock.";let o=await postJSON("/student/passkey/login/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/student/passkey/login/verify",serializeCredential(c));msg.textContent="Verified. Opening your dashboard…";location.href="/dashboard"}catch(e){msg.textContent=pkError(e);studentLoginPk.disabled=false;studentLoginPk.textContent="Continue with Passkey →"}}
+const studentReg=document.getElementById("studentRegisterPasskey");
+if(studentReg)studentReg.onclick=async()=>{const msg=document.getElementById("studentRegisterPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try an up-to-date browser on your phone.");studentReg.disabled=true;studentReg.textContent="Waiting for device…";msg.textContent="Follow your device prompt to create a secure passkey for this account.";let o=await postJSON("/student/passkey/register/options",{});o=decodeCreation(o);let c=await navigator.credentials.create({publicKey:o});if(!c)throw new Error("No passkey was created.");await postJSON("/student/passkey/register/verify",serializeCredential(c));msg.textContent="Passkey enabled for this account. Opening your dashboard…";location.href="/dashboard"}catch(e){msg.textContent=pkError(e);studentReg.disabled=false;studentReg.textContent="Enable Passkey →"}}
 const loginPk=document.getElementById("loginPasskey");
 if(loginPk)loginPk.onclick=async()=>{const msg=document.getElementById("loginPkMsg");try{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error("This browser does not support passkeys. Try current Chrome, Edge, Safari or Firefox.");loginPk.disabled=true;loginPk.textContent="Waiting for device…";msg.textContent="Approve the passkey on your phone/device.";let o=await postJSON("/admin/login-passkey/options",{});o=decodeRequest(o);let c=await navigator.credentials.get({publicKey:o});if(!c)throw new Error("No passkey was selected.");await postJSON("/admin/login-passkey/verify",serializeCredential(c));msg.textContent="Passkey verified. Opening admin panel…";setTimeout(()=>location.href="/admin/panel",250)}catch(e){msg.textContent=pkError(e);loginPk.disabled=false;loginPk.textContent="Continue with Passkey →"}}
 const reg=document.getElementById("registerPasskey");
