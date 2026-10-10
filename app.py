@@ -5840,6 +5840,10 @@ def login():
 .student-remember[hidden]{display:none!important}
 @media(max-width:520px){.student-remember{padding:13px 14px;border-radius:16px}}
 </style>"""
+    # The login page has its own small UI script above, but the actual WebAuthn
+    # click handler lives in WEBAUTHN_JS. Include it here so the visible button
+    # is wired to the student passkey options/verify endpoints.
+    body += f"<script>{WEBAUTHN_JS}</script>"
     return layout("Student Login", body)
 
 # Student passkeys are deliberately stored separately from admin credentials.
