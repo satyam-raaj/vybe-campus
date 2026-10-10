@@ -5787,12 +5787,14 @@ def login():
         _security_successful_login(con, "Student", sid)
         stamp = now()
         con.execute("UPDATE students SET last_login=?, last_seen=? WHERE id=?", (stamp, stamp, row["id"])); con.commit(); con.close()
-        remember_passkey = request.form.get("remember_me") == "1"
+        # Passkey setup is independent of the removed "Remember this device" toggle.
+        # After a successful password login, send students without a registered passkey
+        # directly to the setup page; that route requires this authenticated session flag.
         session.clear()
-        session.permanent = bool(remember_passkey)
+        session.permanent = True
         session["student_db_id"] = row["id"]
         session["_csrf_token"] = secrets.token_urlsafe(32)
-        if remember_passkey and webauthn_configured():
+        if webauthn_configured():
             con = db()
             existing = con.execute("SELECT id FROM student_passkeys WHERE student_db_id=? LIMIT 1", (row["id"],)).fetchone()
             con.close()
@@ -5824,7 +5826,7 @@ def login():
   const action=document.getElementById("studentLoginPasskey");
   const copy=panel?panel.querySelector(".vybe-passkey-copy small"):null;
   if(action)action.textContent=hasPasskey?"Use passkey":"Save passkey";
-  if(copy)copy.textContent=hasPasskey?"Use fingerprint, face or device PIN":"Save a passkey to this device for faster sign-in";
+  if(copy)copy.textContent=hasPasskey?"Use fingerprint, face or device PIN":"Sign in with your password first to save a passkey on this device";
  }
  if(remember)remember.addEventListener("change",render);
  if(idInput)idInput.addEventListener("input",render);
