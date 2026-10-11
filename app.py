@@ -373,25 +373,38 @@ def record_admin_login(con, success, event="login"):
 
 
 def _display_time_value(value):
+    """Render timestamp-like values in IST while leaving ordinary text untouched.
+
+    VYBE stores many timestamps in UTC, sometimes with an explicit UTC suffix and
+    sometimes as a naive ISO string (for example SQLite CURRENT_TIMESTAMP).
+    Naive database timestamps are therefore interpreted as UTC for display only.
+    """
     if value is None:
         return ""
-    text_value = str(value)
+    text_value = str(value).strip()
     if not text_value or text_value.endswith(" IST"):
         return text_value
+    explicit_utc = text_value.endswith(" UTC") or text_value.endswith("Z")
     raw = text_value[:-4].strip() if text_value.endswith(" UTC") else text_value
     try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        if dt.tzinfo is not None:
-            return dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+        candidate = raw.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(candidate)
+        # Only convert strings that actually contain a time component; date-only
+        # values and ordinary text should not be shifted or reformatted.
+        if "T" not in raw and " " not in raw:
+            return text_value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
     except Exception:
         pass
-    if text_value.endswith(" UTC"):
+    if explicit_utc:
         try:
             dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             return dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
         except Exception:
             pass
-    return text_value
+    return str(value)
 
 
 def esc(value):
@@ -4325,6 +4338,16 @@ ADMIN_PROBLEM_ALERT_CSS = r"""
 
 _ADMIN_HEADER_CACHE_TTL = 20.0
 _ADMIN_LIVE_ATTENTION_TTL = 5.0
+
+def _invalidate_admin_request_caches():
+    """Make new registration/password requests visible immediately in admin UI."""
+    try:
+        with _AUTHZ_CACHE_LOCK:
+            _AUTHZ_CACHE.pop(("admin_live_attention", 0), None)
+            _AUTHZ_CACHE.pop(("admin_header_alerts", 0), None)
+    except Exception:
+        pass
+
 def _admin_header_live_attention_cached():
     key=("admin_live_attention",0)
     now_m=time.monotonic()
@@ -6144,6 +6167,7 @@ def forgot_password():
                     if not existing["proposed_password_hash"]:
                         con.execute("UPDATE password_reset_requests SET proposed_password_hash=? WHERE id=?", (proposed_hash, request_id))
                         con.commit()
+                    _invalidate_admin_request_caches()
                     session["password_reset_request_id"] = request_id
                     con.close()
                     return _auth_status_plate("Forgot Password", "PASSWORD REQUEST", "Your password request is sent to admin.", "Kindly wait for some time while the admin reviews your password-change request.", primary_href="/login", primary_label="Login", back_href="/")
@@ -6166,6 +6190,7 @@ def forgot_password():
                 raise RuntimeError("Password reset request was not created")
             request_id = int(request_row["id"])
             con.commit()
+            _invalidate_admin_request_caches()
         except Exception as exc:
             try:
                 con.rollback()
@@ -9212,7 +9237,7 @@ def admin_security_alerts():
 
     def block_time(ts):
         try:
-            return datetime.fromtimestamp(float(ts), timezone.utc).astimezone().strftime("%d %b %Y, %I:%M %p")
+            return datetime.fromtimestamp(float(ts), timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
         except Exception:
             return "—"
 
@@ -9328,6 +9353,7 @@ def admin_approval_mode():
         current = setting(con, "auto_student_access", "0") == "1"
         set_setting(con, "auto_student_access", "0" if current else "1")
         con.commit()
+        _invalidate_admin_request_caches()
         flash("Automatic registration and password recovery are now " + ("ON." if not current else "OFF; admin approval is required."))
     except Exception:
         con.rollback()
@@ -11998,12 +12024,14 @@ def admin_password_request_action(rid, action):
     if action == "delete":
         con.execute("DELETE FROM password_reset_requests WHERE id=?", (rid,))
         con.commit(); con.close()
+        _invalidate_admin_request_caches()
         flash("Password-change request deleted.")
         return redirect(url_for("admin_password_requests"))
     if row["status"] != "pending":
         con.close(); flash("This password request is no longer pending."); return redirect(url_for("admin_password_requests"))
     if action == "reject":
         con.execute("UPDATE password_reset_requests SET status='rejected' WHERE id=?", (rid,)); con.commit(); con.close()
+        _invalidate_admin_request_caches()
         flash("Password-change request rejected."); return redirect(url_for("admin_password_requests"))
 
     approved = now()
@@ -12015,6 +12043,7 @@ def admin_password_request_action(rid, action):
     con.execute("UPDATE students SET password_hash=? WHERE id=?", (proposed_hash, row["student_id"]))
     con.execute("UPDATE password_reset_requests SET status='used', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL, used_at=? WHERE id=?", (approved, approved, rid))
     con.commit(); con.close()
+    _invalidate_admin_request_caches()
 
     # The approval itself is the student-facing event. Send it only after the
     # password change is safely committed, and never let push delivery slow down
