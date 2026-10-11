@@ -19,6 +19,7 @@ import ipaddress
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse, quote
