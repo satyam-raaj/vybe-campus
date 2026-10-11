@@ -5776,7 +5776,7 @@ def register():
         except Exception:
             pass
         return _registration_pending_notification_page(name,sid)
-    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, roll number and personal password.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
+    body = '''<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">NEW STUDENT</div><h1>Request access.</h1><p class="muted">Create your student account with your name, roll number and personal password.</p><form class="form" method="post"><div><div class="label">Name (optional)</div><input name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional)"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">Personal password</div><div class="password-wrap"><input id="registerPassword" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Create your password"><button type="button" class="password-toggle toggle-password" data-target="registerPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Request access →</button></form><p class="small">Already approved? <a href="/login" style="text-decoration:underline">Student login</a></p><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/">← Back</a><span class="vybe-auth-hint">Your request is reviewed by the VYBE admin.</span></div></div></div>'''
     return layout("Register", body)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -6122,11 +6122,13 @@ def forgot_password():
     """Student submits a complete password-reset request for admin approval."""
     if request.method == "POST":
         sid = request.form.get("student_id", "").strip()[:80]
+        # The roll number identifies the account. A typed name is not used to
+        # decide whether a password reset belongs to that account.
         name = request.form.get("name", "").strip()[:80]
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
-        if len(name) < 2 or not _valid_roll_number(sid):
-            return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Enter valid details.", "Please enter your full name and an 11 to 12 digit roll number.", back_href="/forgot-password")
+        if not _valid_roll_number(sid):
+            return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Enter your roll number.", "Please enter the registered 11 to 12 digit roll number.", back_href="/forgot-password")
         if len(new_password) < 10 or len(new_password) > 128 or new_password != confirm_password:
             return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Password details are invalid.", "Your new password and confirm password must match and be at least 10 characters long.", back_href="/forgot-password")
 
@@ -6141,15 +6143,22 @@ def forgot_password():
                 (sid,),
             ).fetchone()
 
-            if not student or student["name"].strip().lower() != name.lower() or str(student["status"]).lower() != "approved":
+            if not student or str(student["status"]).lower() != "approved":
                 con.close()
                 return _auth_status_plate("Forgot Password", "PASSWORD RECOVERY", "Password request sent.", "If the account is eligible, the password request has been sent to the admin. Kindly wait for some time.", primary_href="/login", primary_label="Login", back_href="/")
 
             # Admin-controlled automatic mode: preserve the current form workflow but
             # apply the submitted password immediately when the switch is enabled.
             if setting(con, "auto_student_access", "0") == "1":
+                # Generate a fresh hash every time, even if the student chooses
+                # the same text as their previous password. Commit before success.
                 new_hash = hash_password(new_password)
-                con.execute("UPDATE students SET password_hash=? WHERE id=?", (new_hash, student["id"]))
+                changed = con.execute(
+                    "UPDATE students SET password_hash=? WHERE id=? AND status='approved'",
+                    (new_hash, student["id"]),
+                )
+                if changed.rowcount != 1:
+                    raise RuntimeError("Student password row was not updated")
                 _ensure_password_reset_schema(con)
                 con.execute("UPDATE password_reset_requests SET status='superseded' WHERE student_id=? AND status IN ('pending','approved')", (student["id"],))
                 con.commit()
@@ -6221,7 +6230,7 @@ def forgot_password():
         if row and row["status"] == "approved" and not row["proposed_password_hash"]:
             session.pop("password_reset_request_id", None)
 
-    body = """<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">PASSWORD RECOVERY</div><h1>Forgot password?</h1><p class="muted">Enter your registered name, roll number and your new password. Your request will be sent to the admin for approval.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">New password</div><div class="password-wrap"><input id="forgotNewPassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="forgotNewPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm password</div><div class="password-wrap"><input id="forgotConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm password"><button type="button" class="password-toggle toggle-password" data-target="forgotConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s-3.3 6-3.9 6-9.5-6-9.5-6Z"/></svg></button></div></div><button class="btn accent" type="submit">Forgot password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Login</a><span class="vybe-auth-hint">Your new password becomes active after admin approval.</span></div></div></div>"""
+    body = """<div class="auth vybe-auth-page"><div class="card authbox"><div class="vybe-auth-header"><a href="/" aria-label="VYBE home">VYBE</a><span>— Student Portal</span></div><div class="vybe-auth-watermark" aria-hidden="true">V</div><div class="badge">PASSWORD RECOVERY</div><h1>Forgot password?</h1><p class="muted">Enter your registered roll number and choose a new password. Depending on admin settings, it may be activated immediately or after approval.</p><form class="form" method="post"><div><div class="label">Full name</div><input name="name" required maxlength="80" autocomplete="name" placeholder="Your full name"></div><div><div class="label">Roll number</div><input name="student_id" required minlength="11" maxlength="12" inputmode="numeric" pattern="[0-9]{11,12}" autocomplete="username" placeholder="Your roll number"></div><div><div class="label">New password</div><div class="password-wrap"><input id="forgotNewPassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="forgotNewPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm password</div><div class="password-wrap"><input id="forgotConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm password"><button type="button" class="password-toggle toggle-password" data-target="forgotConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s-3.3 6-3.9 6-9.5-6-9.5-6Z"/></svg></button></div></div><button class="btn accent" type="submit">Forgot password</button></form><div class="vybe-auth-back-row"><a class="vybe-auth-back" href="/login">← Login</a><span class="vybe-auth-hint">Your password becomes active immediately when AUTO ON is enabled, otherwise after admin approval.</span></div></div></div>"""
     return layout("Forgot Password", body)
 
 @app.route("/forgot-password/status")
@@ -12039,8 +12048,18 @@ def admin_password_request_action(rid, action):
         return redirect(url_for("admin_password_requests"))
     try:
         # Keep the account update and request status change in one transaction.
-        con.execute("UPDATE students SET password_hash=? WHERE id=?", (proposed_hash, row["student_id"]))
-        con.execute("UPDATE password_reset_requests SET status='used', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL, used_at=? WHERE id=? AND status='pending'", (approved, approved, rid))
+        changed = con.execute(
+            "UPDATE students SET password_hash=? WHERE id=? AND status='approved'",
+            (proposed_hash, row["student_id"]),
+        )
+        if changed.rowcount != 1:
+            raise RuntimeError("Student password row was not updated")
+        request_changed = con.execute(
+            "UPDATE password_reset_requests SET status='used', approved_at=?, approval_code_hash=NULL, approval_code_token=NULL, expires_at=NULL, used_at=? WHERE id=? AND status='pending'",
+            (approved, approved, rid),
+        )
+        if request_changed.rowcount != 1:
+            raise RuntimeError("Password request is no longer pending")
         con.commit()
     except Exception:
         try: con.rollback()
