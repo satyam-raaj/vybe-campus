@@ -6165,9 +6165,16 @@ def forgot_password():
             if existing:
                 request_id = int(existing["id"])
                 if existing["status"] == "pending":
-                    if not existing["proposed_password_hash"]:
-                        con.execute("UPDATE password_reset_requests SET proposed_password_hash=? WHERE id=?", (proposed_hash, request_id))
-                        con.commit()
+                    # Keep the password hash in sync with the latest password
+                    # the student confirms while this request is still pending.
+                    # Otherwise admin approval could activate an older password
+                    # hash from the first submission while the student expects
+                    # the most recently entered password to work.
+                    con.execute(
+                        "UPDATE password_reset_requests SET proposed_password_hash=? WHERE id=? AND status='pending'",
+                        (proposed_hash, request_id),
+                    )
+                    con.commit()
                     _invalidate_admin_request_caches()
                     session["password_reset_request_id"] = request_id
                     con.close()
