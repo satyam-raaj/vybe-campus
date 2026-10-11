@@ -12014,7 +12014,7 @@ def admin_password_request_action(rid, action):
     if action not in ("approve", "reject", "delete"):
         abort(400)
     con=db()
-    row=con.execute("SELECT r.*,s.name,s.student_id FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (rid,)).fetchone()
+    row=con.execute("SELECT r.*, s.name AS student_name, s.student_id AS student_sid FROM password_reset_requests r JOIN students s ON s.id=r.student_id WHERE r.id=?", (rid,)).fetchone()
     if not row:
         con.close(); flash("Password request not found."); return redirect(url_for("admin_password_requests"))
     if action == "delete":
@@ -12065,7 +12065,7 @@ def admin_password_request_action(rid, action):
         try: con.rollback()
         except Exception: pass
         con.close()
-        app.logger.exception("PASSWORD RESET APPROVAL FAILED for request %s", rid)
+        app.logger.exception("PASSWORD RESET APPROVAL FAILED for request %s (student record id=%s)", rid, row["student_id"])
         flash("Password approval failed. Please try again.")
         return redirect(url_for("admin_password_requests"))
     con.close()
