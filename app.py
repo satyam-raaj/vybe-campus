@@ -5542,6 +5542,7 @@ async function enableVYBEPush(statusId,scope){{
 }}
 window.vybeEnableNotifications=enableVYBEPush;
 const disableVYBEPush=async(statusId)=>{{const status=document.getElementById(statusId);const show=(message,ok)=>{{if(!status)return;status.innerHTML='<div class="notification-status-row"><span class="notification-status-mark">'+(ok?'✓':'i')+'</span><span>'+message+'</span></div>';status.className='notification-push-status '+(ok?'is-success':'is-info');status.hidden=false;}};try{{const regs=await navigator.serviceWorker.getRegistrations();let found=false;for(const reg of regs){{if(!reg.active||(!reg.active.scriptURL.includes('/service-worker.js')&&!reg.active.scriptURL.includes('/push/service-worker.js')))continue;const sub=await reg.pushManager.getSubscription();if(sub){{found=true;await fetch('/push/unsubscribe',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','X-VYBE-CSRF':(document.querySelector('meta[name=vybe-csrf-token]')||{{}}).content||''}},body:JSON.stringify({{endpoint:sub.endpoint}})}}).catch(()=>{{}});await sub.unsubscribe().catch(()=>{{}});}}}}show(found?'Notifications are off on this device.':'Notifications are already off on this device.',true);}}catch(e){{console.warn('VYBE notification disable:',e);show('VYBE could not change this device right now. Please try again.',false);}}}};
+window.vybeDisableNotifications=disableVYBEPush;
 const regBtn=document.getElementById('vybeEnableRegistrationNotifications');if(regBtn)regBtn.addEventListener('click',()=>enableVYBEPush('vybeRegistrationNotificationStatus','student'));const adminBtn=document.getElementById('vybeEnableAdminNotifications');if(adminBtn)adminBtn.addEventListener('click',()=>enableVYBEPush('vybeAdminPushStatus','admin'));const adminBellEnable=document.getElementById('vybeAdminBellEnableNotifications');if(adminBellEnable)adminBellEnable.addEventListener('click',()=>enableVYBEPush('vybeAdminBellPushStatus','admin'));const adminBellDisable=document.getElementById('vybeAdminBellDisableNotifications');if(adminBellDisable)adminBellDisable.addEventListener('click',()=>disableVYBEPush('vybeAdminBellPushStatus'));const profileBtn=document.getElementById('vybeEnableProfileNotifications');if(profileBtn)profileBtn.addEventListener('click',()=>enableVYBEPush('vybeProfilePushStatus','student'));const off=document.getElementById('vybeDisableDeviceNotifications');if(off)off.addEventListener('click',()=>disableVYBEPush('vybeProfilePushStatus'));
 }})();</script></body></html>'''
 
@@ -6290,14 +6291,14 @@ def account_password():
         con.commit(); con.close(); flash("Password changed successfully."); return redirect(url_for("dashboard"))
     passkey_rows = con.execute("SELECT id, created_at, device_type FROM student_passkeys WHERE student_db_id=? ORDER BY id DESC", (session["student_db_id"],)).fetchall()
     con.close()
-    body='''<div class="auth vybe-student-security-page"><div class="card authbox"><div class="student-password-hero"><div class="student-password-hero-icon" aria-hidden="true">♙</div><div class="student-password-hero-copy"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Keep your account secure. Update your password regularly.</p></div></div><form class="form" method="post"><div><div class="label">Current password</div><div class="password-wrap"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="password-toggle toggle-password" data-target="currentPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">New password</div><div class="password-wrap"><input id="changePassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="changePassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="changeConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Update password →</button></form>PASSKEY_MANAGEMENT_PLACEHOLDER'''
+    body='''<div class="auth"><div class="card authbox"><div class="badge">ACCOUNT SECURITY</div><h1>Change password.</h1><p class="muted">Because you are signed in, enter your current password to authorize the change.</p><form class="form" method="post"><div><div class="label">Current password</div><div class="password-wrap"><input id="currentPassword" type="password" name="current_password" required autocomplete="current-password" placeholder="Current password"><button type="button" class="password-toggle toggle-password" data-target="currentPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">New password</div><div class="password-wrap"><input id="changePassword" type="password" name="new_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="New password"><button type="button" class="password-toggle toggle-password" data-target="changePassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><div><div class="label">Confirm new password</div><div class="password-wrap"><input id="changeConfirmPassword" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="Confirm new password"><button type="button" class="password-toggle toggle-password" data-target="changeConfirmPassword" aria-label="Show password" title="Show password"><svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg><svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.3A10.9 10.9 0 0 1 12 6c6.2 0 9.5 6 9.5 6a16.7 16.7 0 0 1-3.2 3.7"/><path d="M6.4 6.8C3.9 8.5 2.5 12 2.5 12s3.3 6 9.5 6a10.9 10.9 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div><button class="btn accent" type="submit">Update password →</button></form>PASSKEY_MANAGEMENT_PLACEHOLDER'''
     passkey_forms = []
     for pk in passkey_rows:
         created = str(pk["created_at"] or "previously").replace("<", "&lt;").replace(">", "&gt;")
         passkey_forms.append(f'<form method="post" action="/student/passkey/remove" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0"><input type="hidden" name="credential_id" value="{int(pk["id"])}"><span class="small">Passkey added {created}</span><button class="btn" type="submit" onclick="return window.vybeAskRemovePasskey(this)">Remove</button></form>')
-    passkey_list = "".join(passkey_forms) if passkey_forms else '<div class="student-passkey-empty"><span class="student-passkey-empty-icon" aria-hidden="true">◎</span><strong>No passkeys registered yet</strong><p>Add a passkey for faster and more secure access to your account.</p><ul><li>Use your fingerprint</li><li>Use face recognition</li><li>Use a device PIN or security key</li></ul></div>' 
+    passkey_list = "".join(passkey_forms) if passkey_forms else '<p class="small">No passkeys registered to this account yet.</p>'
     passkey_toggle = (f'<div class="student-security-toggle-row"><div class="student-security-toggle-copy"><strong>Use passkey</strong><small>Offer passkey sign-in on this browser. Turning this off does not delete your registered passkeys.</small></div><label class="student-security-switch" aria-label="Use passkey"><input id="studentUsePasskeyToggle" type="checkbox"><span class="student-security-switch-track"><span></span></span></label></div>' if passkey_rows else '')
-    passkey_section = f'<section class="student-passkey-section"><div class="student-passkey-section-head"><span class="student-passkey-section-icon" aria-hidden="true">◎</span><div><div class="badge">PASSKEYS</div><h2>Passkeys</h2><p class="muted">Sign in securely without typing your password.</p></div><span class="student-passkey-chevron" aria-hidden="true">›</span></div><div id="studentPasskeyManageMsg" class="student-passkey-manage-msg small" aria-live="polite"></div>{passkey_toggle}<div class="student-passkey-list" style="margin-top:12px">{passkey_list}</div><button class="btn accent student-add-passkey" id="studentRegisterPasskey" type="button" {"disabled" if not webauthn_configured() else ""}><span aria-hidden="true">＋</span> Add passkey</button></section><div id="studentPasskeyRemoveDialog" class="student-passkey-remove-dialog" hidden><div class="student-passkey-remove-backdrop" data-passkey-remove-cancel></div><section class="student-passkey-remove-modal" role="dialog" aria-modal="true" aria-labelledby="studentPasskeyRemoveTitle" aria-describedby="studentPasskeyRemoveDescription"><div class="student-passkey-remove-icon" aria-hidden="true">◎</div><h3 id="studentPasskeyRemoveTitle">Remove passkey?</h3><p id="studentPasskeyRemoveDescription">This passkey will no longer be accepted by your VYBE account. You can add another passkey later.</p><div class="student-passkey-remove-device"><span aria-hidden="true">▣</span><div><strong>Registered passkey</strong><small>Only this VYBE credential will be removed.</small></div></div><button type="button" id="studentPasskeyRemoveConfirm" class="student-passkey-remove-confirm">Remove passkey</button><button type="button" class="student-passkey-remove-cancel" data-passkey-remove-cancel>Cancel</button></section></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(_student_passkey_current_account()["student_id"]))};</script><script>{WEBAUTHN_JS}</script><script>(function(){{let pending=null;const modal=document.getElementById("studentPasskeyRemoveDialog");const confirmBtn=document.getElementById("studentPasskeyRemoveConfirm");function close(){{if(modal)modal.hidden=true;pending=null;if(confirmBtn){{confirmBtn.disabled=false;confirmBtn.textContent="Remove passkey";}}}}window.vybeAskRemovePasskey=function(btn){{const form=btn&&btn.form;if(!form)return false;if(!window.matchMedia||!window.matchMedia("(max-width:700px)").matches)return window.confirm("Remove this passkey from your VYBE account?");pending=form;if(modal)modal.hidden=false;return false;}};document.querySelectorAll("[data-passkey-remove-cancel]").forEach(b=>b.addEventListener("click",close));if(confirmBtn)confirmBtn.addEventListener("click",function(){{if(!pending)return;const f=pending;confirmBtn.disabled=true;confirmBtn.textContent="Removing…";f.submit();}});document.addEventListener("keydown",function(e){{if(e.key==="Escape"&&modal&&!modal.hidden)close();}});}})();</script><script>(function(){{const t=document.getElementById("studentUsePasskeyToggle");const roll=String(window.VYBE_STUDENT_ROLL||"");if(!t||!roll)return;const marker="vybe.student.passkey.roll";const disabledKey="vybe.student.passkey.disabled."+roll;try{{t.checked=localStorage.getItem(disabledKey)!=="1";if(t.checked)localStorage.setItem(marker,roll);}}catch(e){{t.checked=true;}}t.addEventListener("change",function(){{try{{if(t.checked){{localStorage.setItem(marker,roll);localStorage.removeItem(disabledKey);}}else{{localStorage.setItem(disabledKey,"1");}}}}catch(e){{}}const m=document.getElementById("studentPasskeyManageMsg");if(m){{m.textContent=t.checked?"Passkey sign-in is enabled on this browser.":"Passkey sign-in is hidden on this browser. Your registered passkeys remain saved.";m.className="student-passkey-manage-msg small "+(t.checked?"is-success":"is-info");}}}});}})();</script>'
+    passkey_section = f'<hr class="student-security-divider" style="margin:24px 0;border:0;border-top:1px solid #dce8f2"><div class="badge">PASSKEYS</div><h2>Passkey management</h2><p class="muted">Add a passkey for faster sign-in, or remove one you no longer use. Removing a passkey does not change your password.</p><div id="studentPasskeyManageMsg" class="student-passkey-manage-msg small" aria-live="polite"></div>{passkey_toggle}<button class="btn accent" id="studentRegisterPasskey" type="button" {"disabled" if not webauthn_configured() else ""}>Add passkey</button><div class="student-passkey-list" style="margin-top:12px">{passkey_list}</div><div id="studentPasskeyRemoveDialog" class="student-passkey-remove-dialog" hidden><div class="student-passkey-remove-backdrop" data-passkey-remove-cancel></div><section class="student-passkey-remove-modal" role="dialog" aria-modal="true" aria-labelledby="studentPasskeyRemoveTitle" aria-describedby="studentPasskeyRemoveDescription"><div class="student-passkey-remove-icon" aria-hidden="true">◎</div><h3 id="studentPasskeyRemoveTitle">Remove passkey?</h3><p id="studentPasskeyRemoveDescription">This passkey will no longer be accepted by your VYBE account. You can add another passkey later.</p><div class="student-passkey-remove-device"><span aria-hidden="true">▣</span><div><strong>Registered passkey</strong><small>Only this VYBE credential will be removed.</small></div></div><button type="button" id="studentPasskeyRemoveConfirm" class="student-passkey-remove-confirm">Remove passkey</button><button type="button" class="student-passkey-remove-cancel" data-passkey-remove-cancel>Cancel</button></section></div><script>window.VYBE_STUDENT_ROLL={json.dumps(str(_student_passkey_current_account()["student_id"]))};</script><script>{WEBAUTHN_JS}</script><script>(function(){{let pending=null;const modal=document.getElementById("studentPasskeyRemoveDialog");const confirmBtn=document.getElementById("studentPasskeyRemoveConfirm");function close(){{if(modal)modal.hidden=true;pending=null;if(confirmBtn){{confirmBtn.disabled=false;confirmBtn.textContent="Remove passkey";}}}}window.vybeAskRemovePasskey=function(btn){{const form=btn&&btn.form;if(!form)return false;if(!window.matchMedia||!window.matchMedia("(max-width:700px)").matches)return window.confirm("Remove this passkey from your VYBE account?");pending=form;if(modal)modal.hidden=false;return false;}};document.querySelectorAll("[data-passkey-remove-cancel]").forEach(b=>b.addEventListener("click",close));if(confirmBtn)confirmBtn.addEventListener("click",function(){{if(!pending)return;const f=pending;confirmBtn.disabled=true;confirmBtn.textContent="Removing…";f.submit();}});document.addEventListener("keydown",function(e){{if(e.key==="Escape"&&modal&&!modal.hidden)close();}});}})();</script><script>(function(){{const t=document.getElementById("studentUsePasskeyToggle");const roll=String(window.VYBE_STUDENT_ROLL||"");if(!t||!roll)return;const marker="vybe.student.passkey.roll";const disabledKey="vybe.student.passkey.disabled."+roll;try{{t.checked=localStorage.getItem(disabledKey)!=="1";if(t.checked)localStorage.setItem(marker,roll);}}catch(e){{t.checked=true;}}t.addEventListener("change",function(){{try{{if(t.checked){{localStorage.setItem(marker,roll);localStorage.removeItem(disabledKey);}}else{{localStorage.setItem(disabledKey,"1");}}}}catch(e){{}}const m=document.getElementById("studentPasskeyManageMsg");if(m){{m.textContent=t.checked?"Passkey sign-in is enabled on this browser.":"Passkey sign-in is hidden on this browser. Your registered passkeys remain saved.";m.className="student-passkey-manage-msg small "+(t.checked?"is-success":"is-info");}}}});}})();</script>'
     body = body.replace("PASSKEY_MANAGEMENT_PLACEHOLDER", passkey_section)
     if not passkey_rows:
         # The server has confirmed this account has no registered passkeys.
@@ -6352,40 +6353,6 @@ body:has(#studentPasskeyManageMsg) .student-passkey-remove-confirm{border:1px so
 body:has(#studentPasskeyManageMsg) .student-passkey-remove-cancel{margin-top:8px;border:1px solid #d7e5f5;background:#f8fbff;color:#294c78}
 body:has(#studentPasskeyManageMsg) .student-passkey-remove-confirm:disabled{opacity:.65;cursor:wait}
 @media(prefers-reduced-motion:reduce){body:has(#studentPasskeyManageMsg) .student-security-switch-track,body:has(#studentPasskeyManageMsg) .student-security-switch-track>span{transition:none!important}}
-/* Final approved mobile UI polish: scoped only to student Profile and Password/Passkey pages. */
-@media(max-width:700px){
- .profile-page{width:100%!important;max-width:100%!important;padding:12px 12px calc(112px + env(safe-area-inset-bottom,0px))!important;box-sizing:border-box!important}
- .profile-page .section{margin-bottom:14px!important}
- .profile-page .profile-hero{position:relative!important;padding:20px 16px!important;border-radius:22px!important;border-color:#dbe9fb!important;background:linear-gradient(135deg,#f7fbff 0%,#edf5ff 68%,#dceaff 100%)!important;box-shadow:0 8px 22px rgba(24,65,115,.06)!important}
- .profile-page .profile-avatar{width:62px!important;height:62px!important;flex:0 0 62px!important;border-radius:50%!important;background:linear-gradient(145deg,#2473d7,#123d78)!important;font-size:23px!important;box-shadow:0 4px 12px rgba(27,94,177,.18)!important}
- .profile-page .profile-main{align-items:center!important;gap:13px!important;min-width:0!important}.profile-page .profile-main>div:last-child{min-width:0!important}
- .profile-page .profile-name{font-size:27px!important;line-height:1.12!important;letter-spacing:-.8px!important;margin:5px 0!important}.profile-page .profile-sub{font-size:11px!important;line-height:1.4!important;overflow-wrap:anywhere!important}
- .profile-page .id-card-panel{padding:16px!important;border-radius:20px!important;background:linear-gradient(150deg,#fff,#f9fcff)!important;border-color:#dfebf8!important;box-shadow:0 8px 23px rgba(23,48,78,.055)!important}
- .profile-page .id-card-heading{gap:10px!important;align-items:flex-start!important}.profile-page .id-card-heading h2{font-size:19px!important;letter-spacing:-.45px!important;color:#172b49!important}.profile-page .id-card-heading p{font-size:11px!important;line-height:1.45!important;color:#718198!important;max-width:34ch}
- .profile-page .id-card-icon{width:40px!important;height:40px!important;flex:0 0 40px!important;border-radius:13px!important;background:#edf8e9!important;color:#39843c!important;box-shadow:none!important}
- .profile-page .id-card-current{align-items:center!important;gap:10px!important;margin-top:14px!important;padding:11px!important;border-color:#dce9f8!important;border-radius:15px!important;background:#f3f8ff!important;min-width:0!important}.profile-page .id-file-icon{width:37px!important;height:37px!important;flex:0 0 37px!important;border-radius:12px!important}.profile-page .id-file-info span{font-size:11px!important;line-height:1.4!important}
- .profile-page .id-upload-form{grid-template-columns:minmax(0,1fr)!important;gap:8px!important;margin-top:10px!important}.profile-page .upload-file{width:100%!important;min-height:43px!important;border-style:dashed!important;border-color:#c8dcf4!important;background:#f6faff!important;border-radius:13px!important;font-size:12px!important;box-sizing:border-box!important}.profile-page .id-upload-form .profile-action{width:100%!important;min-height:46px!important;border-radius:14px!important;background:linear-gradient(135deg,#173a65,#102744)!important;border:1px solid #153456!important;box-shadow:none!important;font-size:13px!important}
- .profile-page .profile-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}.profile-page .profile-stat-button{min-width:0!important;gap:8px!important;padding:12px 9px!important;border-radius:17px!important;border-color:#dce9f8!important;box-shadow:0 6px 18px rgba(23,48,78,.045)!important}.profile-page .profile-stat-button .stat-icon{width:34px!important;height:34px!important;flex:0 0 34px!important;border-radius:12px!important;font-size:16px!important}.profile-page .profile-stat-button strong{font-size:18px!important;color:#172b49!important}.profile-page .profile-stat-button small{font-size:10px!important;line-height:1.3!important}.profile-page .profile-stat-button b{font-size:10px!important}
- .profile-page .profile-notification-preview{grid-template-columns:40px minmax(0,1fr) 35px 8px!important;gap:9px!important;padding:15px!important;border-radius:19px!important;border-color:#dce9f8!important;background:linear-gradient(145deg,#fff,#f6faff)!important;box-shadow:0 7px 20px rgba(23,48,78,.045)!important}.profile-page .profile-notification-preview-icon{width:39px!important;height:39px!important;border-radius:13px!important;background:#e8f1ff!important;color:#245fb5!important}.profile-page .profile-notification-preview-copy h2{font-size:17px!important;letter-spacing:-.3px!important}.profile-page .profile-notification-preview-copy p{font-size:11px!important;line-height:1.4!important}.profile-page .profile-notification-preview-control{width:34px!important;height:22px!important}.profile-page .profile-notification-preview-control>span{width:16px!important;height:16px!important;transform:translateX(12px)!important}.profile-page .profile-notification-preview-control.is-off>span{transform:translateX(0)!important}
- .profile-page .password-card{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;padding:18px!important;border-radius:21px!important;background:linear-gradient(135deg,#142c4b,#0d1e34 72%,#1b3d65)!important;border-color:#24496f!important;box-shadow:0 10px 24px rgba(14,36,62,.13)!important}.profile-page .password-card h2{font-size:22px!important;letter-spacing:-.45px!important}.profile-page .password-card p{font-size:12px!important;line-height:1.45!important;color:#d1dceb!important}.profile-page .password-card .profile-action{width:100%!important;min-height:46px!important;border-radius:14px!important;text-align:center!important;background:#f8fbff!important;color:#173354!important;border:1px solid #e2ebf5!important;margin-top:0!important}
-}
-@media(max-width:360px){.profile-page .profile-stat-button{gap:6px!important;padding:10px 7px!important}.profile-page .profile-stat-button .stat-icon{width:30px!important;height:30px!important;flex-basis:30px!important}.profile-page .profile-stat-button small{font-size:9px!important}.profile-page .profile-notification-preview{grid-template-columns:34px minmax(0,1fr) 31px 6px!important;gap:7px!important;padding:12px!important}}
-@media(max-width:700px){
- body:has(.vybe-student-security-page) .vybe-student-security-page{display:block!important;min-height:0!important;padding:12px 12px calc(112px + env(safe-area-inset-bottom,0px))!important;box-sizing:border-box!important}
- body:has(.vybe-student-security-page) .authbox{width:100%!important;max-width:480px!important;margin:0 auto!important;padding:16px!important;box-sizing:border-box!important;border-radius:23px!important;gap:13px!important;background:#fff!important;border:1px solid #dce9f8!important;box-shadow:0 9px 28px rgba(23,48,78,.065)!important}
- body:has(.vybe-student-security-page) .student-password-hero{display:flex!important;align-items:center!important;gap:13px!important;margin:-1px -1px 2px!important;padding:17px!important;border-radius:18px!important;background:linear-gradient(135deg,#142c4b,#0c1d33 72%,#1e4775)!important;color:#fff!important;box-sizing:border-box!important}
- body:has(.vybe-student-security-page) .student-password-hero-icon{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;border-radius:50%;background:#ffffff1c;border:1px solid #ffffff20;font-size:25px;color:#fff}
- body:has(.vybe-student-security-page) .student-password-hero-copy{min-width:0;flex:1}body:has(.vybe-student-security-page) .student-password-hero .badge{font-size:9px!important;letter-spacing:1px!important;color:#9edbff!important;margin:0 0 4px!important}body:has(.vybe-student-security-page) .student-password-hero h1{font-size:23px!important;line-height:1.1!important;letter-spacing:-.6px!important;color:#fff!important;margin:0 0 5px!important}body:has(.vybe-student-security-page) .student-password-hero p.muted{font-size:11px!important;line-height:1.45!important;color:#d0deed!important;margin:0!important}
- body:has(.vybe-student-security-page) .authbox .form{display:grid!important;gap:12px!important;margin:0!important}body:has(.vybe-student-security-page) .authbox .label{font-size:11px!important;color:#172b49!important;font-weight:800!important;margin-bottom:5px!important}body:has(.vybe-student-security-page) .authbox input:not([type=checkbox]){min-height:45px!important;border:1px solid #d7e6f8!important;border-radius:12px!important;background:#f7faff!important;font-size:13px!important;box-sizing:border-box!important}body:has(.vybe-student-security-page) .authbox .password-wrap{min-width:0!important}body:has(.vybe-student-security-page) .authbox .form>.btn{width:100%!important;min-height:47px!important;border-radius:14px!important;background:linear-gradient(135deg,#173a65,#102744)!important;border:1px solid #153456!important;box-shadow:none!important}
- body:has(.vybe-student-security-page) .student-passkey-section{margin-top:0!important;padding:14px!important;border:1px solid #dce9f8!important;border-radius:18px!important;background:linear-gradient(150deg,#fff,#f7fbff)!important;box-sizing:border-box!important}
- body:has(.vybe-student-security-page) .student-passkey-section-head{display:flex!important;align-items:center!important;gap:10px!important;margin-bottom:10px!important}.student-passkey-section-icon{width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;border-radius:14px;background:#e8f1ff;color:#1769d2;font-size:24px}.student-passkey-section-head>div{min-width:0;flex:1}.student-passkey-section-head .badge{margin:0 0 2px!important;font-size:9px!important}.student-passkey-section-head h2{margin:0!important;font-size:17px!important;line-height:1.2!important;color:#172b49!important}.student-passkey-section-head p{margin:3px 0 0!important;font-size:10px!important;line-height:1.4!important;color:#718198!important}.student-passkey-chevron{font-size:24px;color:#6e84a0}
- body:has(.vybe-student-security-page) .student-security-toggle-row{display:flex!important;align-items:center!important;gap:10px!important;padding:12px!important;margin:8px 0!important;border:1px solid #e1ebf7!important;border-radius:14px!important;background:#f7fbff!important}.student-security-toggle-copy strong{font-size:12px!important;color:#172b49!important}.student-security-toggle-copy small{font-size:10px!important;line-height:1.4!important;color:#718198!important}
- body:has(.vybe-student-security-page) .student-passkey-empty{display:grid!important;justify-items:center!important;text-align:center!important;padding:15px 12px!important;border:1px solid #dce9f8!important;border-radius:15px!important;background:linear-gradient(145deg,#f7fbff,#edf5ff)!important}.student-passkey-empty-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#dfeaff;color:#1769d2;font-size:26px;margin-bottom:8px}.student-passkey-empty strong{font-size:12px;color:#172b49}.student-passkey-empty p{max-width:30ch;font-size:10px;line-height:1.45;color:#718198;margin:5px 0 9px}.student-passkey-empty ul{width:100%;margin:0;padding:10px 12px 10px 30px;border:1px solid #dfebf8;border-radius:12px;background:#fff;text-align:left;font-size:10px;line-height:1.6;color:#5c7593;box-sizing:border-box}
- body:has(.vybe-student-security-page) .student-passkey-list{display:grid!important;gap:8px!important;margin:8px 0!important}.student-passkey-list form[action="/student/passkey/remove"]{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:9px!important;flex-wrap:wrap!important;padding:10px!important;margin:0!important;border:1px solid #dce9f8!important;border-radius:13px!important;background:#f5f9ff!important}.student-passkey-list form[action="/student/passkey/remove"] .small{font-size:10px!important;line-height:1.4!important;color:#5e7390!important;min-width:0!important;flex:1!important}.student-passkey-list form[action="/student/passkey/remove"] button{min-height:36px!important;border-radius:10px!important;background:#fff6f6!important;border:1px solid #f0caca!important;color:#b33d46!important;font-size:11px!important}
- body:has(.vybe-student-security-page) .student-add-passkey{width:100%!important;min-height:45px!important;margin:8px 0 0!important;border-radius:13px!important;background:linear-gradient(135deg,#173a65,#102744)!important;border:1px solid #153456!important;box-shadow:none!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:7px!important;font-size:12px!important}body:has(.vybe-student-security-page) .student-add-passkey:disabled{opacity:.55!important}
- body:has(.vybe-student-security-page) .student-passkey-remove-modal{width:min(100%,360px)!important;padding:20px 16px 15px!important;border-radius:22px!important}body:has(.vybe-student-security-page) .student-passkey-remove-modal h3{font-size:20px!important}body:has(.vybe-student-security-page) .student-passkey-remove-modal p{font-size:11px!important;line-height:1.5!important}
-}
-@media(prefers-reduced-motion:reduce){.profile-page *{transition:none!important;animation:none!important}}
 </style>'''
     return layout("Change Password", body)
 
@@ -7309,26 +7276,7 @@ def profile():
 <section class="section"><div class="profile-stat-grid"><button class="profile-stat-button blue" type="button" data-profile-panel="given"><span class="stat-icon">↗</span><span><strong>{st["helpful_answers"]}</strong><small>Helpful answers</small></span><b>View</b></button><button class="profile-stat-button green" type="button" data-profile-panel="accepted"><span class="stat-icon">✓</span><span><strong>{st["accepted_solutions"]}</strong><small>Accepted solutions</small></span><b>View</b></button></div></section>
 <section class="section profile-panel" id="profile-panel-given"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR ACTIVITY</div><h2>Solutions you gave</h2><p>Answers and solutions you posted for campus problems.</p></div><button type="button" class="panel-close" data-close-panel="given">Close</button></div><div class="profile-solutions">{given_html or '<div class="profile-empty">You have not given any solutions yet.</div>'}</div></div></section>
 <section class="section profile-panel" id="profile-panel-accepted"><div class="profile-card"><div class="panel-heading"><div><div class="mini-label">YOUR SAVED HELP</div><h2>Solutions you received</h2><p>Solutions you accepted from other students.</p></div><button type="button" class="panel-close" data-close-panel="accepted">Close</button></div><div class="profile-solutions">{accepted_html or '<div class="profile-empty">You have not accepted any solutions yet.</div>'}</div></div></section>
-<section class="section"><div class="profile-notification-preview">
-  <div class="profile-notification-preview-icon" aria-hidden="true">🔔</div>
-  <div class="profile-notification-preview-copy">
-    <div class="mini-label">NOTIFICATIONS</div>
-    <h2>VYBE notifications</h2>
-    <p>Choose what VYBE can send to this device.</p>
-    <span class="profile-notification-preview-state">{'Notifications are on' if pref['enabled'] else 'Notifications are paused'}</span>
-  </div>
-  <form method="post" id="profileNotificationQuickForm" class="profile-notification-quick-form">
-    <input type="hidden" name="action" value="notification_settings">
-    <input type="hidden" id="profileNotificationQuickValue" name="notifications_enabled" value="{'1' if pref['enabled'] else '0'}">
-    <input type="hidden" name="account" value="{'1' if pref['account'] else '0'}">
-    <input type="hidden" name="academic" value="{'1' if pref['academic'] else '0'}">
-    <input type="hidden" name="community" value="{'1' if pref['community'] else '0'}">
-    <input type="hidden" name="announcements" value="{'1' if pref['announcements'] else '0'}">
-    <input type="hidden" name="admin_messages" value="{'1' if pref['admin_messages'] else '0'}">
-    <button type="button" id="profileNotificationQuickToggle" class="profile-notification-preview-control{' is-off' if not pref['enabled'] else ''}" aria-label="Toggle VYBE notification preferences" aria-pressed="{'true' if pref['enabled'] else 'false'}"><span></span></button>
-  </form>
-  <a href="/profile/notifications" class="profile-notification-preview-arrow" aria-label="Manage notification settings">›</a>
-</div></section><section class="section"><div class="profile-card password-card"><div><div class="mini-label">ACCOUNT SECURITY</div><h2>Password</h2><p>Change your VYBE student password from your account settings.</p></div><a class="profile-action profile-dark" href="/account/password">Password settings →</a></div></section>'''
+<section class="section"><a class="profile-card profile-notification-preview" id="notification-settings" href="/profile/notifications"><div class="profile-notification-preview-icon" aria-hidden="true">♧</div><div class="profile-notification-preview-copy"><div class="mini-label">NOTIFICATIONS</div><h2>VYBE notifications</h2><p>Manage device alerts, community replies and campus updates.</p><span class="profile-notification-preview-action">Notification settings <b aria-hidden="true">›</b></span></div><span class="profile-notification-preview-arrow" aria-hidden="true">›</span></a></section><section class="section"><div class="profile-card password-card"><div><div class="mini-label">ACCOUNT SECURITY</div><h2>Password</h2><p>Change your VYBE student password from your account settings.</p></div><a class="profile-action profile-dark" href="/account/password">Password settings →</a></div></section>'''
     body += '''<script>(function(){
 const buttons=document.querySelectorAll('[data-profile-panel]');
 const panels={given:document.getElementById('profile-panel-given'),accepted:document.getElementById('profile-panel-accepted')};
@@ -7342,10 +7290,6 @@ const idName=document.getElementById('studentIdCardName');
 const idStatus=document.getElementById('studentIdCardStatus');
 if(idInput)idInput.addEventListener('change',()=>{const f=idInput.files&&idInput.files[0];if(idName)idName.textContent=f?f.name:'Choose ID card';});
 if(idForm)idForm.addEventListener('submit',()=>{if(idButton){idButton.disabled=true;idButton.textContent='Saving…';}if(idStatus)idStatus.textContent='Saving your private ID card…';});
-const quickToggle=document.getElementById('profileNotificationQuickToggle');
-const quickForm=document.getElementById('profileNotificationQuickForm');
-const quickValue=document.getElementById('profileNotificationQuickValue');
-if(quickToggle&&quickForm&&quickValue)quickToggle.addEventListener('click',()=>{const enabled=quickValue.value!=='1';quickValue.value=enabled?'1':'0';quickToggle.classList.toggle('is-off',!enabled);quickToggle.setAttribute('aria-pressed',String(enabled));quickToggle.disabled=true;quickForm.submit();});
 })();</script>'''
     body = r'''<style>
 .profile-page{max-width:1040px!important;margin:0 auto!important;padding:24px 18px 90px!important}.profile-page .section{margin:0 0 18px!important}
@@ -7381,179 +7325,186 @@ if(quickToggle&&quickForm&&quickValue)quickToggle.addEventListener('click',()=>{
 }
 @media(max-width:390px){.profile-page .profile-stat-button{gap:7px!important;padding:10px 8px!important}.profile-page .profile-stat-button .stat-icon{width:33px!important;height:33px!important;flex-basis:33px!important}.profile-page .profile-notification-grid{grid-template-columns:1fr!important}.profile-page .profile-device-actions{grid-template-columns:1fr!important}}
 @media(prefers-reduced-motion:reduce){.profile-page *{scroll-behavior:auto!important;transition:none!important}}
-
-/* Focused mobile repair: keep the profile compact and move detailed notification controls to their own page. */
-.profile-page .profile-notification-preview{display:grid!important;grid-template-columns:48px minmax(0,1fr) 42px 12px!important;align-items:center!important;gap:12px!important;padding:18px!important;border:1px solid #dfebf8!important;border-radius:22px!important;background:linear-gradient(145deg,#fff 0%,#f8fbff 100%)!important;box-shadow:0 9px 25px rgba(23,48,78,.05)!important;color:#172b49!important;text-decoration:none!important;min-width:0!important;box-sizing:border-box!important}
-.profile-page .profile-notification-preview-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:16px;background:#eaf2ff;color:#245fb5;font-size:22px;flex:0 0 auto}
-.profile-page .profile-notification-preview-copy{min-width:0}
-.profile-page .profile-notification-preview-copy h2{margin:4px 0 5px!important;font-size:19px!important;line-height:1.2!important;letter-spacing:-.025em!important;color:#172b49!important}
-.profile-page .profile-notification-preview-copy p{margin:0!important;font-size:12px!important;line-height:1.45!important;color:#718198!important}
-.profile-page .profile-notification-preview-state{display:block;margin-top:7px;font-size:11px;font-weight:700;color:#43813b}
-.profile-page .profile-notification-preview-control{width:40px;height:24px;border-radius:999px;background:#2f6fca;padding:3px;box-sizing:border-box;display:flex;align-items:center}
-.profile-page .profile-notification-preview-control>span{width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #102b4b30;transform:translateX(16px)}
-.profile-page .profile-notification-preview-control.is-off{background:#d7e1ed!important}.profile-page .profile-notification-preview-control.is-off>span{transform:translateX(0)!important}
-.profile-page .profile-notification-preview-arrow{font-size:25px;color:#6d83a0;line-height:1;text-decoration:none;display:grid;place-items:center;min-width:12px}.profile-page .profile-notification-quick-form{margin:0!important;padding:0!important;min-width:0!important}.profile-page .profile-notification-preview-control{border:0;cursor:pointer;display:flex;align-items:center;justify-content:flex-start;padding:3px;width:40px;height:24px;border-radius:999px;background:#2f6fca;box-sizing:border-box}.profile-page .profile-notification-preview-control>span{display:block;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #102b4b30;transform:translateX(16px)}.profile-page .profile-notification-preview-control.is-off{background:#d7e1ed!important}.profile-page .profile-notification-preview-control.is-off>span{transform:translateX(0)!important}.profile-page .profile-notification-preview-control:disabled{opacity:.65;cursor:wait}
-@media(max-width:700px){
- .profile-page .profile-notification-preview{grid-template-columns:42px minmax(0,1fr) 36px 8px!important;gap:9px!important;padding:15px!important;border-radius:19px!important}
- .profile-page .profile-notification-preview-icon{width:40px;height:40px;border-radius:13px;font-size:20px}
- .profile-page .profile-notification-preview-copy h2{font-size:17px!important}
- .profile-page .profile-notification-preview-copy p{font-size:11px!important}
- .profile-page .profile-notification-preview-control{width:35px;height:22px}
- .profile-page .profile-notification-preview-control>span{width:16px;height:16px;transform:translateX(13px)}.profile-page .profile-notification-preview-control.is-off>span{transform:translateX(0)!important}
-}
-@media(max-width:360px){
- .profile-page .profile-notification-preview{grid-template-columns:36px minmax(0,1fr) 31px 6px!important;gap:7px!important;padding:12px!important}
- .profile-page .profile-notification-preview-icon{width:35px;height:35px}
- .profile-page .profile-notification-preview-copy h2{font-size:15px!important}
-}
-
-/* Approved reference styling, scoped to the Profile route only. */
-@media(max-width:700px){
- .profile-page{width:100%!important;max-width:560px!important;margin:0 auto!important;padding:12px 12px calc(112px + env(safe-area-inset-bottom,0px))!important;box-sizing:border-box!important}
- .profile-page .section{margin-bottom:13px!important}
- .profile-page .profile-hero{padding:19px 16px!important;border-radius:22px!important;border-color:#dbe9fb!important;background:linear-gradient(135deg,#f7fbff 0%,#edf5ff 68%,#dceaff 100%)!important;box-shadow:0 8px 22px rgba(24,65,115,.06)!important}
- .profile-page .profile-main{align-items:center!important;gap:13px!important;min-width:0!important}
- .profile-page .profile-avatar{width:62px!important;height:62px!important;flex:0 0 62px!important;border-radius:50%!important;background:linear-gradient(145deg,#2473d7,#123d78)!important;font-size:23px!important;box-shadow:0 4px 12px rgba(27,94,177,.18)!important}
- .profile-page .profile-main>div:last-child{min-width:0!important}.profile-page .profile-name{font-size:27px!important;line-height:1.12!important;letter-spacing:-.8px!important;margin:5px 0!important}.profile-page .profile-sub{font-size:11px!important;line-height:1.4!important;overflow-wrap:anywhere!important}
- .profile-page .id-card-panel{padding:16px!important;border-radius:20px!important;background:linear-gradient(150deg,#fff,#f9fcff)!important;border-color:#dfebf8!important;box-shadow:0 8px 23px rgba(23,48,78,.055)!important}
- .profile-page .id-card-heading{gap:10px!important;align-items:flex-start!important}.profile-page .id-card-heading h2{font-size:19px!important;letter-spacing:-.45px!important;color:#172b49!important}.profile-page .id-card-heading p{font-size:11px!important;line-height:1.45!important;color:#718198!important;max-width:34ch}
- .profile-page .id-card-icon{width:40px!important;height:40px!important;flex:0 0 40px!important;border-radius:13px!important;background:#edf8e9!important;color:#39843c!important;box-shadow:none!important}
- .profile-page .id-card-current{align-items:center!important;gap:10px!important;margin-top:14px!important;padding:11px!important;border-color:#dce9f8!important;border-radius:15px!important;background:#f3f8ff!important;min-width:0!important}.profile-page .id-file-icon{width:37px!important;height:37px!important;flex:0 0 37px!important;border-radius:12px!important}.profile-page .id-file-info{min-width:0!important;flex:1!important}.profile-page .id-file-info span{font-size:11px!important;line-height:1.4!important}
- .profile-page .id-upload-form{grid-template-columns:minmax(0,1fr)!important;gap:8px!important;margin-top:10px!important}.profile-page .upload-file{width:100%!important;min-height:42px!important;border-style:dashed!important;border-color:#c8dcf4!important;background:#f6faff!important;border-radius:13px!important;font-size:12px!important;box-sizing:border-box!important}.profile-page .id-upload-form .profile-action{width:100%!important;min-height:46px!important;border-radius:14px!important;background:linear-gradient(135deg,#173a65,#102744)!important;border:1px solid #153456!important;box-shadow:none!important;font-size:13px!important}
- .profile-page .profile-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}.profile-page .profile-stat-button{min-width:0!important;gap:8px!important;padding:12px 9px!important;border-radius:17px!important;border-color:#dce9f8!important;box-shadow:0 6px 18px rgba(23,48,78,.045)!important}.profile-page .profile-stat-button .stat-icon{width:34px!important;height:34px!important;flex:0 0 34px!important;border-radius:12px!important;font-size:16px!important}.profile-page .profile-stat-button strong{font-size:18px!important;color:#172b49!important}.profile-page .profile-stat-button small{font-size:10px!important;line-height:1.3!important}.profile-page .profile-stat-button b{font-size:0!important}.profile-page .profile-stat-button b:after{content:'›';font-size:23px!important;font-weight:400!important}
- .profile-page .profile-notification-preview{grid-template-columns:40px minmax(0,1fr) 35px 8px!important;gap:9px!important;padding:15px!important;border-radius:19px!important;border-color:#dce9f8!important;background:linear-gradient(145deg,#fff,#f6faff)!important;box-shadow:0 7px 20px rgba(23,48,78,.045)!important}.profile-page .profile-notification-preview-icon{width:39px!important;height:39px!important;border-radius:13px!important;background:#e8f1ff!important;color:#245fb5!important}.profile-page .profile-notification-preview-copy h2{font-size:17px!important;letter-spacing:-.3px!important}.profile-page .profile-notification-preview-copy p{font-size:11px!important;line-height:1.4!important}.profile-page .profile-notification-preview-control{width:34px!important;height:22px!important}.profile-page .profile-notification-preview-control>span{width:16px!important;height:16px!important;transform:translateX(12px)!important}.profile-page .profile-notification-preview-control.is-off>span{transform:translateX(0)!important}
- .profile-page .password-card{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;padding:18px!important;border-radius:21px!important;background:linear-gradient(135deg,#142c4b,#0d1e34 72%,#1b3d65)!important;border-color:#24496f!important;box-shadow:0 10px 24px rgba(14,36,62,.13)!important}.profile-page .password-card h2{font-size:22px!important;letter-spacing:-.45px!important}.profile-page .password-card p{font-size:12px!important;line-height:1.45!important;color:#d1dceb!important}.profile-page .password-card .profile-action{width:100%!important;min-height:46px!important;border-radius:14px!important;text-align:center!important;background:#f8fbff!important;color:#173354!important;border:1px solid #e2ebf5!important;margin-top:0!important}
-}
-@media(max-width:360px){.profile-page{padding-left:9px!important;padding-right:9px!important}.profile-page .profile-stat-button{gap:6px!important;padding:10px 7px!important}.profile-page .profile-stat-button .stat-icon{width:30px!important;height:30px!important;flex-basis:30px!important}.profile-page .profile-stat-button small{font-size:9px!important}.profile-page .profile-notification-preview{grid-template-columns:34px minmax(0,1fr) 31px 6px!important;gap:7px!important;padding:12px!important}}
 </style>''' + body
+    body += r'''<style>
+/* Final compact mobile profile layout. Scoped to the student Profile route only. */
+@media(max-width:700px){
+ .profile-page{max-width:560px!important;padding:8px 12px calc(92px + env(safe-area-inset-bottom,0px))!important}
+ .profile-page>.section{margin:0 0 10px!important}
+ .profile-page .profile-hero{padding:16px!important;border-radius:19px!important}
+ .profile-page .profile-avatar{width:58px!important;height:58px!important;flex:0 0 58px!important}
+ .profile-page .profile-name{font-size:25px!important;line-height:1.12!important;margin:5px 0!important}
+ .profile-page .profile-sub{font-size:11px!important;line-height:1.35!important;margin:3px 0 0!important}
+ .profile-page .id-card-panel,.profile-page .profile-card{padding:15px!important;border-radius:18px!important;box-shadow:0 5px 16px rgba(23,48,78,.045)!important}
+ .profile-page .id-card-heading h2{font-size:19px!important;margin:3px 0 5px!important}
+ .profile-page .id-card-heading p{font-size:11px!important;line-height:1.42!important}
+ .profile-page .id-card-current{min-height:58px!important;margin:11px 0 9px!important;padding:9px!important;align-items:center!important}
+ .profile-page .id-file-icon{width:34px!important;height:34px!important;flex-basis:34px!important}
+ .profile-page .id-upload-form{gap:7px!important}
+ .profile-page .upload-file,.profile-page .id-upload-form .profile-action{min-height:42px!important;border-radius:12px!important}
+ .profile-page .profile-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+ .profile-page .profile-stat-button{min-height:72px!important;padding:9px!important;gap:8px!important;border-radius:15px!important}
+ .profile-page .profile-stat-button .stat-icon{width:32px!important;height:32px!important;flex-basis:32px!important;border-radius:10px!important}
+ .profile-page .profile-stat-button strong{font-size:18px!important}
+ .profile-page .profile-stat-button small{font-size:9.5px!important}
+ .profile-page .profile-notification-preview{display:flex!important;align-items:center!important;gap:11px!important;padding:14px!important;text-decoration:none!important;color:inherit!important;min-height:94px!important}
+ .profile-page .profile-notification-preview-icon{width:39px;height:39px;flex:0 0 39px;display:grid;place-items:center;border-radius:13px;background:#e8f1ff;color:#2468be;font-size:22px}
+ .profile-page .profile-notification-preview-copy{min-width:0;flex:1}
+ .profile-page .profile-notification-preview h2{font-size:16px!important;line-height:1.2!important;margin:3px 0 4px!important;color:#172b49!important}
+ .profile-page .profile-notification-preview p{font-size:10.5px!important;line-height:1.4!important;color:#708197!important;margin:0 0 7px!important}
+ .profile-page .profile-notification-preview-action{display:inline-flex;align-items:center;gap:6px;color:#2f6fca;font-size:11px;font-weight:800}
+ .profile-page .profile-notification-preview-action b{font-size:17px;line-height:1}
+ .profile-page .profile-notification-preview-arrow{font-size:22px;color:#7b91ab;flex:0 0 auto}
+ .profile-page .password-card{display:flex!important;flex-direction:row!important;align-items:center!important;gap:12px!important;padding:15px!important;border-radius:18px!important}
+ .profile-page .password-card h2{font-size:20px!important;margin:3px 0 4px!important}
+ .profile-page .password-card p{font-size:11px!important;line-height:1.4!important;max-width:30ch}
+ .profile-page .password-card .profile-action{width:auto!important;min-height:38px!important;padding:0 11px!important;margin:0!important;border-radius:11px!important;font-size:10.5px!important;white-space:nowrap!important;flex:0 0 auto}
+}
+@media(max-width:380px){
+ .profile-page{padding-left:9px!important;padding-right:9px!important}
+ .profile-page .profile-stat-button{padding:8px 7px!important;gap:6px!important}
+ .profile-page .profile-stat-button .stat-icon{width:29px!important;height:29px!important;flex-basis:29px!important}
+ .profile-page .password-card{align-items:flex-start!important;flex-direction:column!important}
+ .profile-page .password-card .profile-action{width:100%!important}
+}
+</style>''' 
     body = '<div class="profile-page">' + body + '</div>'
     return layout("Profile",body)
+
 
 
 @app.route("/profile/notifications", methods=["GET", "POST"])
 @student_required
 def profile_notifications():
-    # Dedicated notification preferences page; preserve the existing preference schema and push controls.
-    sid = session["student_db_id"]
     con = db()
+    sid = session["student_db_id"]
+    _ensure_push_schema(con)
     if request.method == "POST":
-        action = request.form.get("action", "")
-        if action == "notification_settings":
-            _ensure_push_schema(con)
-            enabled = 1 if request.form.get("notifications_enabled") == "1" else 0
-            vals = {k: (1 if request.form.get(k) == "1" else 0) for k in
-                    ("account", "academic", "community", "announcements", "admin_messages")}
-            if con.is_pg:
-                con.execute(
-                    "INSERT INTO notification_preferences(student_id,enabled,account,academic,community,announcements,admin_messages,updated_at) VALUES(?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(student_id) DO UPDATE SET enabled=EXCLUDED.enabled,account=EXCLUDED.account,academic=EXCLUDED.academic,community=EXCLUDED.community,announcements=EXCLUDED.announcements,admin_messages=EXCLUDED.admin_messages,updated_at=EXCLUDED.updated_at",
-                    (sid, enabled, vals["account"], vals["academic"], vals["community"], vals["announcements"], vals["admin_messages"], now()))
-            else:
-                con.execute(
-                    "INSERT INTO notification_preferences(student_id,enabled,account,academic,community,announcements,admin_messages,updated_at) VALUES(?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(student_id) DO UPDATE SET enabled=excluded.enabled,account=excluded.account,academic=excluded.academic,community=excluded.community,announcements=excluded.announcements,admin_messages=excluded.admin_messages,updated_at=excluded.updated_at",
-                    (sid, enabled, vals["account"], vals["academic"], vals["community"], vals["announcements"], vals["admin_messages"], now()))
-            con.commit()
-            con.close()
-            flash("Notification settings saved.")
-            return redirect(url_for("profile_notifications"))
+        enabled = 1 if request.form.get("notifications_enabled") == "1" else 0
+        vals = {k: (1 if request.form.get(k) == "1" else 0) for k in ("account", "academic", "community", "announcements", "admin_messages")}
+        sql = ("INSERT INTO notification_preferences (student_id,enabled,account,academic,community,announcements,admin_messages,updated_at) VALUES(?,?,?,?,?,?,?,?) "
+               "ON CONFLICT(student_id) DO UPDATE SET enabled=excluded.enabled,account=excluded.account,academic=excluded.academic,community=excluded.community,announcements=excluded.announcements,admin_messages=excluded.admin_messages,updated_at=excluded.updated_at")
+        if con.is_pg:
+            sql = sql.replace("excluded.", "EXCLUDED.")
+        con.execute(sql, (sid, enabled, vals["account"], vals["academic"], vals["community"], vals["announcements"], vals["admin_messages"], now()))
+        con.commit()
         con.close()
+        flash("Notification settings saved.")
         return redirect(url_for("profile_notifications"))
 
-    _ensure_push_schema(con)
-    pref = con.execute(
-        "SELECT enabled,account,academic,community,announcements,admin_messages FROM notification_preferences WHERE student_id=?",
-        (sid,)).fetchone()
+    pref = con.execute("SELECT enabled,account,academic,community,announcements,admin_messages FROM notification_preferences WHERE student_id=?", (sid,)).fetchone()
+    con.close()
     if not pref:
         pref = {"enabled": 1, "account": 1, "academic": 1, "community": 1, "announcements": 1, "admin_messages": 1}
-    con.close()
 
-
-    body = f'''<div id="notification-settings-page">
-      <section class="notify-hero">
-        <div class="notify-hero-icon" aria-hidden="true">🔔</div>
+    body = f'''<div id="profile-notifications-page" class="profile-notifications-page">
+      <a class="settings-back-link" href="/profile" aria-label="Back to profile">‹ <span>Profile</span></a>
+      <section class="notification-settings-hero">
+        <div class="notification-settings-hero-icon" aria-hidden="true">♧</div>
         <div class="mini-label">NOTIFICATIONS</div>
         <h1>VYBE notifications</h1>
-        <p>Choose what you want to be notified about. You can change this anytime.</p>
+        <p>Choose what you want to hear about. You can change these settings anytime.</p>
       </section>
-      <section class="notify-settings-card">
-        <div class="notify-row notify-device-row">
-          <div class="notify-row-icon" aria-hidden="true">▯</div>
-          <div class="notify-row-copy"><strong>Device notifications</strong><small>Get notified even when the app is closed, when supported by your browser.</small></div>
-          <span class="notify-row-state" aria-hidden="true">{'On' if pref['enabled'] else 'Off'}</span>
+      <form method="post" class="notification-settings-form">
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">▯</span>
+          <span class="notification-setting-copy"><strong>Device notifications</strong><small>Receive alerts when your browser supports notifications.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="notifications_enabled" value="1"{' checked' if pref['enabled'] else ''}>
+        </label>
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">✉</span>
+          <span class="notification-setting-copy"><strong>Messages from VYBE admin</strong><small>Important updates and announcements from your admin.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="admin_messages" value="1"{' checked' if pref['admin_messages'] else ''}>
+        </label>
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">♧</span>
+          <span class="notification-setting-copy"><strong>Community replies</strong><small>Replies to your posts and comments.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="community" value="1"{' checked' if pref['community'] else ''}>
+        </label>
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">⚑</span>
+          <span class="notification-setting-copy"><strong>Announcements &amp; new resources</strong><small>Latest updates, resources and events from VYBE.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="announcements" value="1"{' checked' if pref['announcements'] else ''}>
+        </label>
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">▤</span>
+          <span class="notification-setting-copy"><strong>Academic updates</strong><small>Important academic and campus information.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="academic" value="1"{' checked' if pref['academic'] else ''}>
+        </label>
+        <label class="notification-setting-row">
+          <span class="notification-setting-icon" aria-hidden="true">♙</span>
+          <span class="notification-setting-copy"><strong>Account &amp; security</strong><small>Important changes related to your VYBE account.</small></span>
+          <input class="notification-setting-check" type="checkbox" name="account" value="1"{' checked' if pref['account'] else ''}>
+        </label>
+        <div class="notification-settings-actions">
+          <button class="notification-settings-save" type="submit">✓ <span>Save preferences</span></button>
+          <button class="notification-device-toggle" id="vybeDeviceNotificationToggle" type="button">Enable notifications on this device</button>
+          <div id="vybeProfilePushStatus" class="notification-push-status" hidden aria-live="polite"></div>
         </div>
-        <div class="notify-device-actions">
-          <button class="profile-action profile-device-enable" id="vybeEnableProfileNotifications" type="button"><span>🔔</span><span>Enable on this device</span></button>
-          <button class="profile-action profile-device-disable" id="vybeDisableDeviceNotifications" type="button"><span>◌</span><span>Turn off on this device</span></button>
-        </div>
-        <div id="vybeProfilePushStatus" class="notification-push-status" hidden aria-live="polite"></div>
-        <form method="post" class="notify-preferences-form">
-          <input type="hidden" name="action" value="notification_settings">
-          <label class="notify-row notify-master-row"><span class="notify-row-icon" aria-hidden="true">♧</span><span class="notify-row-copy"><strong>Allow VYBE notifications</strong><small>Choose whether VYBE can send notification updates to your account.</small></span><span class="notify-switch"><input type="checkbox" name="notifications_enabled" value="1"{' checked' if pref['enabled'] else ''}><span></span></span></label>
-          <label class="notify-row"><span class="notify-row-icon" aria-hidden="true">♙</span><span class="notify-row-copy"><strong>Account &amp; security</strong><small>Important account and security updates.</small></span><span class="notify-switch"><input type="checkbox" name="account" value="1"{' checked' if pref['account'] else ''}><span></span></span></label>
-          <label class="notify-row"><span class="notify-row-icon" aria-hidden="true">▤</span><span class="notify-row-copy"><strong>Academic updates</strong><small>Academic notices and student resources.</small></span><span class="notify-switch"><input type="checkbox" name="academic" value="1"{' checked' if pref['academic'] else ''}><span></span></span></label>
-          <label class="notify-row"><span class="notify-row-icon" aria-hidden="true">✉</span><span class="notify-row-copy"><strong>Messages from VYBE admin</strong><small>Important updates and announcements from your admin.</small></span><span class="notify-switch"><input type="checkbox" name="admin_messages" value="1"{' checked' if pref['admin_messages'] else ''}><span></span></span></label>
-          <label class="notify-row"><span class="notify-row-icon" aria-hidden="true">♧</span><span class="notify-row-copy"><strong>Community replies</strong><small>Replies to your posts and comments.</small></span><span class="notify-switch"><input type="checkbox" name="community" value="1"{' checked' if pref['community'] else ''}><span></span></span></label>
-          <label class="notify-row"><span class="notify-row-icon" aria-hidden="true">⚑</span><span class="notify-row-copy"><strong>Announcements &amp; new resources</strong><small>Latest updates, resources and events from VYBE.</small></span><span class="notify-switch"><input type="checkbox" name="announcements" value="1"{' checked' if pref['announcements'] else ''}><span></span></span></label>
-          <div class="notify-note"><span aria-hidden="true">ⓘ</span><p>Your category choices are saved when you tap Save preferences. Browser permission is managed separately using the device buttons above.</p></div>
-          <button type="submit" class="profile-action profile-primary notify-save-button">Save preferences</button>
-        </form>
-      </section>
-    </div>'''
-    body += r'''<style>
-#notification-settings-page{width:100%;max-width:620px;margin:0 auto;padding:18px 16px calc(112px + env(safe-area-inset-bottom,0px));box-sizing:border-box;color:#172b49}
-#notification-settings-page *{box-sizing:border-box}
-#notification-settings-page .notify-hero{display:grid;grid-template-columns:54px minmax(0,1fr);column-gap:14px;align-items:center;padding:22px;margin-bottom:16px;border:1px solid #dfebf8;border-radius:23px;background:linear-gradient(145deg,#fff,#f3f8ff);box-shadow:0 9px 26px rgba(23,48,78,.05)}
-#notification-settings-page .notify-hero-icon{grid-row:1/4;width:52px;height:52px;border-radius:17px;background:#e7f0ff;color:#245fb5;display:grid;place-items:center;font-size:27px}
-#notification-settings-page .mini-label{font-size:10px;font-weight:800;letter-spacing:1.2px;color:#6380a6}
-#notification-settings-page h1{font-size:clamp(24px,5vw,31px);letter-spacing:-.04em;line-height:1.12;margin:5px 0 7px;color:#172b49}
-#notification-settings-page .notify-hero p{font-size:13px;line-height:1.5;color:#718198;margin:0}
-#notification-settings-page .notify-settings-card{padding:8px 20px 20px;border:1px solid #dfebf8;border-radius:23px;background:#fff;box-shadow:0 9px 26px rgba(23,48,78,.05)}
-#notification-settings-page .notify-row{display:flex;align-items:center;gap:13px;min-width:0;padding:17px 0;border-bottom:1px solid #e4edf6;cursor:pointer}
-#notification-settings-page .notify-row-icon{width:43px;height:43px;flex:0 0 43px;display:grid;place-items:center;border-radius:15px;background:#eaf2ff;color:#245fb5;font-size:21px}
-#notification-settings-page .notify-row-copy{min-width:0;flex:1;display:grid;gap:5px}
-#notification-settings-page .notify-row-copy strong{font-size:13px;line-height:1.35;color:#172b49}
-#notification-settings-page .notify-row-copy small{font-size:11px;line-height:1.45;color:#718198}
-#notification-settings-page .notify-row-state{font-size:11px;font-weight:800;color:#39843c}
-#notification-settings-page .notify-device-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px 0 15px;border-bottom:1px solid #e4edf6}
-#notification-settings-page .notify-device-actions button{min-width:0;min-height:43px!important;padding:10px!important;border-radius:13px!important;font-size:11px!important;white-space:normal!important}
-#notification-settings-page .notify-preferences-form{display:grid;gap:0}
-#notification-settings-page .notify-preferences-form .notify-row{margin:0}
-#notification-settings-page .notify-switch{position:relative;display:block;flex:0 0 44px;width:44px;height:26px}
-#notification-settings-page .notify-switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
-#notification-settings-page .notify-switch>span{position:absolute;inset:0;border-radius:999px;background:#d7e1ed;pointer-events:none;transition:background .16s ease}
-#notification-settings-page .notify-switch>span:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #102b4b30;transition:transform .16s ease}
-#notification-settings-page .notify-switch input:checked+span{background:#1476f8}
-#notification-settings-page .notify-switch input:checked+span:after{transform:translateX(18px)}
-#notification-settings-page .notify-switch input:focus-visible+span{outline:3px solid #9ac7ff;outline-offset:3px}
-#notification-settings-page .notify-note{display:flex;gap:10px;align-items:flex-start;padding:13px;margin-top:15px;border:1px solid #d9e8fb;border-radius:15px;background:#f2f7ff;color:#68809f}
-#notification-settings-page .notify-note>span{font-size:18px;color:#1769d2}
-#notification-settings-page .notify-note p{font-size:11px;line-height:1.5;margin:0}
-#notification-settings-page .notify-save-button{width:100%;margin-top:15px;min-height:49px!important;border-radius:14px!important}
-@media(max-width:420px){#notification-settings-page{padding:12px 11px 112px}#notification-settings-page .notify-hero{padding:17px;grid-template-columns:44px minmax(0,1fr);gap:11px;border-radius:20px}#notification-settings-page .notify-hero-icon{width:42px;height:42px;border-radius:14px;font-size:23px}#notification-settings-page .notify-settings-card{padding:7px 13px 15px;border-radius:20px}#notification-settings-page .notify-row{gap:10px;padding:14px 0}#notification-settings-page .notify-row-icon{width:37px;height:37px;flex-basis:37px;border-radius:12px;font-size:18px}#notification-settings-page .notify-row-copy strong{font-size:12px}#notification-settings-page .notify-row-copy small{font-size:10px}#notification-settings-page .notify-device-actions{grid-template-columns:1fr}#notification-settings-page .notify-switch{flex-basis:40px;width:40px}#notification-settings-page .notify-switch input:checked+span:after{transform:translateX(14px)}}
-@media(prefers-reduced-motion:reduce){#notification-settings-page .notify-switch>span,#notification-settings-page .notify-switch>span:after{transition:none}}
-@media(max-width:700px){
- #notification-settings-page{width:100%;max-width:520px;padding:12px 12px calc(112px + env(safe-area-inset-bottom,0px))}
- #notification-settings-page .notify-hero{grid-template-columns:44px minmax(0,1fr);gap:11px;padding:17px;border-radius:20px;margin-bottom:12px;background:linear-gradient(145deg,#fff,#f3f8ff);box-shadow:0 7px 20px rgba(23,48,78,.045)}
- #notification-settings-page .notify-hero-icon{grid-row:1/4;width:42px;height:42px;border-radius:14px;font-size:22px}
- #notification-settings-page h1{font-size:22px;line-height:1.15;margin:4px 0 6px;letter-spacing:-.5px}
- #notification-settings-page .notify-hero p{font-size:11px;line-height:1.45}
- #notification-settings-page .notify-settings-card{padding:7px 14px 15px;border-radius:20px;box-shadow:0 7px 20px rgba(23,48,78,.045)}
- #notification-settings-page .notify-row{gap:10px;padding:14px 0}
- #notification-settings-page .notify-row-icon{width:38px;height:38px;flex-basis:38px;border-radius:13px;font-size:18px}
- #notification-settings-page .notify-row-copy strong{font-size:12px;line-height:1.35}
- #notification-settings-page .notify-row-copy small{font-size:10px;line-height:1.45}
- #notification-settings-page .notify-switch{width:42px;flex-basis:42px;height:25px}
- #notification-settings-page .notify-switch>span:after{width:19px;height:19px}
- #notification-settings-page .notify-switch input:checked+span:after{transform:translateX(17px)}
- #notification-settings-page .notify-device-actions{grid-template-columns:1fr 1fr;gap:7px;padding:10px 0 12px}
- #notification-settings-page .notify-device-actions button{min-height:38px!important;padding:8px 6px!important;font-size:10px!important;border-radius:11px!important}
- #notification-settings-page .notify-note{padding:11px;margin-top:12px;border-radius:13px}
- #notification-settings-page .notify-note p{font-size:10px;line-height:1.45}
- #notification-settings-page .notify-save-button{margin-top:12px;min-height:46px!important;border-radius:13px!important}
-}
-@media(max-width:360px){#notification-settings-page{padding-left:9px;padding-right:9px}#notification-settings-page .notify-settings-card{padding-left:11px;padding-right:11px}#notification-settings-page .notify-row{gap:8px}#notification-settings-page .notify-row-icon{width:34px;height:34px;flex-basis:34px}#notification-settings-page .notify-switch{width:38px;flex-basis:38px}#notification-settings-page .notify-switch input:checked+span:after{transform:translateX(13px)}}
-</style>'''
+      </form>
+    </div>
+    <style>
+    #profile-notifications-page{{max-width:680px;margin:0 auto;padding:18px 18px 112px;color:#172b49}}
+    #profile-notifications-page .settings-back-link{{display:inline-flex;align-items:center;gap:7px;color:#245aa8;font-weight:700;font-size:13px;margin:0 0 14px}}
+    #profile-notifications-page .settings-back-link:first-letter{{font-size:25px}}
+    #profile-notifications-page .notification-settings-hero{{padding:22px 23px;border:1px solid #dce8f7;border-radius:22px;background:linear-gradient(140deg,#fff,#f2f7ff);box-shadow:0 8px 24px rgba(23,48,78,.05)}}
+    #profile-notifications-page .notification-settings-hero-icon{{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:#e6f0ff;color:#1769d2;font-size:24px;margin-bottom:13px}}
+    #profile-notifications-page .mini-label{{font-size:10px;letter-spacing:1.3px;font-weight:800;color:#54749b}}
+    #profile-notifications-page h1{{margin:5px 0 7px;font-size:25px;line-height:1.15;letter-spacing:-.6px}}
+    #profile-notifications-page .notification-settings-hero p{{margin:0;color:#6b7f98;font-size:13px;line-height:1.5;max-width:44ch}}
+    #profile-notifications-page .notification-settings-form{{margin-top:12px;padding:5px 18px;border:1px solid #e1eaf4;border-radius:20px;background:#fff;box-shadow:0 7px 22px rgba(23,48,78,.045)}}
+    #profile-notifications-page .notification-setting-row{{display:flex;align-items:center;gap:12px;min-width:0;padding:15px 0;border-bottom:1px solid #e7eef6;cursor:pointer}}
+    #profile-notifications-page .notification-setting-row:last-of-type{{border-bottom:0}}
+    #profile-notifications-page .notification-setting-icon{{width:39px;height:39px;flex:0 0 39px;display:grid;place-items:center;border-radius:13px;background:#eaf2ff;color:#205eb1;font-size:20px}}
+    #profile-notifications-page .notification-setting-copy{{min-width:0;flex:1}}
+    #profile-notifications-page .notification-setting-copy strong{{display:block;font-size:13px;line-height:1.3;color:#183354}}
+    #profile-notifications-page .notification-setting-copy small{{display:block;margin-top:4px;font-size:11px;line-height:1.45;color:#71839a}}
+    #profile-notifications-page .notification-setting-check{{appearance:none;-webkit-appearance:none;width:39px;height:23px;flex:0 0 39px;border:0;border-radius:99px;background:#d9e1eb;position:relative;cursor:pointer;transition:background .16s}}
+    #profile-notifications-page .notification-setting-check:before{{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .16s}}
+    #profile-notifications-page .notification-setting-check:checked{{background:#1677f8}}
+    #profile-notifications-page .notification-setting-check:checked:before{{transform:translateX(16px)}}
+    #profile-notifications-page .notification-settings-actions{{display:grid;gap:9px;padding:15px 0 12px}}
+    #profile-notifications-page .notification-settings-save{{height:46px;border:0;border-radius:13px;background:linear-gradient(135deg,#172f4e,#0f2440);color:#fff;font-size:13px;font-weight:800;cursor:pointer}}
+    #profile-notifications-page .notification-device-toggle{{min-height:40px;border:1px solid #d4e3f3;border-radius:12px;background:#f3f8ff;color:#245aa8;font-size:12px;font-weight:750;cursor:pointer}}
+    #profile-notifications-page button:focus-visible,#profile-notifications-page input:focus-visible{{outline:3px solid #7db4ff;outline-offset:2px}}
+    @media(max-width:700px){{#profile-notifications-page{{padding:10px 12px 112px}}#profile-notifications-page .notification-settings-hero{{padding:17px;border-radius:18px}}#profile-notifications-page h1{{font-size:22px}}#profile-notifications-page .notification-settings-form{{padding:2px 13px;margin-top:10px;border-radius:17px}}#profile-notifications-page .notification-setting-row{{gap:9px;padding:12px 0}}#profile-notifications-page .notification-setting-icon{{width:35px;height:35px;flex-basis:35px;border-radius:11px}}#profile-notifications-page .notification-setting-copy strong{{font-size:12px}}#profile-notifications-page .notification-setting-copy small{{font-size:10.5px}}#profile-notifications-page .notification-settings-actions{{padding-top:12px}}}}
+    @media(prefers-reduced-motion:reduce){{#profile-notifications-page *{{transition:none!important}}}}
+    </style>
+    <script>
+    (function(){{
+      const button=document.getElementById('vybeDeviceNotificationToggle');
+      const status=document.getElementById('vybeProfilePushStatus');
+      if(!button)return;
+      async function syncLabel(){{
+        let subscribed=false;
+        try{{
+          if('serviceWorker' in navigator){{
+            const regs=await navigator.serviceWorker.getRegistrations();
+            for(const reg of regs){{
+              if(!reg.active||(!reg.active.scriptURL.includes('/service-worker.js')&&!reg.active.scriptURL.includes('/push/service-worker.js')))continue;
+              const sub=await reg.pushManager.getSubscription();
+              if(sub){{subscribed=true;break;}}
+            }}
+          }}
+        }}catch(e){{}}
+        button.dataset.enabled=subscribed?'1':'0';
+        button.textContent=subscribed?'Turn off notifications on this device':'Enable notifications on this device';
+      }}
+      button.addEventListener('click',async function(){{
+        button.disabled=true;
+        try{{
+          if(button.dataset.enabled==='1'&&typeof window.vybeDisableNotifications==='function'){{
+            await window.vybeDisableNotifications('vybeProfilePushStatus');
+          }}else if(typeof window.vybeEnableNotifications==='function'){{
+            await window.vybeEnableNotifications('vybeProfilePushStatus','student');
+          }}else{{
+            if(status){{status.hidden=false;status.textContent='Notification controls are not available in this browser. Please refresh and try again.';}}
+          }}
+        }}finally{{button.disabled=false;await syncLabel();}}
+      }});
+      syncLabel();
+    }})();
+    </script>'''
     return layout("Notifications", body)
 
 
