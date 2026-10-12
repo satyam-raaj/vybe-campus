@@ -6355,7 +6355,7 @@ body:has(#studentPasskeyManageMsg) .student-passkey-remove-confirm:disabled{opac
 /* Final approved mobile UI polish: scoped only to student Profile and Password/Passkey pages. */
 @media(max-width:700px){
  .profile-page{width:100%!important;max-width:100%!important;padding:12px 12px calc(112px + env(safe-area-inset-bottom,0px))!important;box-sizing:border-box!important}
- .profile-page .section{margin-bottom:14px!important}
+ .profile-page .section{margin-bottom:8px!important}
  .profile-page .profile-hero{position:relative!important;padding:20px 16px!important;border-radius:22px!important;border-color:#dbe9fb!important;background:linear-gradient(135deg,#f7fbff 0%,#edf5ff 68%,#dceaff 100%)!important;box-shadow:0 8px 22px rgba(24,65,115,.06)!important}
  .profile-page .profile-avatar{width:62px!important;height:62px!important;flex:0 0 62px!important;border-radius:50%!important;background:linear-gradient(145deg,#2473d7,#123d78)!important;font-size:23px!important;box-shadow:0 4px 12px rgba(27,94,177,.18)!important}
  .profile-page .profile-main{align-items:center!important;gap:13px!important;min-width:0!important}.profile-page .profile-main>div:last-child{min-width:0!important}
