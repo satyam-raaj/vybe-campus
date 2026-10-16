@@ -804,9 +804,36 @@ def create_admin_push_notification(kind,title,message,student_id=None):
     finally: con.close()
     return bool(_send_push_to_subscriptions(rows,title,message,"admin",kind)) if rows else False
 
+# Tiny per-warm-instance cache for frequently-read settings. VYBE runs on
+# serverless workers, so this avoids repeated identical SELECTs during bursts
+# without introducing a persistent cache service or changing stored data.
+_SETTING_CACHE = {}
+_SETTING_CACHE_LOCK = threading.Lock()
+_SETTING_CACHE_TTL = 0.5
+
+
+def _invalidate_setting_cache(key=None):
+    with _SETTING_CACHE_LOCK:
+        if key is None:
+            _SETTING_CACHE.clear()
+        else:
+            _SETTING_CACHE.pop(str(key), None)
+
+
 def setting(con, key, default=""):
+    cache_key = str(key)
+    now_m = time.monotonic()
+    with _SETTING_CACHE_LOCK:
+        cached = _SETTING_CACHE.get(cache_key)
+        if cached and now_m - cached[0] < _SETTING_CACHE_TTL:
+            return cached[1]
     row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row["value"] if row else default
+    if row is None:
+        return default
+    value = row["value"]
+    with _SETTING_CACHE_LOCK:
+        _SETTING_CACHE[cache_key] = (time.monotonic(), value)
+    return value
 
 
 def invalidate_vybe_online_cache():
@@ -824,6 +851,7 @@ def set_setting(con, key, value):
             "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+    _invalidate_setting_cache(key)
     if key == "vybe_online":
         invalidate_vybe_online_cache()
 
@@ -2324,6 +2352,7 @@ def security_headers(response):
             )
             con.commit()
             con.close()
+            _invalidate_setting_cache("student_content_version")
         except Exception:
             try:
                 con.close()
